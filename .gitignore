@@ -1,0 +1,11 @@
+build/
+dist/
+.cache/
+.DS_Store
+*.vst3
+*.component
+*.app
+*.lv2
+compile_commands.json
+.idea/
+.vscode/

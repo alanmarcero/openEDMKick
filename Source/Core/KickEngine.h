@@ -1,0 +1,110 @@
+#pragma once
+
+#include "AutoSequencer.h"
+#include "Effects.h"
+#include "KickSynth.h"
+#include <optional>
+#include <span>
+#include <vector>
+
+namespace openedmkick::core {
+
+struct Transport {
+    double bpm = 128.0;
+    std::optional<double> ppqPosition;
+    double beatsPerBar = 4.0;
+    bool isPlaying = true;
+};
+
+struct MidiTrigger {
+    int sampleOffset = 0;
+    int noteNumber = 60;
+    float velocity = 1.0f;
+};
+
+struct EffectSettings {
+    ReverseSyncMode reverseMode = ReverseSyncMode::Off;
+    float reverseMix = 1.0f;
+    float drive = 0.15f;
+    float crushRateHz = 8000.0f;
+    int crushBits = 8;
+    float crushMix = 0.0f;
+    int stutterDivision = 2; // index into kSyncDivisionBeats (2 = 1/16)
+    float stutterMix = 0.0f;
+    int gateDivision = 2;    // index into kSyncDivisionBeats (2 = 1/16)
+    float gateMix = 0.0f;
+    int pumpDivision = 0;    // index into kSyncDivisionBeats (0 = 1/4)
+    float pumpMix = 0.0f;
+    float outputGain = 1.0f;
+    bool limiterEnabled = true;
+    float ceilingGain = 0.966f;
+};
+
+struct EngineSettings {
+    KickSynthSettings synth{};
+    bool lockIn = false;
+    bool autoEnabled = false;
+    bool autoBypass = false;
+    int activeAutoSlot = 0; // 0=A, 1=B, 2=C, 3=D
+    std::array<AutoSlotSettings, kNumAutoSlots> autoSlots{};
+    EffectSettings effects{};
+    bool masterBypass = false;
+};
+
+class KickEngine {
+public:
+    static constexpr int kLatencySamples = 0;
+
+    void prepare(double sampleRate);
+    void reset() noexcept;
+
+    void process(
+        const EngineSettings& settings,
+        const Transport& transport,
+        std::span<const MidiTrigger> midiTriggers,
+        float* const* channels,
+        int numChannels,
+        int numSamples) noexcept;
+
+    void lockCurrentKick(const KickSynthSettings& settings);
+    void unlockKick() noexcept;
+    bool restoreLockedWav(const std::vector<uint8_t>& wavBytes);
+
+    [[nodiscard]] bool isKickLocked() const noexcept { return wavCache_.isLocked(); }
+    [[nodiscard]] const KickWavCache& wavCache() const noexcept { return wavCache_; }
+    [[nodiscard]] AutoSequencer& sequencer() noexcept { return sequencer_; }
+    [[nodiscard]] const AutoSequencer& sequencer() const noexcept { return sequencer_; }
+
+    [[nodiscard]] float currentPeak() const noexcept { return currentPeak_; }
+    [[nodiscard]] float currentAutoPhase() const noexcept { return sequencer_.currentWindowPhase(); }
+    [[nodiscard]] float currentBeatPhase() const noexcept { return currentBeatPhase_; }
+    [[nodiscard]] bool isVoiceReversing() const noexcept { return reverseVoice_.isActive(); }
+
+private:
+    void triggerNote(
+        const EngineSettings& settings,
+        double samplePpq,
+        double bpm,
+        double beatsPerBar,
+        float velocity,
+        float semitoneOffset,
+        float effectiveTailMs,
+        bool reverseCue) noexcept;
+
+    double sampleRate_ = 48000.0;
+    double fallbackPpq_ = 0.0;
+    bool previousLockState_ = false;
+    float currentPeak_ = 0.0f;
+    float currentBeatPhase_ = 0.0f;
+
+    KickWavCache wavCache_;
+    KickVoice forwardVoice_;
+    KickVoice reverseVoice_;
+    AutoSequencer sequencer_;
+    BitCrusher crusher_;
+    BeatStutter stutter_;
+    SyncFilterPump filterPump_;
+    PeakLimiter limiter_;
+};
+
+} // namespace openedmkick::core
