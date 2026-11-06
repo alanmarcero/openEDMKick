@@ -9,7 +9,7 @@ namespace openedmkick::core {
 inline constexpr int kStepsPerBeat64 = 16; // 16 sixty-fourth notes per quarter-note beat
 inline constexpr int kStepsPerBar64 = 64;  // 64 sixty-fourth notes per 4/4 bar
 inline constexpr int kNumAutoSlots = 4;
-inline constexpr int kNumFillPresets = 12;
+inline constexpr int kNumFillPresets = 16;
 
 inline constexpr std::array<int, 7> kAutoBarCounts = { 1, 2, 4, 8, 16, 32, 64 };
 
@@ -29,7 +29,11 @@ inline constexpr std::array<std::string_view, kNumFillPresets> kFillPresetNames 
     "Beat 4 Reverse Pickup Loop",
     "Accelerating Exponential Roll",
     "Offbeat Stomp & 1/64 Finale",
-    "Mainstage 64th Machine Gun"
+    "Mainstage 64th Machine Gun",
+    "Offbeat House Pump",
+    "Dotted Gallop Push",
+    "Downbeat And 1/32 Tail",
+    "Call And Answer Reverse"
 };
 
 struct PianoRollNote {
@@ -44,7 +48,7 @@ struct PianoRollNote {
 
 struct AutoSlotSettings {
     int bars = 4;              // 1, 2, 4, 8, 16, 32, 64
-    int fillPreset = 0;        // 0..11
+    int fillPreset = 0;        // 0..15. Indexes 0..11 keep the original patterns.
     int gridResolution = 4;    // index into kGridStepSizes64 (default 4 = 1/64 note)
     float tailShorten = 0.65f; // 0..1 (specific to Auto Mode; never affects Regular Mode)
     float pitchRise = 0.0f;    // 0..12 semitones progressive pitch rise across the bar window
@@ -63,7 +67,7 @@ struct AutoTriggerEvent {
     double stepDurationBeats = 1.0;
 };
 
-// Generates the 12 factory EDM kick fill & build-up piano roll patterns scaled to the selected bar count.
+// Generates the factory EDM kick fill and build-up piano roll patterns scaled to the selected bar count.
 [[nodiscard]] std::vector<PianoRollNote> buildPresetPattern(int presetIndex, int bars);
 
 // Computes the shortened kick tail duration in milliseconds for Auto Mode.

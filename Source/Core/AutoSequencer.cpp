@@ -172,6 +172,47 @@ std::vector<PianoRollNote> buildPresetPattern(int presetIndex, int bars) {
             appendSteppedRange(notes, intro, totalSteps, 1, 3, 12, 0.82f, 1.0f);
             break;
         }
+        case 12: { // 12: Offbeat House Pump
+            std::ranges::for_each(std::views::iota(0, safeBars), [&](int bar) {
+                const int base = bar * kStepsPerBar64;
+                addNote(notes, base + 8, 8, 0, 0.9f);
+                addNote(notes, base + 24, 8, 0, 0.95f);
+                addNote(notes, base + 40, 8, 3, 0.9f);
+                addNote(notes, base + 56, 4, 5, 1.0f);
+                addNote(notes, base + 60, 4, 7, 1.0f);
+            });
+            break;
+        }
+        case 13: { // 13: Dotted Gallop Push
+            std::ranges::for_each(std::views::iota(0, safeBars), [&](int bar) {
+                const int base = bar * kStepsPerBar64;
+                constexpr std::array<int, 12> kGallop{ 0, 6, 10, 16, 22, 26, 32, 38, 42, 48, 54, 58 };
+                std::ranges::for_each(std::views::iota(0, 12), [&](int hit) {
+                    const int pitch = hit < 6 ? 0 : (hit < 9 ? 3 : 7);
+                    addNote(notes, base + kGallop[static_cast<size_t>(hit)], 4, pitch, 0.86f + 0.01f * static_cast<float>(hit));
+                });
+            });
+            break;
+        }
+        case 14: { // 14: Downbeat And 1/32 Tail
+            std::ranges::for_each(std::views::iota(0, safeBars), [&](int bar) {
+                addNote(notes, bar * kStepsPerBar64, 16, 0, 1.0f);
+            });
+            appendSteppedRange(notes, std::max(0, totalSteps - 8), totalSteps, 2, 2, 9, 0.8f, 1.0f);
+            break;
+        }
+        case 15: { // 15: Call And Answer Reverse
+            std::ranges::for_each(std::views::iota(0, safeBars), [&](int bar) {
+                const int base = bar * kStepsPerBar64;
+                addNote(notes, base + 0, 12, 0, 1.0f, false);
+                addNote(notes, base + 20, 8, 7, 0.82f, false);
+                addNote(notes, base + 32, 12, 0, 1.0f, false);
+                addNote(notes, base + 48, 16, 5, 0.9f, true);
+            });
+            break;
+        }
+        default:
+            break;
     }
 
     sortAndDeduplicate(notes);

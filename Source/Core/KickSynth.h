@@ -1,6 +1,8 @@
 #pragma once
 
+#include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdint>
 #include <string_view>
 #include <vector>
@@ -33,6 +35,7 @@ struct KickSynthSettings {
     float clapLevel = 0.0f;    // 0..1
     float clapSpread = 0.45f;  // 0 tight .. 1 wide flam
     float clapTone = 0.6f;     // 0 dark .. 1 bright
+    float clapDecay = 0.35f;   // 0 short .. 1 long. 0.35 keeps the previous clap tail.
     float hatLevel = 0.0f;     // 0..1
     float hatTone = 0.7f;      // 0 chunky .. 1 thin
     float hatDecay = 0.25f;    // 0 closed .. 1 open
@@ -54,6 +57,40 @@ struct KickSynthSettings {
 [[nodiscard]] inline float hatDecayMs(float amount) noexcept {
     const float clamped = amount < 0.0f ? 0.0f : (amount > 1.0f ? 1.0f : amount);
     return 16.0f + clamped * 340.0f;
+}
+
+// 0.35 is unity, so a missing clap_decay parameter keeps the old tail.
+// 0 is about 0.35x that tail. 1 is about 7x.
+[[nodiscard]] inline float clapDecayScale(float amount) noexcept {
+    const float clamped = amount < 0.0f ? 0.0f : (amount > 1.0f ? 1.0f : amount);
+    return std::exp2((clamped - 0.35f) * 4.326f);
+}
+
+// Tail time constant at a given flam width. Spread still sets the gap between hits.
+[[nodiscard]] inline float clapTailTimeMs(float decayAmount, float spread) noexcept {
+    const float clampedSpread = spread < 0.0f ? 0.0f : (spread > 1.0f ? 1.0f : spread);
+    return (16.0f + clampedSpread * 36.0f) * clapDecayScale(decayAmount);
+}
+
+// How long an active layer stays audible, in milliseconds. Zero when every layer is off,
+// so a dry kick keeps the Tail Length exactly.
+[[nodiscard]] inline float activeLayerHorizonMs(const KickSynthSettings& settings) noexcept {
+    constexpr float kToSilence = 6.907755f;
+    float horizon = 0.0f;
+    if (settings.snareLevel > 0.0008f) {
+        horizon = std::max(horizon, snareDecayMs(settings.snareDecay) * 0.78f * kToSilence);
+    }
+    if (settings.clapLevel > 0.0008f) {
+        const float scale = clapDecayScale(settings.clapDecay);
+        const float spreadMs = clapSpreadMs(settings.clapSpread);
+        const float tail = spreadMs * 3.0f + clapTailTimeMs(settings.clapDecay, settings.clapSpread) * 5.8f;
+        const float burst = 22.0f * scale + spreadMs * 3.0f;
+        horizon = std::max(horizon, std::max(tail, burst));
+    }
+    if (settings.hatLevel > 0.0008f) {
+        horizon = std::max(horizon, hatDecayMs(settings.hatDecay) * kToSilence);
+    }
+    return horizon > 2500.0f ? 2500.0f : horizon;
 }
 
 // MIDI note number for the panel tuning. C4 is 60.
@@ -179,6 +216,7 @@ private:
     bool reversing_ = false;
     bool usingCache_ = false;
     int sampleIndex_ = 0;
+    int bodySamples_ = 0;
     int totalSamples_ = 0;
     KickOscillatorState osc_{};
     double cacheReadPos_ = 0.0;

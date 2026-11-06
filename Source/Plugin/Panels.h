@@ -57,6 +57,7 @@ private:
     Knob clapLevel_;
     Knob clapSpread_;
     Knob clapTone_;
+    Knob clapDecay_;
     Knob hatLevel_;
     Knob hatTone_;
     Knob hatDecay_;

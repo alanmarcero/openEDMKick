@@ -141,19 +141,23 @@ void appendTag(std::vector<uint8_t>& out, const char (&tag)[5]) {
     }
     const float spread = std::clamp(settings.clapSpread, 0.0f, 1.0f);
     const float tone = std::clamp(settings.clapTone, 0.0f, 1.0f);
+    const float decayScale = clapDecayScale(settings.clapDecay);
     const float gapMs = clapSpreadMs(spread);
+    const float burstLimit = 22.0f * decayScale;
     float burst = 0.0f;
     std::ranges::for_each(std::views::iota(0, 4), [&](int hit) {
         const float startMs = static_cast<float>(hit) * gapMs;
         const float elapsed = static_cast<float>(timeMs) - startMs;
-        if (elapsed >= 0.0f && elapsed < 22.0f) {
+        if (elapsed >= 0.0f && elapsed < burstLimit) {
             const float hitGain = 1.0f - 0.12f * static_cast<float>(hit);
-            burst = std::max(burst, hitGain * std::exp(-elapsed / (2.6f + 0.22f * static_cast<float>(hit))));
+            const float burstTau = (2.6f + 0.22f * static_cast<float>(hit)) * decayScale;
+            burst = std::max(burst, hitGain * std::exp(-elapsed / burstTau));
         }
     });
     const float tailStart = gapMs * 3.0f;
+    const float tailTau = (16.0f + spread * 36.0f) * decayScale;
     const float tail = timeMs > tailStart
-        ? 0.22f * std::exp(-(static_cast<float>(timeMs) - tailStart) / (16.0f + spread * 36.0f))
+        ? 0.22f * std::exp(-(static_cast<float>(timeMs) - tailStart) / tailTau)
         : 0.0f;
     const float envelope = std::max(burst, tail) * layerAttack(sampleIndex, sampleRate);
     const float noise = nextDeterministicNoise(osc.clapNoise);
@@ -208,10 +212,19 @@ void appendTag(std::vector<uint8_t>& out, const char (&tag)[5]) {
     return std::max(32, static_cast<int>(std::round(safeRate * clampedTail * 0.001)));
 }
 
+[[nodiscard]] int layerHorizonSamples(const KickSynthSettings& settings, double sampleRate) noexcept {
+    const float horizonMs = activeLayerHorizonMs(settings);
+    if (horizonMs <= 0.0f) {
+        return 0;
+    }
+    return std::max(1, static_cast<int>(std::round(std::max(8000.0, sampleRate) * static_cast<double>(horizonMs) * 0.001)));
+}
+
 [[nodiscard]] float computeKickStep(
     const KickSynthSettings& settings,
     double sampleRate,
     int sampleIndex,
+    int bodySamples,
     int totalSamples,
     float semitoneOffset,
     KickOscillatorState& osc) noexcept {
@@ -226,8 +239,9 @@ void appendTag(std::vector<uint8_t>& out, const char (&tag)[5]) {
     const float sweep = pitchSweepGain(pitchProgress, settings.pitchCurve);
     const float instantaneousHz = std::clamp(baseHz + (startHz - baseHz) * sweep, 8.0f, 18000.0f);
 
+    const int safeBody = std::max(1, bodySamples);
     const float tailProgress = std::clamp(
-        static_cast<float>(sampleIndex) / static_cast<float>(std::max(1, totalSamples)),
+        static_cast<float>(sampleIndex) / static_cast<float>(safeBody),
         0.0f,
         1.0f);
     const float ampDecay = tailEnvelopeGain(tailProgress, settings.tailCurve);
@@ -236,12 +250,16 @@ void appendTag(std::vector<uint8_t>& out, const char (&tag)[5]) {
     const float clickAttackSamples = std::max(2.0f, static_cast<float>(safeRate * kClickAttackMs * 0.001));
     const float clickAttack = std::min(1.0f, static_cast<float>(sampleIndex + 1) / clickAttackSamples);
     const float releaseSamples = std::max(8.0f, static_cast<float>(safeRate * kAntiClickReleaseMs * 0.001));
-    const float remaining = static_cast<float>(std::max(0, totalSamples - sampleIndex));
-    const float releaseFade = std::min(1.0f, remaining / releaseSamples);
+    const float bodyRemaining = static_cast<float>(std::max(0, bodySamples - sampleIndex));
+    const float bodyRelease = std::min(1.0f, bodyRemaining / releaseSamples);
+    const float layerRemaining = static_cast<float>(std::max(0, totalSamples - sampleIndex));
+    const float layerRelease = std::min(1.0f, layerRemaining / releaseSamples);
 
     const float punchAmount = std::clamp(settings.punch, 0.0f, 1.0f);
     const float punchEnv = std::exp(-static_cast<float>(timeMs) / kPunchDecayMs);
-    const float bodyGain = attackEnv * ampDecay * releaseFade * (1.0f + 0.55f * punchAmount * punchEnv);
+    const float bodyGain = sampleIndex >= bodySamples
+        ? 0.0f
+        : attackEnv * ampDecay * bodyRelease * (1.0f + 0.55f * punchAmount * punchEnv);
 
     const float twoPi = 2.0f * std::numbers::pi_v<float>;
     const float bodyAngle = static_cast<float>(osc.bodyPhase) * twoPi;
@@ -264,7 +282,9 @@ void appendTag(std::vector<uint8_t>& out, const char (&tag)[5]) {
     const float noise = nextDeterministicNoise(osc.noise);
     const float noiseEnv = std::exp(-static_cast<float>(timeMs) / kNoiseDecayMs);
     const float clickBurst = 0.78f * std::sin(static_cast<float>(osc.clickPhase) * twoPi) + 0.22f * noise * noiseEnv;
-    const float clickSignal = std::clamp(settings.clickLevel, 0.0f, 1.0f) * clickEnv * clickAttack * clickBurst * 0.55f;
+    const float clickSignal = sampleIndex >= bodySamples
+        ? 0.0f
+        : std::clamp(settings.clickLevel, 0.0f, 1.0f) * clickEnv * clickAttack * clickBurst * 0.55f * bodyRelease;
 
     osc.bodyPhase += static_cast<double>(instantaneousHz) / safeRate;
     osc.bodyPhase -= std::floor(osc.bodyPhase);
@@ -272,11 +292,11 @@ void appendTag(std::vector<uint8_t>& out, const char (&tag)[5]) {
     osc.clickPhase -= std::floor(osc.clickPhase);
 
     // Layers are skipped entirely at zero so a dry kick stays sample-identical.
-    const float layers = renderSnareLayer(settings, safeRate, sampleIndex, timeMs, pitchMultiplier, releaseFade, osc)
-        + renderClapLayer(settings, safeRate, sampleIndex, timeMs, releaseFade, osc)
-        + renderHatLayer(settings, safeRate, sampleIndex, timeMs, pitchMultiplier, releaseFade, osc);
+    const float layers = renderSnareLayer(settings, safeRate, sampleIndex, timeMs, pitchMultiplier, layerRelease, osc)
+        + renderClapLayer(settings, safeRate, sampleIndex, timeMs, layerRelease, osc)
+        + renderHatLayer(settings, safeRate, sampleIndex, timeMs, pitchMultiplier, layerRelease, osc);
     // Leave a little headroom so the pitch sweep is not flattened, then soft-clip.
-    const float mixed = sanitize((blendedBody * bodyGain + clickSignal * releaseFade + sanitize(layers)) * 0.9f);
+    const float mixed = sanitize((blendedBody * bodyGain + clickSignal + sanitize(layers)) * 0.9f);
     const float soft = std::tanh(mixed) * 1.08f;
     const float dcCoeff = static_cast<float>(std::exp(-2.0 * std::numbers::pi * kDcBlockHz / safeRate));
     const float blocked = soft - osc.dcX + dcCoeff * osc.dcY;
@@ -296,12 +316,13 @@ void renderKickWaveformInto(
     double sampleRate,
     float semitoneOffset) noexcept {
     const double safeRate = std::max(8000.0, sampleRate);
-    const int totalSamples = kickLengthSamples(settings.tailLengthMs, safeRate);
+    const int bodySamples = kickLengthSamples(settings.tailLengthMs, safeRate);
+    const int totalSamples = std::max(bodySamples, layerHorizonSamples(settings, safeRate));
     buffer.resize(static_cast<size_t>(totalSamples));
     KickOscillatorState osc;
     std::ranges::for_each(std::views::iota(0, totalSamples), [&](int i) {
         buffer[static_cast<size_t>(i)] = computeKickStep(
-            settings, safeRate, i, totalSamples, semitoneOffset, osc);
+            settings, safeRate, i, bodySamples, totalSamples, semitoneOffset, osc);
     });
 }
 
@@ -419,7 +440,7 @@ bool decodeWavBytes(
 }
 
 void KickWavCache::prepare(double sampleRate) {
-    const size_t count = static_cast<size_t>(std::max(8000.0, sampleRate) * 2.0) + 8u;
+    const size_t count = static_cast<size_t>(std::max(8000.0, sampleRate) * 2.6) + 8u;
     samples_.reserve(count);
     wavBytes_.reserve(44u + count * sizeof(float));
 }
@@ -463,7 +484,7 @@ float KickWavCache::sampleAt(double index) const noexcept {
 
 void KickVoice::prepare(double sampleRate) {
     const double safeRate = std::max(8000.0, sampleRate);
-    const size_t count = static_cast<size_t>(safeRate * 2.0) + 8u;
+    const size_t count = static_cast<size_t>(safeRate * 2.6) + 8u;
     if (reverseBuffer_.capacity() < count) {
         reverseBuffer_.reserve(count);
     }
@@ -480,6 +501,7 @@ void KickVoice::reset() noexcept {
     reversing_ = false;
     usingCache_ = false;
     sampleIndex_ = 0;
+    bodySamples_ = 0;
     totalSamples_ = 0;
     osc_ = {};
     cacheReadPos_ = 0.0;
@@ -517,8 +539,11 @@ void KickVoice::triggerForward(
     const float baseTailMs = usingCache_
         ? static_cast<float>((static_cast<double>(cache.samples().size()) * 1000.0) / std::max(1.0, cache.sampleRate() * static_cast<double>(pitchRatio)))
         : std::clamp(settings.tailLengthMs, kMinTailMs, kMaxTailMs);
-    const float finalTailMs = effectiveTailMs > 0.0f ? std::min(baseTailMs, std::max(kMinTailMs, effectiveTailMs)) : baseTailMs;
-    totalSamples_ = std::max(32, static_cast<int>(std::round(safeRate * finalTailMs * 0.001)));
+    const bool shortenForRoll = effectiveTailMs > 0.0f;
+    const float finalTailMs = shortenForRoll ? std::min(baseTailMs, std::max(kMinTailMs, effectiveTailMs)) : baseTailMs;
+    bodySamples_ = std::max(32, static_cast<int>(std::round(safeRate * finalTailMs * 0.001)));
+    const int layerSamples = (usingCache_ || shortenForRoll) ? 0 : layerHorizonSamples(settings, safeRate);
+    totalSamples_ = std::max(bodySamples_, layerSamples);
 }
 
 void KickVoice::triggerReverse(
@@ -542,7 +567,8 @@ void KickVoice::triggerReverse(
     semitoneOffset_ = semitoneOffset;
 
     if (!usingCache_) {
-        const size_t needed = static_cast<size_t>(kickLengthSamples(settings.tailLengthMs, safeRate));
+        const int bodySamples = kickLengthSamples(settings.tailLengthMs, safeRate);
+        const size_t needed = static_cast<size_t>(std::max(bodySamples, layerHorizonSamples(settings, safeRate)));
         if (reverseBuffer_.capacity() < needed) {
             reverseBuffer_.reserve(needed);
         }
@@ -561,6 +587,7 @@ float KickVoice::synthesizeCurrentSample(const KickSynthSettings& settings, doub
         settings,
         sampleRate,
         sampleIndex_,
+        bodySamples_ > 0 ? bodySamples_ : totalSamples_,
         totalSamples_,
         semitoneOffset_,
         osc_);

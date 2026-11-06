@@ -1,3 +1,4 @@
+#include "KickEngine.h"
 #include "KickSynth.h"
 #include <algorithm>
 #include <catch2/catch_test_macros.hpp>
@@ -496,5 +497,201 @@ TEST_CASE("Layer audition examples are deterministic renders", "[synth][layers][
             comparison.insert(comparison.end(), static_cast<size_t>(gap), 0.0f);
         });
         writeWav(root + "/layers-comparison.wav", comparison, 48000u);
+    }
+}
+
+TEST_CASE("Layer decays stay compatible and can outlast a short kick tail", "[synth][layers][decay]") {
+    REQUIRE_THAT(core::snareDecayMs(0.0f), WithinAbs(28.0f, 0.001f));
+    REQUIRE_THAT(core::snareDecayMs(1.0f), WithinAbs(238.0f, 0.001f));
+    REQUIRE_THAT(core::hatDecayMs(0.0f), WithinAbs(16.0f, 0.001f));
+    REQUIRE_THAT(core::hatDecayMs(1.0f), WithinAbs(356.0f, 0.001f));
+    REQUIRE_THAT(core::clapDecayScale(0.35f), WithinAbs(1.0f, 1.0e-6f));
+    REQUIRE(core::clapDecayScale(0.0f) < 0.5f);
+    REQUIRE(core::clapDecayScale(1.0f) > 5.0f);
+    REQUIRE(core::activeLayerHorizonMs(core::KickSynthSettings{}) == 0.0f);
+
+    constexpr double kRate = 48000.0;
+    core::KickSynthSettings body{};
+    body.tailLengthMs = 80.0f;
+    body.clickLevel = 0.2f;
+
+    core::KickSynthSettings shortHat = body;
+    shortHat.hatLevel = 1.0f;
+    shortHat.hatDecay = 0.0f;
+    core::KickSynthSettings longHat = shortHat;
+    longHat.hatDecay = 1.0f;
+    const auto shortHatHit = core::renderKickWaveform(shortHat, kRate, 0.0f);
+    const auto longHatHit = core::renderKickWaveform(longHat, kRate, 0.0f);
+    REQUIRE(longHatHit.size() > 100000u);
+    REQUIRE(shortHatHit.size() < 8000u);
+    REQUIRE(windowEnergy(longHatHit, 4500, 9000) > windowEnergy(shortHatHit, 4500, 9000) * 4.0);
+
+    core::KickSynthSettings shortSnare = body;
+    shortSnare.snareLevel = 1.0f;
+    shortSnare.snareTone = 0.3f;
+    shortSnare.snareDecay = 0.0f;
+    core::KickSynthSettings longSnare = shortSnare;
+    longSnare.snareDecay = 1.0f;
+    const auto shortSnareHit = core::renderKickWaveform(shortSnare, kRate, 0.0f);
+    const auto longSnareHit = core::renderKickWaveform(longSnare, kRate, 0.0f);
+    REQUIRE(longSnareHit.size() > shortSnareHit.size() * 3u);
+    REQUIRE(windowEnergy(longSnareHit, 5000, 12000) > windowEnergy(shortSnareHit, 5000, 12000) * 3.0);
+
+    core::KickSynthSettings shortClap = body;
+    shortClap.clapLevel = 1.0f;
+    shortClap.clapSpread = 0.45f;
+    shortClap.clapDecay = 0.0f;
+    core::KickSynthSettings legacyClap = shortClap;
+    legacyClap.clapDecay = 0.35f;
+    core::KickSynthSettings longClap = shortClap;
+    longClap.clapDecay = 1.0f;
+    const auto shortClapHit = core::renderKickWaveform(shortClap, kRate, 0.0f);
+    const auto legacyClapHit = core::renderKickWaveform(legacyClap, kRate, 0.0f);
+    const auto longClapHit = core::renderKickWaveform(longClap, kRate, 0.0f);
+    REQUIRE(longClapHit.size() > legacyClapHit.size());
+    REQUIRE(legacyClapHit.size() >= shortClapHit.size());
+    REQUIRE(windowEnergy(longClapHit, 6000, 14000) > windowEnergy(shortClapHit, 6000, 14000) * 3.0);
+
+    const auto voiceLength = [](const core::KickSynthSettings& settings, float velocity, float effectiveTailMs) {
+        core::KickWavCache cache;
+        core::KickVoice voice;
+        voice.triggerForward(settings, cache, kRate, velocity, 0.0f, effectiveTailMs);
+        int count = 0;
+        double energy = 0.0;
+        while (voice.isActive() && count < 200000) {
+            const float sample = voice.nextSample(settings, cache, kRate);
+            if (!std::isfinite(sample) || sample > 1.0f || sample < -1.0f) {
+                return std::pair<int, double>{ -1, 0.0 };
+            }
+            energy += std::abs(static_cast<double>(sample));
+            ++count;
+        }
+        return std::pair<int, double>{ count, energy };
+    };
+    const auto full = voiceLength(longHat, 1.0f, -1.0f);
+    const auto half = voiceLength(longHat, 0.5f, -1.0f);
+    REQUIRE(full.first == static_cast<int>(longHatHit.size()));
+    REQUIRE(full.second > half.second * 1.8);
+    REQUIRE(full.second < half.second * 2.2);
+    const auto shortened = voiceLength(longHat, 1.0f, 40.0f);
+    REQUIRE(shortened.first == 1920);
+
+    core::KickWavCache locked;
+    locked.lockIn(longHat, kRate);
+    REQUIRE(locked.samples().size() == longHatHit.size());
+    REQUIRE(windowEnergy(locked.samples(), 8000, 16000) > 1.0);
+    core::KickVoice lockedVoice;
+    lockedVoice.triggerForward(longHat, locked, kRate, 0.5f, 0.0f, -1.0f);
+    REQUIRE(lockedVoice.isUsingCachedWav());
+    REQUIRE_THAT(lockedVoice.nextSample(longHat, locked, kRate), WithinAbs(locked.samples()[0] * 0.5f, 1.0e-4f));
+
+    core::KickWavCache empty;
+    core::KickVoice reverse;
+    reverse.triggerReverse(longClap, empty, kRate, 8000, 1.0f, 0.0f);
+    double reverseEnergy = 0.0;
+    for (int i = 0; i < 8000; ++i) {
+        REQUIRE(reverse.isActive());
+        const float sample = reverse.nextSample(longClap, empty, kRate);
+        REQUIRE(std::isfinite(sample));
+        REQUIRE(std::abs(sample) <= 1.0f);
+        reverseEnergy += std::abs(static_cast<double>(sample));
+    }
+    REQUIRE(!reverse.isActive());
+    REQUIRE(reverseEnergy > 1.0);
+
+    core::KickEngine engine;
+    engine.prepare(kRate);
+    core::EngineSettings settings{};
+    settings.synth = longHat;
+    settings.synth.snareLevel = 1.0f;
+    settings.synth.snareDecay = 1.0f;
+    settings.synth.clapLevel = 1.0f;
+    settings.synth.clapDecay = 1.0f;
+    settings.effects.drive = 1.0f;
+    settings.effects.limiterEnabled = true;
+    settings.effects.ceilingGain = 0.5f;
+    std::vector<float> limited(24000, 0.0f);
+    float* pointer = limited.data();
+    const std::array<core::MidiTrigger, 1> trigger{ { { 0, 36, 1.0f, false } } };
+    const core::Transport transport{ 128.0, 0.0, 4.0, true };
+    engine.process(settings, transport, trigger, &pointer, 1, static_cast<int>(limited.size()));
+    REQUIRE(std::ranges::all_of(limited, [](float sample) {
+        return std::isfinite(sample) && std::abs(sample) <= 0.501f;
+    }));
+    REQUIRE(windowEnergy(limited, 0, static_cast<int>(limited.size())) > 1.0);
+
+    if (const char* directory = std::getenv("OEK_RENDER_DIR")) {
+        const std::string root(directory);
+        writeWav(root + "/hat-decay-short.wav", shortHatHit, 48000u);
+        writeWav(root + "/hat-decay-long.wav", longHatHit, 48000u);
+        writeWav(root + "/snare-decay-short.wav", shortSnareHit, 48000u);
+        writeWav(root + "/snare-decay-long.wav", longSnareHit, 48000u);
+        writeWav(root + "/clap-decay-short.wav", shortClapHit, 48000u);
+        writeWav(root + "/clap-decay-legacy.wav", legacyClapHit, 48000u);
+        writeWav(root + "/clap-decay-long.wav", longClapHit, 48000u);
+        const int gap = static_cast<int>(0.08 * kRate);
+        std::vector<float> comparison;
+        for (const auto* hit : { &shortSnareHit, &longSnareHit, &shortClapHit, &longClapHit, &shortHatHit, &longHatHit }) {
+            comparison.insert(comparison.end(), hit->begin(), hit->end());
+            comparison.insert(comparison.end(), static_cast<size_t>(gap), 0.0f);
+        }
+        writeWav(root + "/decay-comparison.wav", comparison, 48000u);
+
+        core::KickSynthSettings init{};
+        core::KickSynthSettings subFloor{};
+        subFloor.note = 5;
+        subFloor.octave = 0;
+        subFloor.startPitchHz = 180.0f;
+        subFloor.pitchDecayMs = 90.0f;
+        subFloor.tailLengthMs = 720.0f;
+        subFloor.tailCurve = 0.05f;
+        subFloor.clickLevel = 0.08f;
+        subFloor.punch = 0.2f;
+        subFloor.subDrive = 0.15f;
+        core::KickSynthSettings clicky = init;
+        clicky.note = 0;
+        clicky.octave = 2;
+        clicky.startPitchHz = 1400.0f;
+        clicky.pitchDecayMs = 18.0f;
+        clicky.tailLengthMs = 140.0f;
+        clicky.clickLevel = 0.9f;
+        clicky.clickFreqHz = 6200.0f;
+        clicky.punch = 0.85f;
+        clicky.subDrive = 0.1f;
+        auto initHit = core::renderKickWaveform(init, kRate, 0.0f);
+        auto subHit = core::renderKickWaveform(subFloor, kRate, 0.0f);
+        auto clickHit = core::renderKickWaveform(clicky, kRate, 0.0f);
+        core::KickSynthSettings openHat = longHat;
+        openHat.note = 9;
+        openHat.punch = 0.6f;
+        auto openHatHit = core::renderKickWaveform(openHat, kRate, 0.0f);
+        auto roomClapHit = longClapHit;
+        core::KickSynthSettings stack{};
+        stack.note = 10;
+        stack.tailLengthMs = 260.0f;
+        stack.punch = 0.55f;
+        stack.snareLevel = 0.7f;
+        stack.snareTone = 0.4f;
+        stack.snareDecay = 0.85f;
+        stack.clapLevel = 0.62f;
+        stack.clapSpread = 0.4f;
+        stack.clapTone = 0.75f;
+        stack.clapDecay = 0.8f;
+        stack.hatLevel = 0.55f;
+        stack.hatTone = 0.6f;
+        stack.hatDecay = 0.7f;
+        auto stackHit = core::renderKickWaveform(stack, kRate, 0.0f);
+        writeWav(root + "/preset-init.wav", initHit, 48000u);
+        writeWav(root + "/preset-sub-floor.wav", subHit, 48000u);
+        writeWav(root + "/preset-clicky-c2.wav", clickHit, 48000u);
+        writeWav(root + "/preset-open-hat.wav", openHatHit, 48000u);
+        writeWav(root + "/preset-long-clap.wav", roomClapHit, 48000u);
+        writeWav(root + "/preset-full-stack.wav", stackHit, 48000u);
+        std::vector<float> presetComparison;
+        for (const auto* hit : { &initHit, &subHit, &clickHit, &openHatHit, &roomClapHit, &stackHit }) {
+            presetComparison.insert(presetComparison.end(), hit->begin(), hit->end());
+            presetComparison.insert(presetComparison.end(), static_cast<size_t>(gap), 0.0f);
+        }
+        writeWav(root + "/preset-comparison.wav", presetComparison, 48000u);
     }
 }

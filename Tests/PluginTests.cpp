@@ -1,10 +1,14 @@
 #include "PluginEditor.h"
 #include "PluginProcessor.h"
 #include "Presets.h"
+#include <algorithm>
+#include <array>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 #include <cmath>
 #include <ranges>
+#include <string>
+#include <vector>
 
 namespace {
 
@@ -224,7 +228,14 @@ TEST_CASE("Editor renders 12-note tuner, kicking mule stage, 1/64 piano roll, an
         REQUIRE(juce::PNGImageFormat().writeImageToStream(snapshot, stream));
     }
     if (const char* captureLayers = std::getenv("OEK_CAPTURE_LAYERS")) {
-        processor.setCurrentProgram(processor.getNumPrograms() - 1);
+        const auto& programs = openedmkick::presets::factoryPresets();
+        int stackIndex = 0;
+        for (int i = 0; i < static_cast<int>(programs.size()); ++i) {
+            if (std::string(programs[static_cast<size_t>(i)].name) == "Full Layer Stack (A#1)") {
+                stackIndex = i;
+            }
+        }
+        processor.setCurrentProgram(stackIndex);
         setParam(processor, "auto_on", 1.0f);
         setParam(processor, "lock_in", 0.0f);
         juce::AudioBuffer<float> renderBuf(2, 64);
@@ -251,6 +262,8 @@ TEST_CASE("Timbre layer parameters default off and survive the session", "[plugi
     setParam(processor, "snare_level", 0.4f);
     setParam(processor, "clap_spread", 0.8f);
     setParam(processor, "hat_decay", 0.66f);
+    setParam(processor, "clap_decay", 0.82f);
+    setParam(processor, "snare_decay", 0.22f);
     setParam(processor, "hp_cutoff", 240.0f);
     setParam(processor, "lp_cutoff", 3200.0f);
     juce::MemoryBlock saved;
@@ -260,6 +273,8 @@ TEST_CASE("Timbre layer parameters default off and survive the session", "[plugi
     REQUIRE_THAT(restored.currentSynthSettings().snareLevel, WithinAbs(0.4f, 0.002f));
     REQUIRE_THAT(restored.currentSynthSettings().clapSpread, WithinAbs(0.8f, 0.002f));
     REQUIRE_THAT(restored.currentSynthSettings().hatDecay, WithinAbs(0.66f, 0.002f));
+    REQUIRE_THAT(restored.currentSynthSettings().clapDecay, WithinAbs(0.82f, 0.002f));
+    REQUIRE_THAT(restored.currentSynthSettings().snareDecay, WithinAbs(0.22f, 0.002f));
     REQUIRE_THAT(restored.parameters.getRawParameterValue("hp_cutoff")->load(), WithinAbs(240.0f, 1.0f));
     REQUIRE_THAT(restored.parameters.getRawParameterValue("lp_cutoff")->load(), WithinAbs(3200.0f, 20.0f));
 
@@ -349,4 +364,87 @@ TEST_CASE("Mule artwork kicks when a trigger arrives", "[plugin][ui][mule]") {
         juce::Thread::sleep(120);
         write(editor->createComponentSnapshot(editor->getLocalBounds(), true, 1.0f), "mule-recoil.png");
     }
+}
+
+TEST_CASE("Factory kick programs and Auto Mode patterns keep old indexes", "[plugin][presets]") {
+    const auto& programs = openedmkick::presets::factoryPresets();
+    const auto& patterns = openedmkick::presets::fillBuildPresets();
+    REQUIRE(programs.size() >= 32u);
+    REQUIRE(patterns.size() == 16u);
+    const std::array<const char*, 19> kOriginal{ {
+        "Init Club Kick (F1)",
+        "Big Room Sub Cannon (G1)",
+        "Tech House Tight Punch (A1)",
+        "Locked-In Studio Master (F#1)",
+        "Beat 4 Reverse Pickup (E1)",
+        "Full Beat Synced Reverse (D#1)",
+        "Bitcrushed Industrial Stomp (C1)",
+        "Hardstyle Tok & Crunch (G#1)",
+        "Future Rave Chest Thump (C#1)",
+        "Synced 1/16 Beat Stutter Kick (D1)",
+        "Trance Gate Chopper (A#1)",
+        "Deep Minimal Sub (B1)",
+        "Festival 1/64 Drop Rush (8 Bar)",
+        "Mainstage Build Up (16 Bar)",
+        "Arena 32-Bar Riser (32 Bar)",
+        "Marathon 64-Bar Odyssey (64 Bar)",
+        "Quick 2-Bar Turnaround Fill (2 Bar)",
+        "1-Bar Machine Gun Fill (1 Bar)",
+        "Stacked Snare Clap Hat (F1)"
+    } };
+    for (size_t i = 0; i < kOriginal.size(); ++i) {
+        REQUIRE(std::string(programs[i].name) == kOriginal[i]);
+    }
+    REQUIRE(std::string(patterns[0].name) == "Four on the Floor + End Fill");
+    REQUIRE(std::string(patterns[11].name) == "Mainstage 64th Machine Gun");
+    REQUIRE(std::string(patterns[15].name) == "Call And Answer Reverse");
+
+    OpenEdmKickProcessor processor;
+    REQUIRE(processor.getNumPrograms() == static_cast<int>(programs.size()));
+    std::vector<std::string> states;
+    states.reserve(programs.size());
+    for (int i = 0; i < processor.getNumPrograms(); ++i) {
+        processor.setCurrentProgram(i);
+        juce::MemoryBlock block;
+        processor.getStateInformation(block);
+        states.emplace_back(static_cast<const char*>(block.getData()), block.getSize());
+        REQUIRE(processor.getProgramName(i) == programs[static_cast<size_t>(i)].name);
+    }
+    auto sorted = states;
+    std::ranges::sort(sorted);
+    REQUIRE(std::ranges::adjacent_find(sorted) == sorted.end());
+
+    processor.setCurrentProgram(18);
+    REQUIRE_THAT(processor.currentSynthSettings().snareLevel, WithinAbs(0.58f, 0.02f));
+    REQUIRE_THAT(processor.currentSynthSettings().clapDecay, WithinAbs(0.35f, 0.02f));
+    processor.setCurrentProgram(22);
+    REQUIRE(processor.currentSynthSettings().tailLengthMs < 120.0f);
+    REQUIRE_THAT(processor.currentSynthSettings().hatDecay, WithinAbs(1.0f, 0.02f));
+    processor.setCurrentProgram(23);
+    REQUIRE_THAT(processor.currentSynthSettings().clapDecay, WithinAbs(1.0f, 0.02f));
+
+    setParam(processor, "snare_decay", 0.22f);
+    setParam(processor, "hat_decay", 0.81f);
+    setParam(processor, "clap_decay", 0.9f);
+    setParam(processor, "auto_fill", 11.0f);
+    auto legacy = processor.parameters.copyState();
+    for (int i = legacy.getNumChildren() - 1; i >= 0; --i) {
+        if (legacy.getChild(i).getProperty("id").toString() == "clap_decay") {
+            legacy.removeChild(i, nullptr);
+        }
+    }
+    OpenEdmKickProcessor recalled;
+    recalled.parameters.replaceState(legacy);
+    REQUIRE_THAT(recalled.currentSynthSettings().snareDecay, WithinAbs(0.22f, 0.002f));
+    REQUIRE_THAT(recalled.currentSynthSettings().hatDecay, WithinAbs(0.81f, 0.002f));
+    REQUIRE_THAT(recalled.currentSynthSettings().clapDecay, WithinAbs(0.35f, 0.002f));
+    REQUIRE(recalled.currentAutoSlotSettings().fillPreset == 11);
+
+    setParam(processor, "auto_fill", 15.0f);
+    juce::MemoryBlock saved;
+    processor.getStateInformation(saved);
+    OpenEdmKickProcessor restored;
+    restored.setStateInformation(saved.getData(), static_cast<int>(saved.getSize()));
+    REQUIRE(restored.currentAutoSlotSettings().fillPreset == 15);
+    REQUIRE_THAT(restored.currentSynthSettings().clapDecay, WithinAbs(0.9f, 0.002f));
 }

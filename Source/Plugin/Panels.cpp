@@ -54,6 +54,7 @@ constexpr std::array<const char*, 6> kPianoRollRowLabels = {
         && sameFloatBits(a.clapLevel, b.clapLevel)
         && sameFloatBits(a.clapSpread, b.clapSpread)
         && sameFloatBits(a.clapTone, b.clapTone)
+        && sameFloatBits(a.clapDecay, b.clapDecay)
         && sameFloatBits(a.hatLevel, b.hatLevel)
         && sameFloatBits(a.hatTone, b.hatTone)
         && sameFloatBits(a.hatDecay, b.hatDecay);
@@ -217,6 +218,7 @@ KickSynthPanel::KickSynthPanel(OpenEdmKickProcessor& processor)
       clapLevel_(processor.parameters, params::kClapLevel, "Level", theme::kAccentReverse),
       clapSpread_(processor.parameters, params::kClapSpread, "Spread", theme::kAccentReverse),
       clapTone_(processor.parameters, params::kClapTone, "Tone", theme::kAccentReverse),
+      clapDecay_(processor.parameters, params::kClapDecay, "Decay", theme::kAccentReverse),
       hatLevel_(processor.parameters, params::kHatLevel, "Level", theme::kAccentMint),
       hatTone_(processor.parameters, params::kHatTone, "Tone", theme::kAccentMint),
       hatDecay_(processor.parameters, params::kHatDecay, "Decay", theme::kAccentMint),
@@ -253,18 +255,19 @@ KickSynthPanel::KickSynthPanel(OpenEdmKickProcessor& processor)
     std::ranges::for_each(std::initializer_list<juce::Component*>{
         &lockIn_, &triggerMode_, &waveformView_, &octave_, &fineTune_, &startPitch_, &pitchDecay_,
         &pitchCurve_, &punch_, &tailLength_, &tailCurve_, &subDrive_, &clickLevel_, &clickFreq_,
-        &snareLevel_, &snareTone_, &snareDecay_, &clapLevel_, &clapSpread_, &clapTone_,
+        &snareLevel_, &snareTone_, &snareDecay_, &clapLevel_, &clapSpread_, &clapTone_, &clapDecay_,
         &hatLevel_, &hatTone_, &hatDecay_
     }, [this](juce::Component* c) { addAndMakeVisible(c); });
     snareLevel_.setTooltip("Snare layer amount. Zero leaves the kick unchanged.");
     snareTone_.setTooltip("Snare color. Low is a woody shell, high is bright wire buzz.");
-    snareDecay_.setTooltip("Snare ring. The kick tail still ends the layer.");
+    snareDecay_.setTooltip("Snare ring. A long decay continues after a short kick tail. Auto Mode Tail Shortener still cuts fast rolls.");
     clapLevel_.setTooltip("Clap layer amount. Four staggered noise hits.");
     clapSpread_.setTooltip("Clap flam width. Tight is one crack, wide is four staggered hits.");
     clapTone_.setTooltip("Clap brightness. Low is a muffled hand, high is a sharp crack.");
+    clapDecay_.setTooltip("Clap tail. The middle setting matches the previous clap. Spread still sets the flam.");
     hatLevel_.setTooltip("Hi-hat layer amount. Inharmonic metal plus a short chiff.");
     hatTone_.setTooltip("Hat color. Low is chunky metal, high is a thin bright chiff.");
-    hatDecay_.setTooltip("Hat length. Short is a closed hat, long is an open ring.");
+    hatDecay_.setTooltip("Hat length. Short is a closed hat, long is an open ring that can outlast the kick tail.");
 
     noteWatcher_.sendInitialUpdate();
 }
@@ -339,9 +342,10 @@ void KickSynthPanel::resized() {
 
     auto layers = bounds.removeFromBottom(92);
     bounds.removeFromBottom(4);
-    snareArea_ = layers.removeFromLeft((layers.getWidth() - 2 * kSectionGap) / 3);
+    const int layerUnit = (layers.getWidth() - 2 * kSectionGap) / 10;
+    snareArea_ = layers.removeFromLeft(layerUnit * 3);
     layers.removeFromLeft(kSectionGap);
-    clapArea_ = layers.removeFromLeft(snareArea_.getWidth());
+    clapArea_ = layers.removeFromLeft(layerUnit * 4);
     layers.removeFromLeft(kSectionGap);
     hatArea_ = layers;
 
@@ -352,7 +356,7 @@ void KickSynthPanel::resized() {
     layoutRow(pitchRowArea_, { &octave_, &fineTune_, &startPitch_, &pitchDecay_, &pitchCurve_, &punch_ });
     layoutRow(bodyRowArea_, { &tailLength_, &tailCurve_, &subDrive_, &clickLevel_, &clickFreq_ });
     layoutRow(snareArea_.withTrimmedTop(kCaptionHeight), { &snareLevel_, &snareTone_, &snareDecay_ });
-    layoutRow(clapArea_.withTrimmedTop(kCaptionHeight), { &clapLevel_, &clapSpread_, &clapTone_ });
+    layoutRow(clapArea_.withTrimmedTop(kCaptionHeight), { &clapLevel_, &clapSpread_, &clapTone_, &clapDecay_ });
     layoutRow(hatArea_.withTrimmedTop(kCaptionHeight), { &hatLevel_, &hatTone_, &hatDecay_ });
 }
 

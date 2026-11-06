@@ -36,10 +36,10 @@ The layers mix into the kick voice. Level 0 is the default and leaves the dry ki
 | Layer | Level | Modifiers | What changes |
 | --- | --- | --- | --- |
 | Snare | `snare_level` | Tone (shell to wires), Decay (28–238 ms) | Pitched shell plus a band-passed wire buzz. Decay lengthens the ring. |
-| Clap | `clap_level` | Spread (tight crack to a 4-hit flam), Tone (dark to bright) | Four staggered noise bursts. Spread is the gap between hits. |
+| Clap | `clap_level` | Spread (tight crack to a 4-hit flam), Tone (dark to bright), Decay | Four staggered noise bursts. Spread is the gap between hits. Decay scales the burst and the tail. The default, 0.35, is the previous clap. |
 | Hat | `hat_level` | Tone (chunky metal to thin chiff), Decay (16–356 ms, closed to open) | Six inharmonic partials plus a high noise chiff. Semitone offset tunes the metal. |
 
-Tail Length still ends the whole voice, so a very short kick chops a long layer. Lock In bakes the current layer mix into the WAV. Changing a layer knob while locked does not update that WAV until you lock again.
+Snare decay is still `28 + amount * 210` ms. Hat decay is still `16 + amount * 340` ms. Tail Length still sets the kick body. If a layer's own decay is longer, that layer continues after the body and then fades out. Auto Mode passes a shortened tail into the voice, and that shortened tail still ends the layers. That is what keeps Anti-Mud on 1/64 rolls. Lock In bakes the current layer mix, including a long decay, into the WAV. Changing a layer knob while locked does not update that WAV until you lock again.
 
 `OEK_RENDER_DIR=... ./build/openedmkick_tests '[metrics]' writes audition files peak-matched to 0.89. That match is only in the files.
 

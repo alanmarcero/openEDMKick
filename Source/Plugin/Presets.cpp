@@ -27,7 +27,9 @@ FactoryPreset makeMultiSlotBuildPreset(
     } };
     std::ranges::for_each(std::views::iota(0, core::kNumAutoSlots), [&](int slot) {
         const float slotFloat = static_cast<float>(slot);
-        const float slotPreset = static_cast<float>((static_cast<int>(basePresetIdx) + slot) % core::kNumFillPresets);
+        // Keep the original 12-pattern wrap so programs saved against those indexes
+        // still land on the same fill when the list grows past 12.
+        const float slotPreset = static_cast<float>((static_cast<int>(basePresetIdx) + slot) % 12);
         const std::array<std::pair<const char*, float>, 6> slotValues{ {
             { params::kAutoBars, std::clamp(barChoice + (slot >= 2 ? 1.0f : 0.0f), 0.0f, 6.0f) },
             { params::kAutoFillPreset, slotPreset },
@@ -99,6 +101,68 @@ const std::vector<FactoryPreset>& factoryPresets() {
             { params::kSnareLevel, 0.58f }, { params::kSnareTone, 0.64f }, { params::kSnareDecay, 0.42f },
             { params::kClapLevel, 0.40f }, { params::kClapSpread, 0.52f }, { params::kClapTone, 0.68f },
             { params::kHatLevel, 0.34f }, { params::kHatTone, 0.74f }, { params::kHatDecay, 0.22f }
+        } },
+        { "Sub Floor (F0)", {
+            { params::kNote, 5.0f }, { params::kOctave, 0.0f }, { params::kStartPitch, 180.0f },
+            { params::kPitchDecay, 90.0f }, { params::kTailLength, 720.0f }, { params::kTailCurve, 0.05f },
+            { params::kClickLevel, 0.08f }, { params::kPunch, 0.2f }, { params::kSubDrive, 0.15f }
+        } },
+        { "Clicky C2", {
+            { params::kNote, 0.0f }, { params::kOctave, 2.0f }, { params::kStartPitch, 1400.0f },
+            { params::kPitchDecay, 18.0f }, { params::kTailLength, 140.0f }, { params::kClickLevel, 0.9f },
+            { params::kClickFreq, 6200.0f }, { params::kPunch, 0.85f }, { params::kSubDrive, 0.1f }
+        } },
+        { "Short Wire Snare (D1)", {
+            { params::kNote, 2.0f }, { params::kTailLength, 220.0f }, { params::kClickLevel, 0.4f },
+            { params::kSnareLevel, 0.92f }, { params::kSnareTone, 0.92f }, { params::kSnareDecay, 0.04f }
+        } },
+        { "Open Hat Aftertaste (A1)", {
+            { params::kNote, 9.0f }, { params::kTailLength, 80.0f }, { params::kPunch, 0.6f },
+            { params::kHatLevel, 0.9f }, { params::kHatTone, 0.82f }, { params::kHatDecay, 1.0f }
+        } },
+        { "Long Room Clap (E1)", {
+            { params::kNote, 4.0f }, { params::kTailLength, 90.0f }, { params::kClickLevel, 0.25f },
+            { params::kClapLevel, 0.88f }, { params::kClapSpread, 0.72f }, { params::kClapTone, 0.48f },
+            { params::kClapDecay, 1.0f }
+        } },
+        { "Closed Hat Chip (G1)", {
+            { params::kNote, 7.0f }, { params::kTailLength, 160.0f }, { params::kClickLevel, 0.5f },
+            { params::kHatLevel, 0.75f }, { params::kHatTone, 1.0f }, { params::kHatDecay, 0.0f }
+        } },
+        { "Driven F#2", {
+            { params::kNote, 6.0f }, { params::kOctave, 2.0f }, { params::kStartPitch, 980.0f },
+            { params::kPitchDecay, 26.0f }, { params::kTailLength, 200.0f }, { params::kSubDrive, 0.95f },
+            { params::kDrive, 0.72f }, { params::kPunch, 0.7f }, { params::kClickLevel, 0.55f }
+        } },
+        { "Low Passed Sub (C1)", {
+            { params::kNote, 0.0f }, { params::kStartPitch, 240.0f }, { params::kPitchDecay, 70.0f },
+            { params::kTailLength, 640.0f }, { params::kClickLevel, 0.12f }, { params::kPunch, 0.25f },
+            { params::kLowPass, 180.0f }, { params::kDrive, 0.1f }
+        } },
+        { "High Passed Tick (B1)", {
+            { params::kNote, 11.0f }, { params::kStartPitch, 760.0f }, { params::kPitchDecay, 16.0f },
+            { params::kTailLength, 110.0f }, { params::kClickLevel, 0.85f }, { params::kClickFreq, 7400.0f },
+            { params::kHighPass, 280.0f }, { params::kPunch, 0.4f }
+        } },
+        { "Half Beat Reverse (D1)", {
+            { params::kNote, 2.0f }, { params::kTailLength, 360.0f }, { params::kReverseMode, 3.0f },
+            { params::kReverseMix, 0.85f }, { params::kDrive, 0.2f }, { params::kPunch, 0.5f }
+        } },
+        { "Quarter Note Reverse (G#1)", {
+            { params::kNote, 8.0f }, { params::kTailLength, 240.0f }, { params::kReverseMode, 4.0f },
+            { params::kReverseMix, 1.0f }, { params::kClickLevel, 0.6f }, { params::kStartPitch, 640.0f }
+        } },
+        { "Long Dry Sine (F1)", {
+            { params::kNote, 5.0f }, { params::kStartPitch, 90.0f }, { params::kPitchDecay, 8.0f },
+            { params::kTailLength, 980.0f }, { params::kTailCurve, -0.35f }, { params::kClickLevel, 0.0f },
+            { params::kPunch, 0.0f }, { params::kSubDrive, 0.0f }, { params::kDrive, 0.0f }
+        } },
+        { "Full Layer Stack (A#1)", {
+            { params::kNote, 10.0f }, { params::kTailLength, 260.0f }, { params::kPunch, 0.55f },
+            { params::kSnareLevel, 0.7f }, { params::kSnareTone, 0.4f }, { params::kSnareDecay, 0.85f },
+            { params::kClapLevel, 0.62f }, { params::kClapSpread, 0.4f }, { params::kClapTone, 0.75f },
+            { params::kClapDecay, 0.8f },
+            { params::kHatLevel, 0.55f }, { params::kHatTone, 0.6f }, { params::kHatDecay, 0.7f }
         } }
     };
     return presets;
@@ -108,10 +172,12 @@ const std::vector<FactoryPreset>& fillBuildPresets() {
     static const std::vector<FactoryPreset> presets = [] {
         std::vector<FactoryPreset> list;
         const std::array<float, core::kNumFillPresets> defaultShorten{
-            0.55f, 0.68f, 0.82f, 0.50f, 0.76f, 0.70f, 0.58f, 0.72f, 0.45f, 0.80f, 0.78f, 0.88f
+            0.55f, 0.68f, 0.82f, 0.50f, 0.76f, 0.70f, 0.58f, 0.72f, 0.45f, 0.80f, 0.78f, 0.88f,
+            0.62f, 0.70f, 0.48f, 0.74f
         };
         const std::array<float, core::kNumFillPresets> defaultPitchRise{
-            0.0f, 4.0f, 7.0f, 0.0f, 6.0f, 12.0f, 2.0f, 5.0f, 0.0f, 8.0f, 5.0f, 9.0f
+            0.0f, 4.0f, 7.0f, 0.0f, 6.0f, 12.0f, 2.0f, 5.0f, 0.0f, 8.0f, 5.0f, 9.0f,
+            3.0f, 6.0f, 1.0f, 8.0f
         };
         std::ranges::for_each(std::views::iota(0, core::kNumFillPresets), [&](int idx) {
             list.push_back(FactoryPreset{

@@ -16,12 +16,12 @@ EDM kick drum VSTi with 12-note chromatic tuning, a Lock In WAV cache, host-sync
 
 ![openEDMKick native editor - Beat 4 Reverse Pickup Loop](assets/native-ui-reverse.png)
 
-*Captured from the native v1.4.0 editor. [Capture details and provenance](docs/SCREENSHOTS.md).*
+*Captured from the native v1.5.0 editor. [Capture details and provenance](docs/SCREENSHOTS.md).*
 
 ## Features
 
 - Regular Mode (`IS_SYNTH`): Fixed trigger plays the panel tuning for every note. Note trigger pitches from that tuning. See MIDI below.
-- Snare, clap, and hat layers mix into that hit. Levels default to off. Modifiers are snare tone and decay, clap spread and tone, and hat tone and decay. They follow velocity, semitone offset, Lock In, and the waveform preview. Tail Length still ends the voice. Details are in [docs/AUDIO.md](docs/AUDIO.md).
+- Snare, clap, and hat layers mix into that hit. Levels default to off. Each layer has its own decay. Snare decay is still 28–238 ms and hat decay is still 16–356 ms. Clap decay is new: the middle of the knob matches the previous clap, and spread still sets the flam. A long decay keeps ringing after a short Tail Length. Auto Mode Tail Shortener still cuts those layers on fast rolls, which is the Anti-Mud on 1/64 rolls behavior. Layers follow velocity, semitone offset, Lock In, and the waveform preview. Details are in [docs/AUDIO.md](docs/AUDIO.md).
 - Tuning runs C through B, octaves `0 Sub`, `1 Club`, and `2 Punch`, with fine tune from -50 to +50 cents. Pitch controls are `Start Hz`, `Pitch Decay`, and `Pitch Curve`. Body controls are `Tail Length`, `Tail Curve`, `Sub Drive`, and `Punch`. Click controls are `Click Level` and `Click Freq`. The gold trace is the pitch drop.
 - `LOCK IN (WAV)` stores the kick as an internal 32-bit float RIFF WAV and plays that buffer. The WAV is saved in the session. A host sample-rate change resamples it.
 - Reverse Sync modes are `Off`, `Beat End (Sync)`, `Beat 4 Auto`, `1/2 Beat`, and `1/4 Beat`. The swell's last sample is the one before the target: the next beat, half beat, quarter beat, or, for Beat 4 Auto, the end of the bar. Host PPQ, tempo, and meter pick that sample. A note that arrives late in the beat gets a short reverse. The plugin does not start the swell before the note. A stop, seek, or loop cuts a reverse that is already playing. The forward mix can keep ringing after the reverse ends.
@@ -32,7 +32,8 @@ EDM kick drum VSTi with 12-note chromatic tuning, a Lock In WAV cache, host-sync
 - High Pass and Low Pass are 12 dB/oct, with no resonance. They run after the hit, the snare, clap, and hat layers, and the other effects, and before the limiter. Minimum high pass and maximum low pass are off. Cutoff moves are smoothed. Lock In stores the hit before these filters. Playback and the waveform preview still apply the current cutoffs.
 - Auto Mode slots A, B, C, and D hold separate patterns. Switch them in the UI or on the `Auto Mode` automation lane, as in openEDMFilter.
 - Pattern length is 1, 2, 4, 8, 16, 32, or 64 bars.
-- Fill presets: `Four on the Floor + End Fill`, `Classic EDM Build (1/4 -> 1/32)`, `Festival 1/64 Drop Rush`, `Tech House Groove & Turnaround`, `Big Room Drop Countdown`, `Hardstyle Pitch-Up Build`, `Future Rave Syncopated Fill`, `Halftime to 1/32 Blaster`, `Beat 4 Reverse Pickup Loop`, `Accelerating Exponential Roll`, `Offbeat Stomp & 1/64 Finale`, and `Mainstage 64th Machine Gun`.
+- The preset menu has 32 kick programs. The first 19 keep their old names and indexes, from `Init Club Kick (F1)` through `Stacked Snare Clap Hat (F1)`.
+- Fill presets: `Four on the Floor + End Fill`, `Classic EDM Build (1/4 -> 1/32)`, `Festival 1/64 Drop Rush`, `Tech House Groove & Turnaround`, `Big Room Drop Countdown`, `Hardstyle Pitch-Up Build`, `Future Rave Syncopated Fill`, `Halftime to 1/32 Blaster`, `Beat 4 Reverse Pickup Loop`, `Accelerating Exponential Roll`, `Offbeat Stomp & 1/64 Finale`, `Mainstage 64th Machine Gun`, `Offbeat House Pump`, `Dotted Gallop Push`, `Downbeat And 1/32 Tail`, and `Call And Answer Reverse`. Indexes 0–11 are the original patterns.
 - The piano roll edits triggers and pitch from `ROOT` to `+12 st`, down to a 1/64 note.
 - Tail Shortener runs in Auto Mode only. It shortens tails on 1/16, 1/32, and 1/64 rolls. Regular Mode keeps the full tail. The roll labels this Anti-Mud on 1/64 rolls.
 - Kicking Mule Stage draws the Kick Mule in front of a subwoofer cone and spotlights that follow the output and the host beat.
@@ -65,7 +66,7 @@ Other CCs, including sustain, are ignored. High pass has no CC.
 
 ## Engine notes
 
-Sessions from v1.0.0 and v1.1.0 still load. Layer levels default to 0, so an old session stays a dry kick until those knobs move. Layers at 0 match the v1.1.0 oscillator. Unlocked projects differ from v1.0.0 because that oscillator changed. A Lock In WAV is restored as stored.
+Sessions from v1.0.0 through v1.4.0 still load. Layer levels default to 0, so an old session stays a dry kick until those knobs move. A session that has no `clap_decay` keeps the previous clap tail. Snare and hat decay values recall on the same ranges. Fill preset indexes 0–11 still select the original patterns. Layers at 0 match the v1.1.0 oscillator. Unlocked projects differ from v1.0.0 because that oscillator changed. A Lock In WAV is restored as stored.
 
 - The pitch drop is exponential and reaches the tuned note at the end of Pitch Decay. A positive Pitch Curve falls faster.
 - Tail Curve is exponential. Positive values decay faster.

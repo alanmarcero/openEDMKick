@@ -27,6 +27,7 @@ inline constexpr const char* kSnareDecay = "snare_decay";
 inline constexpr const char* kClapLevel = "clap_level";
 inline constexpr const char* kClapSpread = "clap_spread";
 inline constexpr const char* kClapTone = "clap_tone";
+inline constexpr const char* kClapDecay = "clap_decay";
 inline constexpr const char* kHatLevel = "hat_level";
 inline constexpr const char* kHatTone = "hat_tone";
 inline constexpr const char* kHatDecay = "hat_decay";

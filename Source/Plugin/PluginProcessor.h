@@ -86,6 +86,7 @@ private:
         std::atomic<float>* clapLevel;
         std::atomic<float>* clapSpread;
         std::atomic<float>* clapTone;
+        std::atomic<float>* clapDecay;
         std::atomic<float>* hatLevel;
         std::atomic<float>* hatTone;
         std::atomic<float>* hatDecay;

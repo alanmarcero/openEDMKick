@@ -43,6 +43,9 @@ const Formatter kFormatClapSpread = [](float amount, int) {
     }
     return juce::String(openedmkick::core::clapSpreadMs(amount), 0) + " ms";
 };
+const Formatter kFormatClapDecay = [](float amount, int) {
+    return juce::String(juce::roundToInt(openedmkick::core::clapTailTimeMs(amount, 0.45f))) + " ms";
+};
 const Formatter kFormatHatDecay = [](float amount, int) {
     const int ms = juce::roundToInt(openedmkick::core::hatDecayMs(amount));
     return ms < 40 ? juce::String("Closed ") + juce::String(ms) + " ms" : juce::String(ms) + " ms";
@@ -162,6 +165,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout() {
     addFloat(layout, kClapLevel, "Clap Level", { 0.0f, 1.0f }, 0.0f, kFormatPercent);
     addFloat(layout, kClapSpread, "Clap Spread", { 0.0f, 1.0f }, 0.45f, kFormatClapSpread);
     addFloat(layout, kClapTone, "Clap Tone", { 0.0f, 1.0f }, 0.6f, kFormatPercent);
+    addFloat(layout, kClapDecay, "Clap Decay", { 0.0f, 1.0f }, 0.35f, kFormatClapDecay);
     addFloat(layout, kHatLevel, "Hat Level", { 0.0f, 1.0f }, 0.0f, kFormatPercent);
     addFloat(layout, kHatTone, "Hat Tone", { 0.0f, 1.0f }, 0.7f, kFormatPercent);
     addFloat(layout, kHatDecay, "Hat Decay", { 0.0f, 1.0f }, 0.25f, kFormatHatDecay);
