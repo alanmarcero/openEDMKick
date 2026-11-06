@@ -10,10 +10,10 @@ namespace {
 namespace theme = openedmkick::theme;
 
 constexpr int kEditorWidth = 1100;
-constexpr int kEditorHeight = 880;
+constexpr int kEditorHeight = 972;
 constexpr int kMargin = 12;
 constexpr int kHeaderHeight = 44;
-constexpr int kTopRowHeight = 278;
+constexpr int kTopRowHeight = 370;
 constexpr int kAutoRowHeight = 324;
 
 } // namespace

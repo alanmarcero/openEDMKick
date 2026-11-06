@@ -20,6 +20,15 @@ inline constexpr const char* kSubDrive = "sub_drive";
 inline constexpr const char* kClickLevel = "click_level";
 inline constexpr const char* kClickFreq = "click_freq";
 inline constexpr const char* kPunch = "punch";
+inline constexpr const char* kSnareLevel = "snare_level";
+inline constexpr const char* kSnareTone = "snare_tone";
+inline constexpr const char* kSnareDecay = "snare_decay";
+inline constexpr const char* kClapLevel = "clap_level";
+inline constexpr const char* kClapSpread = "clap_spread";
+inline constexpr const char* kClapTone = "clap_tone";
+inline constexpr const char* kHatLevel = "hat_level";
+inline constexpr const char* kHatTone = "hat_tone";
+inline constexpr const char* kHatDecay = "hat_decay";
 inline constexpr const char* kLockIn = "lock_in";
 
 // Clock sync & transport parameters

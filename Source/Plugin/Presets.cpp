@@ -93,7 +93,13 @@ const std::vector<FactoryPreset>& factoryPresets() {
         makeMultiSlotBuildPreset("Arena 32-Bar Riser (32 Bar)", 9.0f, 420.0f, 5.0f, 4.0f, 0.78f, 12.0f, 0.85f, 0.35f),
         makeMultiSlotBuildPreset("Marathon 64-Bar Odyssey (64 Bar)", 0.0f, 410.0f, 6.0f, 9.0f, 0.80f, 12.0f, 0.90f, 0.35f),
         makeMultiSlotBuildPreset("Quick 2-Bar Turnaround Fill (2 Bar)", 4.0f, 340.0f, 1.0f, 0.0f, 0.68f, 3.0f, 0.35f, 0.22f),
-        makeMultiSlotBuildPreset("1-Bar Machine Gun Fill (1 Bar)", 2.0f, 360.0f, 0.0f, 11.0f, 0.85f, 5.0f, 0.55f, 0.30f)
+        makeMultiSlotBuildPreset("1-Bar Machine Gun Fill (1 Bar)", 2.0f, 360.0f, 0.0f, 11.0f, 0.85f, 5.0f, 0.55f, 0.30f),
+        { "Stacked Snare Clap Hat (F1)", {
+            { params::kNote, 5.0f }, { params::kTailLength, 420.0f }, { params::kPunch, 0.5f },
+            { params::kSnareLevel, 0.58f }, { params::kSnareTone, 0.64f }, { params::kSnareDecay, 0.42f },
+            { params::kClapLevel, 0.40f }, { params::kClapSpread, 0.52f }, { params::kClapTone, 0.68f },
+            { params::kHatLevel, 0.34f }, { params::kHatTone, 0.74f }, { params::kHatDecay, 0.22f }
+        } }
     };
     return presets;
 }

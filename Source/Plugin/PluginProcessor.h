@@ -79,6 +79,15 @@ private:
         std::atomic<float>* clickLevel;
         std::atomic<float>* clickFreq;
         std::atomic<float>* punch;
+        std::atomic<float>* snareLevel;
+        std::atomic<float>* snareTone;
+        std::atomic<float>* snareDecay;
+        std::atomic<float>* clapLevel;
+        std::atomic<float>* clapSpread;
+        std::atomic<float>* clapTone;
+        std::atomic<float>* hatLevel;
+        std::atomic<float>* hatTone;
+        std::atomic<float>* hatDecay;
         std::atomic<float>* lockIn;
         std::atomic<float>* clockSync;
         std::atomic<float>* tempoBpm;

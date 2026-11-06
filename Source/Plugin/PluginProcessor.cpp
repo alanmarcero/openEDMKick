@@ -30,6 +30,9 @@ OpenEdmKickProcessor::OpenEdmKickProcessor()
               raw(params::kStartPitch), raw(params::kPitchDecay), raw(params::kPitchCurve),
               raw(params::kTailLength), raw(params::kTailCurve), raw(params::kSubDrive),
               raw(params::kClickLevel), raw(params::kClickFreq), raw(params::kPunch),
+              raw(params::kSnareLevel), raw(params::kSnareTone), raw(params::kSnareDecay),
+              raw(params::kClapLevel), raw(params::kClapSpread), raw(params::kClapTone),
+              raw(params::kHatLevel), raw(params::kHatTone), raw(params::kHatDecay),
               raw(params::kLockIn), raw(params::kClockSync), raw(params::kTempoBpm),
               raw(params::kTimeSignature), raw(params::kAutoEnabled), raw(params::kAutoBypass),
               raw(params::kAutoSlot),
@@ -81,7 +84,16 @@ core::KickSynthSettings OpenEdmKickProcessor::currentSynthSettings() const noexc
         values_.subDrive->load(),
         values_.clickLevel->load(),
         values_.clickFreq->load(),
-        values_.punch->load()
+        values_.punch->load(),
+        values_.snareLevel->load(),
+        values_.snareTone->load(),
+        values_.snareDecay->load(),
+        values_.clapLevel->load(),
+        values_.clapSpread->load(),
+        values_.clapTone->load(),
+        values_.hatLevel->load(),
+        values_.hatTone->load(),
+        values_.hatDecay->load()
     };
 }
 

@@ -76,6 +76,132 @@ void appendTag(std::vector<uint8_t>& out, const char (&tag)[5]) {
     return unit * 2.0f - 1.0f;
 }
 
+[[nodiscard]] float onePoleLow(float input, float& state, float cutoffHz, double sampleRate) noexcept {
+    const float safeCutoff = std::isfinite(cutoffHz) ? cutoffHz : 1000.0f;
+    const float limited = std::clamp(safeCutoff, 30.0f, static_cast<float>(sampleRate * 0.45));
+    const float coefficient = static_cast<float>(1.0 - std::exp(-2.0 * std::numbers::pi * static_cast<double>(limited) / sampleRate));
+    state += coefficient * (input - state);
+    if (!std::isfinite(state) || std::abs(state) > 8.0f) {
+        state = 0.0f;
+    } else if (std::abs(state) < 1.0e-20f) {
+        state = 0.0f;
+    }
+    return state;
+}
+
+[[nodiscard]] float layerAttack(int sampleIndex, double sampleRate) noexcept {
+    const float samples = std::max(2.0f, static_cast<float>(sampleRate * 0.00015));
+    return std::min(1.0f, static_cast<float>(sampleIndex + 1) / samples);
+}
+
+[[nodiscard]] float renderSnareLayer(
+    const KickSynthSettings& settings,
+    double sampleRate,
+    int sampleIndex,
+    double timeMs,
+    float pitchMultiplier,
+    float releaseFade,
+    KickOscillatorState& osc) noexcept {
+    const float level = std::clamp(settings.snareLevel, 0.0f, 1.0f);
+    if (level <= 0.0008f) {
+        return 0.0f;
+    }
+    const float tone = std::clamp(settings.snareTone, 0.0f, 1.0f);
+    const float decayMs = snareDecayMs(settings.snareDecay);
+    const float bodyEnv = std::exp(-static_cast<float>(timeMs) / std::max(10.0f, decayMs * 0.78f));
+    const float wireEnv = std::exp(-static_cast<float>(timeMs) / std::max(8.0f, decayMs * 0.40f));
+    const float bodyHz = std::clamp(172.0f * pitchMultiplier * (0.9f + 0.22f * tone), 70.0f, 680.0f);
+    const float twoPi = 2.0f * std::numbers::pi_v<float>;
+    const float body = std::sin(static_cast<float>(osc.snarePhase) * twoPi);
+    osc.snarePhase += static_cast<double>(bodyHz) / sampleRate;
+    osc.snarePhase -= std::floor(osc.snarePhase);
+
+    const float noise = nextDeterministicNoise(osc.snareNoise);
+    const float lowCut = 220.0f + tone * 780.0f;
+    const float highCut = std::clamp(850.0f * std::exp2(tone * 2.45f), lowCut + 200.0f, 9000.0f);
+    const float brighter = onePoleLow(noise, osc.snareHigh, highCut, sampleRate);
+    const float darker = onePoleLow(brighter, osc.snareLow, lowCut, sampleRate);
+    const float wires = brighter - darker;
+    const float attack = layerAttack(sampleIndex, sampleRate);
+    const float shell = (1.0f - tone * 0.82f) * body * bodyEnv;
+    const float rattle = (0.28f + 0.85f * tone) * wires * wireEnv;
+    return sanitize((shell * 0.72f + rattle * 0.95f) * attack * releaseFade * level * 0.85f);
+}
+
+[[nodiscard]] float renderClapLayer(
+    const KickSynthSettings& settings,
+    double sampleRate,
+    int sampleIndex,
+    double timeMs,
+    float releaseFade,
+    KickOscillatorState& osc) noexcept {
+    const float level = std::clamp(settings.clapLevel, 0.0f, 1.0f);
+    if (level <= 0.0008f) {
+        return 0.0f;
+    }
+    const float spread = std::clamp(settings.clapSpread, 0.0f, 1.0f);
+    const float tone = std::clamp(settings.clapTone, 0.0f, 1.0f);
+    const float gapMs = clapSpreadMs(spread);
+    float burst = 0.0f;
+    std::ranges::for_each(std::views::iota(0, 4), [&](int hit) {
+        const float startMs = static_cast<float>(hit) * gapMs;
+        const float elapsed = static_cast<float>(timeMs) - startMs;
+        if (elapsed >= 0.0f && elapsed < 22.0f) {
+            const float hitGain = 1.0f - 0.12f * static_cast<float>(hit);
+            burst = std::max(burst, hitGain * std::exp(-elapsed / (2.6f + 0.22f * static_cast<float>(hit))));
+        }
+    });
+    const float tailStart = gapMs * 3.0f;
+    const float tail = timeMs > tailStart
+        ? 0.22f * std::exp(-(static_cast<float>(timeMs) - tailStart) / (16.0f + spread * 36.0f))
+        : 0.0f;
+    const float envelope = std::max(burst, tail) * layerAttack(sampleIndex, sampleRate);
+    const float noise = nextDeterministicNoise(osc.clapNoise);
+    const float highCut = 4200.0f + tone * 4200.0f;
+    const float lowCut = 700.0f + tone * 5200.0f;
+    const float brighter = onePoleLow(noise, osc.clapHigh, highCut, sampleRate);
+    const float darker = onePoleLow(brighter, osc.clapLow, std::min(lowCut, highCut * 0.72f), sampleRate);
+    const float crack = brighter - darker;
+    return sanitize(crack * envelope * releaseFade * level * 1.55f);
+}
+
+[[nodiscard]] float renderHatLayer(
+    const KickSynthSettings& settings,
+    double sampleRate,
+    int sampleIndex,
+    double timeMs,
+    float pitchMultiplier,
+    float releaseFade,
+    KickOscillatorState& osc) noexcept {
+    const float level = std::clamp(settings.hatLevel, 0.0f, 1.0f);
+    if (level <= 0.0008f) {
+        return 0.0f;
+    }
+    const float tone = std::clamp(settings.hatTone, 0.0f, 1.0f);
+    const float decayMs = hatDecayMs(settings.hatDecay);
+    constexpr std::array<float, 6> kRatios{ 1.0f, 1.47f, 1.86f, 2.33f, 2.97f, 3.71f };
+    constexpr std::array<float, 6> kAmps{ 0.42f, 0.78f, 1.0f, 0.66f, 0.52f, 0.34f };
+    const float baseHz = std::clamp((560.0f + tone * 980.0f) * pitchMultiplier, 80.0f, static_cast<float>(sampleRate * 0.18));
+    const float twoPi = 2.0f * std::numbers::pi_v<float>;
+    float metal = 0.0f;
+    std::ranges::for_each(std::views::iota(0, 6), [&](int partial) {
+        const float hz = std::min(baseHz * kRatios[static_cast<size_t>(partial)], static_cast<float>(sampleRate * 0.45));
+        metal += kAmps[static_cast<size_t>(partial)] * std::sin(static_cast<float>(osc.hatPhase[static_cast<size_t>(partial)]) * twoPi);
+        osc.hatPhase[static_cast<size_t>(partial)] += static_cast<double>(hz) / sampleRate;
+        osc.hatPhase[static_cast<size_t>(partial)] -= std::floor(osc.hatPhase[static_cast<size_t>(partial)]);
+    });
+    const float noise = nextDeterministicNoise(osc.hatNoise);
+    const float chiffCut = 1600.0f + tone * 7000.0f;
+    const float low = onePoleLow(noise, osc.hatLow, chiffCut, sampleRate);
+    const float chiff = noise - low;
+    const float metalEnv = std::exp(-static_cast<float>(timeMs) / std::max(8.0f, decayMs));
+    const float noiseEnv = std::exp(-static_cast<float>(timeMs) / std::max(6.0f, decayMs * 0.48f));
+    const float attack = layerAttack(sampleIndex, sampleRate);
+    const float metallic = metal * 0.16f * metalEnv * (0.95f - 0.35f * tone);
+    const float air = chiff * noiseEnv * (0.32f + 0.85f * tone);
+    return sanitize((metallic + air) * attack * releaseFade * level * 0.72f);
+}
+
 [[nodiscard]] int kickLengthSamples(float tailMs, double sampleRate) noexcept {
     const double safeRate = std::max(8000.0, sampleRate);
     const float clampedTail = std::clamp(tailMs, kMinTailMs, kMaxTailMs);
@@ -145,8 +271,12 @@ void appendTag(std::vector<uint8_t>& out, const char (&tag)[5]) {
     osc.clickPhase += static_cast<double>(clickChirpHz) / safeRate;
     osc.clickPhase -= std::floor(osc.clickPhase);
 
+    // Layers are skipped entirely at zero so a dry kick stays sample-identical.
+    const float layers = renderSnareLayer(settings, safeRate, sampleIndex, timeMs, pitchMultiplier, releaseFade, osc)
+        + renderClapLayer(settings, safeRate, sampleIndex, timeMs, releaseFade, osc)
+        + renderHatLayer(settings, safeRate, sampleIndex, timeMs, pitchMultiplier, releaseFade, osc);
     // Leave a little headroom so the pitch sweep is not flattened, then soft-clip.
-    const float mixed = sanitize((blendedBody * bodyGain + clickSignal * releaseFade) * 0.9f);
+    const float mixed = sanitize((blendedBody * bodyGain + clickSignal * releaseFade + sanitize(layers)) * 0.9f);
     const float soft = std::tanh(mixed) * 1.08f;
     const float dcCoeff = static_cast<float>(std::exp(-2.0 * std::numbers::pi * kDcBlockHz / safeRate));
     const float blocked = soft - osc.dcX + dcCoeff * osc.dcY;

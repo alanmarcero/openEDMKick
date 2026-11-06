@@ -46,7 +46,16 @@ constexpr std::array<const char*, 6> kPianoRollRowLabels = {
         && sameFloatBits(a.subDrive, b.subDrive)
         && sameFloatBits(a.clickLevel, b.clickLevel)
         && sameFloatBits(a.clickFreqHz, b.clickFreqHz)
-        && sameFloatBits(a.punch, b.punch);
+        && sameFloatBits(a.punch, b.punch)
+        && sameFloatBits(a.snareLevel, b.snareLevel)
+        && sameFloatBits(a.snareTone, b.snareTone)
+        && sameFloatBits(a.snareDecay, b.snareDecay)
+        && sameFloatBits(a.clapLevel, b.clapLevel)
+        && sameFloatBits(a.clapSpread, b.clapSpread)
+        && sameFloatBits(a.clapTone, b.clapTone)
+        && sameFloatBits(a.hatLevel, b.hatLevel)
+        && sameFloatBits(a.hatTone, b.hatTone)
+        && sameFloatBits(a.hatDecay, b.hatDecay);
 }
 
 bool isSharpNote(int noteIndex) noexcept {
@@ -195,6 +204,15 @@ KickSynthPanel::KickSynthPanel(OpenEdmKickProcessor& processor)
       subDrive_(processor.parameters, params::kSubDrive, "Sub Drv", theme::kAccentGold),
       clickLevel_(processor.parameters, params::kClickLevel, "Click Lvl", theme::kAccentGold),
       clickFreq_(processor.parameters, params::kClickFreq, "Click Hz", theme::kAccentGold),
+      snareLevel_(processor.parameters, params::kSnareLevel, "Level", theme::kAccentGold),
+      snareTone_(processor.parameters, params::kSnareTone, "Tone", theme::kAccentGold),
+      snareDecay_(processor.parameters, params::kSnareDecay, "Decay", theme::kAccentGold),
+      clapLevel_(processor.parameters, params::kClapLevel, "Level", theme::kAccentReverse),
+      clapSpread_(processor.parameters, params::kClapSpread, "Spread", theme::kAccentReverse),
+      clapTone_(processor.parameters, params::kClapTone, "Tone", theme::kAccentReverse),
+      hatLevel_(processor.parameters, params::kHatLevel, "Level", theme::kAccentMint),
+      hatTone_(processor.parameters, params::kHatTone, "Tone", theme::kAccentMint),
+      hatDecay_(processor.parameters, params::kHatDecay, "Decay", theme::kAccentMint),
       noteWatcher_(*processor.parameters.getParameter(params::kNote), [this](float noteValue) {
           updateNoteButtons(static_cast<int>( std::round(noteValue) ));
       }) {
@@ -225,8 +243,19 @@ KickSynthPanel::KickSynthPanel(OpenEdmKickProcessor& processor)
 
     std::ranges::for_each(std::initializer_list<juce::Component*>{
         &lockIn_, &waveformView_, &octave_, &fineTune_, &startPitch_, &pitchDecay_,
-        &pitchCurve_, &punch_, &tailLength_, &tailCurve_, &subDrive_, &clickLevel_, &clickFreq_
+        &pitchCurve_, &punch_, &tailLength_, &tailCurve_, &subDrive_, &clickLevel_, &clickFreq_,
+        &snareLevel_, &snareTone_, &snareDecay_, &clapLevel_, &clapSpread_, &clapTone_,
+        &hatLevel_, &hatTone_, &hatDecay_
     }, [this](juce::Component* c) { addAndMakeVisible(c); });
+    snareLevel_.setTooltip("Snare layer amount. Zero leaves the kick unchanged.");
+    snareTone_.setTooltip("Snare color. Low is a woody shell, high is bright wire buzz.");
+    snareDecay_.setTooltip("Snare ring. The kick tail still ends the layer.");
+    clapLevel_.setTooltip("Clap layer amount. A clustered noise flam, not the snare.");
+    clapSpread_.setTooltip("Clap flam width. Tight is one crack, wide is four staggered hits.");
+    clapTone_.setTooltip("Clap brightness. Low is a muffled hand, high is a sharp crack.");
+    hatLevel_.setTooltip("Hi-hat layer amount. Inharmonic metal plus a short chiff.");
+    hatTone_.setTooltip("Hat color. Low is chunky metal, high is a thin bright chiff.");
+    hatDecay_.setTooltip("Hat length. Short is a closed hat, long is an open ring.");
 
     noteWatcher_.sendInitialUpdate();
 }
@@ -247,6 +276,13 @@ void KickSynthPanel::updateNoteButtons(int activeNote) {
 void KickSynthPanel::paint(juce::Graphics& g) {
     drawPanel(g, getLocalBounds(), "Kick Synth & 12-Note Chromatic Tuner", theme::kAccentMint);
     drawCaption(g, noteBarArea_, "Chromatic Keyboard — click a key to tune and audition");
+    g.setFont(juce::FontOptions(10.0f, juce::Font::bold));
+    g.setColour(theme::kAccentGold);
+    g.drawText("SNARE", snareArea_.withHeight(12), juce::Justification::centredLeft);
+    g.setColour(theme::kAccentReverse);
+    g.drawText("CLAP", clapArea_.withHeight(12), juce::Justification::centredLeft);
+    g.setColour(theme::kAccentMint);
+    g.drawText("HAT", hatArea_.withHeight(12), juce::Justification::centredLeft);
 }
 
 void KickSynthPanel::resized() {
@@ -287,8 +323,16 @@ void KickSynthPanel::resized() {
     });
 
     bounds.removeFromTop(6);
-    waveformView_.setBounds(bounds.removeFromTop(64));
-    bounds.removeFromTop(6);
+    waveformView_.setBounds(bounds.removeFromTop(58));
+    bounds.removeFromTop(4);
+
+    auto layers = bounds.removeFromBottom(92);
+    bounds.removeFromBottom(4);
+    snareArea_ = layers.removeFromLeft((layers.getWidth() - 2 * kSectionGap) / 3);
+    layers.removeFromLeft(kSectionGap);
+    clapArea_ = layers.removeFromLeft(snareArea_.getWidth());
+    layers.removeFromLeft(kSectionGap);
+    hatArea_ = layers;
 
     pitchRowArea_ = bounds.removeFromLeft((bounds.getWidth() - kSectionGap) * 6 / 11);
     bounds.removeFromLeft(kSectionGap);
@@ -296,6 +340,9 @@ void KickSynthPanel::resized() {
 
     layoutRow(pitchRowArea_, { &octave_, &fineTune_, &startPitch_, &pitchDecay_, &pitchCurve_, &punch_ });
     layoutRow(bodyRowArea_, { &tailLength_, &tailCurve_, &subDrive_, &clickLevel_, &clickFreq_ });
+    layoutRow(snareArea_.withTrimmedTop(kCaptionHeight), { &snareLevel_, &snareTone_, &snareDecay_ });
+    layoutRow(clapArea_.withTrimmedTop(kCaptionHeight), { &clapLevel_, &clapSpread_, &clapTone_ });
+    layoutRow(hatArea_.withTrimmedTop(kCaptionHeight), { &hatLevel_, &hatTone_, &hatDecay_ });
 }
 
 MuleStagePanel::MuleStagePanel(OpenEdmKickProcessor& processor)

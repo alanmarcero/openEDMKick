@@ -16,11 +16,12 @@ A dedicated EDM kick drum synthesizer VSTi featuring 12-note chromatic sub tunin
 
 ![openEDMKick native editor - Beat 4 Reverse Pickup Loop](assets/native-ui-reverse.png)
 
-*Captured from the native v1.1.0 editor. [Capture details and provenance](docs/SCREENSHOTS.md).*
+*Captured from the native v1.2.0 editor. [Capture details and provenance](docs/SCREENSHOTS.md).*
 
 ## Features
 
 - **Dedicated EDM Kick Drum VSTi (`IS_SYNTH`)**. Built exclusively for crafting phase-accurate, club-ready kick drums. In Regular Mode, any incoming MIDI note triggers the kick drum at its tuned fundamental pitch.
+- **Optional Snare, Clap, and Hat layers**. Three extra timbres blend onto the same hit. Each has a level, defaulting to off, plus one or two modifiers: snare tone and decay, clap flam spread and tone, hat tone and open/closed decay. They follow velocity, semitone offset, Lock In, and the waveform preview. Tail Length still ends the voice. See [docs/AUDIO.md](docs/AUDIO.md).
 - **12-Note Chromatic Sub Tuning (`C` through `B`)**. Tune the kick fundamental directly to any of the 12 musical keys (`C`, `C#`, `D`, `D#`, `E`, `F`, `F#`, `G`, `G#`, `A`, `A#`, `B`) from a piano keyboard across three octave ranges (`0 Sub`, `1 Club`, `2 Punch`) with fine cent adjustment (`-50 .. +50 ct`), an exponential pitch drop (`Start Hz`, `Pitch Decay`, `Pitch Curve`), body/tail shaping (`Tail Length`, `Tail Curve`, `Sub Drive`, `Punch`), and a beater click (`Click Level`, `Click Freq`). The gold trace on the waveform is that pitch drop.
 - **One-Click "Lock In" Internal WAV Cache (`LOCK IN (WAV)`)**. Freezes the synthesized kick into an internal 32-bit IEEE float RIFF `.wav` buffer managed entirely by the plugin. While locked in, the plugin stops synthesizing oscillators/envelopes in real time and plays directly from the cached WAV, guaranteeing 100% identical phase and transient impact and persisting the locked WAV inside the DAW session state. If the host sample rate changes, that same WAV is resampled instead of being synthesized again.
 - **Host-Synced Kick Effects & Beat-4 Reverse Alignment**:
@@ -39,7 +40,7 @@ A dedicated EDM kick drum synthesizer VSTi featuring 12-note chromatic sub tunin
 
 ## Engine notes
 
-Parameter IDs, ranges, and saved sessions from v1.0.0 still load. The same knob positions now drive a different oscillator, so a project will not sound sample-identical to 1.0.0 unless it was Locked In (the frozen WAV is restored as-is).
+Parameter IDs, ranges, and saved sessions from v1.0.0 and v1.1.0 still load. New layer parameters are added with level 0, so an older session stays a dry kick until those knobs are raised. The v1.1 oscillator is unchanged when the layers are off. A project that was not Locked In will not sound sample-identical to v1.0.0. A frozen Lock In WAV is restored as-is.
 
 - The pitch drop is exponential and reaches the tuned note at the end of Pitch Decay. A positive Pitch Curve still falls faster than a negative one.
 - Tail Curve keeps that polarity and is exponential, so the body does not ramp down in a straight line.

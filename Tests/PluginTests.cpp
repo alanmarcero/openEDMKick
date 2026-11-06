@@ -180,7 +180,7 @@ TEST_CASE("Editor renders 12-note tuner, kicking mule stage, 1/64 piano roll, an
     std::unique_ptr<juce::AudioProcessorEditor> editor(processor.createEditor());
     REQUIRE(editor != nullptr);
     REQUIRE(editor->getWidth() == 1100);
-    REQUIRE(editor->getHeight() == 880);
+    REQUIRE(editor->getHeight() == 972);
 
     setParam(processor, "auto_slot", 2.0f);
     REQUIRE(processor.currentAutoSlot() == 2);
@@ -223,4 +223,42 @@ TEST_CASE("Editor renders 12-note tuner, kicking mule stage, 1/64 piano roll, an
         REQUIRE(stream.truncate().wasOk());
         REQUIRE(juce::PNGImageFormat().writeImageToStream(snapshot, stream));
     }
+    if (const char* captureLayers = std::getenv("OEK_CAPTURE_LAYERS")) {
+        processor.setCurrentProgram(processor.getNumPrograms() - 1);
+        setParam(processor, "auto_on", 1.0f);
+        setParam(processor, "lock_in", 0.0f);
+        juce::AudioBuffer<float> renderBuf(2, 64);
+        processor.processBlock(renderBuf, midi);
+        processor.displayPeak.store(0.72f);
+        processor.displayReversing.store(false);
+        const auto snapshot = editor->createComponentSnapshot(editor->getLocalBounds(), true, 1.0f);
+        juce::FileOutputStream stream{ juce::File(captureLayers) };
+        REQUIRE(stream.openedOk());
+        REQUIRE(stream.setPosition(0));
+        REQUIRE(stream.truncate().wasOk());
+        REQUIRE(juce::PNGImageFormat().writeImageToStream(snapshot, stream));
+    }
+}
+
+TEST_CASE("Timbre layer parameters default off and survive the session", "[plugin]") {
+    OpenEdmKickProcessor processor;
+    REQUIRE_THAT(processor.currentSynthSettings().snareLevel, WithinAbs(0.0f, 1.0e-6f));
+    REQUIRE_THAT(processor.currentSynthSettings().clapLevel, WithinAbs(0.0f, 1.0e-6f));
+    REQUIRE_THAT(processor.currentSynthSettings().hatLevel, WithinAbs(0.0f, 1.0e-6f));
+
+    setParam(processor, "snare_level", 0.4f);
+    setParam(processor, "clap_spread", 0.8f);
+    setParam(processor, "hat_decay", 0.66f);
+    juce::MemoryBlock saved;
+    processor.getStateInformation(saved);
+    OpenEdmKickProcessor restored;
+    restored.setStateInformation(saved.getData(), static_cast<int>(saved.getSize()));
+    REQUIRE_THAT(restored.currentSynthSettings().snareLevel, WithinAbs(0.4f, 0.002f));
+    REQUIRE_THAT(restored.currentSynthSettings().clapSpread, WithinAbs(0.8f, 0.002f));
+    REQUIRE_THAT(restored.currentSynthSettings().hatDecay, WithinAbs(0.66f, 0.002f));
+
+    restored.setCurrentProgram(0);
+    REQUIRE_THAT(restored.currentSynthSettings().snareLevel, WithinAbs(0.0f, 0.002f));
+    REQUIRE_THAT(restored.currentSynthSettings().clapLevel, WithinAbs(0.0f, 0.002f));
+    REQUIRE_THAT(restored.currentSynthSettings().hatLevel, WithinAbs(0.0f, 0.002f));
 }

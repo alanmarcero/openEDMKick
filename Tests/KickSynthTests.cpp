@@ -119,6 +119,45 @@ void writeWav(const std::string& path, const std::vector<float>& samples, uint32
     out.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
 }
 
+[[nodiscard]] double windowEnergy(const std::vector<float>& samples, int start, int end) {
+    const int i0 = std::clamp(start, 0, static_cast<int>(samples.size()));
+    const int i1 = std::clamp(end, i0, static_cast<int>(samples.size()));
+    return std::accumulate(samples.begin() + i0, samples.begin() + i1, 0.0, [](double acc, float sample) {
+        return acc + std::abs(static_cast<double>(sample));
+    });
+}
+
+[[nodiscard]] double residualEnergy(const std::vector<float>& wet, const std::vector<float>& dry, int start, int end) {
+    const int count = static_cast<int>(std::min(wet.size(), dry.size()));
+    const int i0 = std::clamp(start, 0, count);
+    const int i1 = std::clamp(end, i0, count);
+    double energy = 0.0;
+    std::ranges::for_each(std::views::iota(i0, i1), [&](int i) {
+        energy += std::abs(static_cast<double>(wet[static_cast<size_t>(i)] - dry[static_cast<size_t>(i)]));
+    });
+    return energy;
+}
+
+[[nodiscard]] double differenceEnergy(const std::vector<float>& samples, int start, int end) {
+    const int i0 = std::clamp(start, 1, static_cast<int>(samples.size()));
+    const int i1 = std::clamp(end, i0, static_cast<int>(samples.size()));
+    double energy = 0.0;
+    std::ranges::for_each(std::views::iota(i0, i1), [&](int i) {
+        const double delta = static_cast<double>(samples[static_cast<size_t>(i)] - samples[static_cast<size_t>(i - 1)]);
+        energy += delta * delta;
+    });
+    return energy;
+}
+
+void peakMatch(std::vector<float>& samples, float targetPeak) {
+    float peak = 0.0f;
+    std::ranges::for_each(samples, [&](float sample) { peak = std::max(peak, std::abs(sample)); });
+    if (peak > 1.0e-6f) {
+        const float gain = targetPeak / peak;
+        std::ranges::for_each(samples, [&](float& sample) { sample *= gain; });
+    }
+}
+
 } // namespace
 
 TEST_CASE("Pitch sweep starts at the click and lands on the fundamental", "[synth]") {
@@ -301,5 +340,161 @@ TEST_CASE("Rendered kick examples and objective metrics", "[synth][metrics]") {
         punch.subDrive = 0.7f;
         punch.tailLengthMs = 260.0f;
         writeWav(root + "/punch-click.wav", core::renderKickWaveform(punch, kRate, 0.0f), 48000u);
+    }
+}
+
+TEST_CASE("Timbre layers stay silent at zero and remain distinct when blended", "[synth][layers]") {
+    core::KickSynthSettings dry{};
+    dry.tailLengthMs = 420.0f;
+    core::KickSynthSettings modifiersOnly = dry;
+    modifiersOnly.snareTone = 1.0f;
+    modifiersOnly.snareDecay = 1.0f;
+    modifiersOnly.clapSpread = 1.0f;
+    modifiersOnly.clapTone = 0.0f;
+    modifiersOnly.hatTone = 0.0f;
+    modifiersOnly.hatDecay = 1.0f;
+    const auto dryHit = core::renderKickWaveform(dry, 48000.0, 0.0f);
+    const auto stillDry = core::renderKickWaveform(modifiersOnly, 48000.0, 0.0f);
+    REQUIRE(dryHit.size() == stillDry.size());
+    std::ranges::for_each(std::views::iota(size_t{ 0 }, dryHit.size()), [&](size_t i) {
+        REQUIRE_THAT(stillDry[i], WithinAbs(dryHit[i], 1.0e-6f));
+    });
+
+    auto withLayer = dry;
+    withLayer.snareLevel = 0.85f;
+    withLayer.snareTone = 0.7f;
+    withLayer.snareDecay = 0.55f;
+    const auto snareHit = core::renderKickWaveform(withLayer, 48000.0, 0.0f);
+    REQUIRE(residualEnergy(snareHit, dryHit, 0, 4000) > 40.0);
+
+    core::KickSynthSettings shortSnare = withLayer;
+    shortSnare.snareDecay = 0.05f;
+    core::KickSynthSettings longSnare = withLayer;
+    longSnare.snareDecay = 0.95f;
+    const auto shortHit = core::renderKickWaveform(shortSnare, 48000.0, 0.0f);
+    const auto longHit = core::renderKickWaveform(longSnare, 48000.0, 0.0f);
+    const int lateStart = static_cast<int>(0.09 * 48000.0);
+    const int lateEnd = static_cast<int>(0.16 * 48000.0);
+    REQUIRE(residualEnergy(longHit, dryHit, lateStart, lateEnd)
+        > residualEnergy(shortHit, dryHit, lateStart, lateEnd) * 1.4);
+
+    core::KickSynthSettings tight = dry;
+    tight.clapLevel = 0.9f;
+    tight.clapSpread = 0.0f;
+    tight.clapTone = 0.7f;
+    core::KickSynthSettings wide = tight;
+    wide.clapSpread = 1.0f;
+    const auto tightHit = core::renderKickWaveform(tight, 48000.0, 0.0f);
+    const auto wideHit = core::renderKickWaveform(wide, 48000.0, 0.0f);
+    const int flamStart = static_cast<int>(0.044 * 48000.0);
+    const int flamEnd = static_cast<int>(0.058 * 48000.0);
+    REQUIRE(residualEnergy(wideHit, dryHit, flamStart, flamEnd)
+        > residualEnergy(tightHit, dryHit, flamStart, flamEnd) * 1.3);
+    REQUIRE(residualEnergy(tightHit, dryHit, 0, 1500) > 20.0);
+
+    core::KickSynthSettings hat = dry;
+    hat.hatLevel = 0.85f;
+    hat.hatTone = 0.85f;
+    hat.hatDecay = 0.35f;
+    const auto hatHit = core::renderKickWaveform(hat, 48000.0, 0.0f);
+    const auto hatUp = core::renderKickWaveform(hat, 48000.0, 12.0f);
+    const auto dryUp = core::renderKickWaveform(dry, 48000.0, 12.0f);
+    REQUIRE(differenceEnergy(hatHit, 1, 1200) > differenceEnergy(snareHit, 1, 1200) * 1.15);
+    REQUIRE(residualEnergy(hatUp, dryUp, 0, 1500) > residualEnergy(hatHit, dryHit, 0, 1500) * 0.4);
+    const int hatWindow = static_cast<int>(0.012 * 48000.0);
+    REQUIRE(differenceEnergy(hatUp, 1, hatWindow) > differenceEnergy(hatHit, 1, hatWindow));
+
+    const auto again = core::renderKickWaveform(withLayer, 44100.0, 3.0f);
+    const auto same = core::renderKickWaveform(withLayer, 44100.0, 3.0f);
+    REQUIRE(again == same);
+
+    core::KickSynthSettings extreme = dry;
+    extreme.snareLevel = 1.0f;
+    extreme.snareTone = 1.0f;
+    extreme.snareDecay = 1.0f;
+    extreme.clapLevel = 1.0f;
+    extreme.clapSpread = 1.0f;
+    extreme.clapTone = 1.0f;
+    extreme.hatLevel = 1.0f;
+    extreme.hatTone = 1.0f;
+    extreme.hatDecay = 1.0f;
+    extreme.tailLengthMs = 80.0f;
+    std::ranges::for_each(std::array{ 8000.0, 44100.0, 96000.0, 192000.0 }, [&](double rate) {
+        const auto buffer = core::renderKickWaveform(extreme, rate, -12.0f);
+        std::ranges::for_each(buffer, [](float sample) {
+            REQUIRE(std::isfinite(sample));
+            REQUIRE(sample <= 1.0f);
+            REQUIRE(sample >= -1.0f);
+        });
+    });
+
+    core::KickWavCache cache;
+    cache.lockIn(withLayer, 48000.0);
+    core::KickVoice voice;
+    voice.triggerForward(withLayer, cache, 48000.0, 1.0f, 0.0f, -1.0f);
+    REQUIRE_THAT(voice.nextSample(dry, cache, 48000.0), WithinAbs(cache.samples()[0], 1.0e-5f));
+    REQUIRE(std::abs(cache.samples()[200] - dryHit[200]) > 0.01f);
+}
+
+TEST_CASE("Layer audition examples are deterministic renders", "[synth][layers][metrics]") {
+    constexpr double kRate = 48000.0;
+    core::KickSynthSettings dry{};
+    dry.tailLengthMs = 420.0f;
+    core::KickSynthSettings snare = dry;
+    snare.snareLevel = 0.8f;
+    snare.snareTone = 0.7f;
+    snare.snareDecay = 0.45f;
+    core::KickSynthSettings clap = dry;
+    clap.clapLevel = 0.75f;
+    clap.clapSpread = 0.6f;
+    clap.clapTone = 0.65f;
+    core::KickSynthSettings hat = dry;
+    hat.hatLevel = 0.7f;
+    hat.hatTone = 0.8f;
+    hat.hatDecay = 0.28f;
+    core::KickSynthSettings stacked = dry;
+    stacked.snareLevel = 0.55f;
+    stacked.snareTone = 0.62f;
+    stacked.snareDecay = 0.4f;
+    stacked.clapLevel = 0.42f;
+    stacked.clapSpread = 0.55f;
+    stacked.clapTone = 0.7f;
+    stacked.hatLevel = 0.38f;
+    stacked.hatTone = 0.72f;
+    stacked.hatDecay = 0.22f;
+
+    auto dryHit = core::renderKickWaveform(dry, kRate, 0.0f);
+    auto snareHit = core::renderKickWaveform(snare, kRate, 0.0f);
+    auto clapHit = core::renderKickWaveform(clap, kRate, 0.0f);
+    auto hatHit = core::renderKickWaveform(hat, kRate, 0.0f);
+    auto stackedHit = core::renderKickWaveform(stacked, kRate, 0.0f);
+    WARN("layer_rms dry=" << windowEnergy(dryHit, 0, static_cast<int>(dryHit.size()))
+         << " snare=" << residualEnergy(snareHit, dryHit, 0, static_cast<int>(dryHit.size()))
+         << " clap=" << residualEnergy(clapHit, dryHit, 0, static_cast<int>(dryHit.size()))
+         << " hat=" << residualEnergy(hatHit, dryHit, 0, static_cast<int>(dryHit.size()))
+         << " stacked=" << residualEnergy(stackedHit, dryHit, 0, static_cast<int>(dryHit.size())));
+
+    if (const char* directory = std::getenv("OEK_RENDER_DIR")) {
+        constexpr float kMatchPeak = 0.89f;
+        peakMatch(dryHit, kMatchPeak);
+        peakMatch(snareHit, kMatchPeak);
+        peakMatch(clapHit, kMatchPeak);
+        peakMatch(hatHit, kMatchPeak);
+        peakMatch(stackedHit, kMatchPeak);
+        const std::string root(directory);
+        writeWav(root + "/dry-kick.wav", dryHit, 48000u);
+        writeWav(root + "/kick-plus-snare.wav", snareHit, 48000u);
+        writeWav(root + "/kick-plus-clap.wav", clapHit, 48000u);
+        writeWav(root + "/kick-plus-hat.wav", hatHit, 48000u);
+        writeWav(root + "/kick-plus-layers.wav", stackedHit, 48000u);
+
+        const int gap = static_cast<int>(0.08 * kRate);
+        std::vector<float> comparison;
+        const std::array<const std::vector<float>*, 5> order{ &dryHit, &snareHit, &clapHit, &hatHit, &stackedHit };
+        std::ranges::for_each(order, [&](const std::vector<float>* hit) {
+            comparison.insert(comparison.end(), hit->begin(), hit->end());
+            comparison.insert(comparison.end(), static_cast<size_t>(gap), 0.0f);
+        });
+        writeWav(root + "/layers-comparison.wav", comparison, 48000u);
     }
 }

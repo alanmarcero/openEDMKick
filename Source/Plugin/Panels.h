@@ -47,9 +47,21 @@ private:
     Knob subDrive_;
     Knob clickLevel_;
     Knob clickFreq_;
+    Knob snareLevel_;
+    Knob snareTone_;
+    Knob snareDecay_;
+    Knob clapLevel_;
+    Knob clapSpread_;
+    Knob clapTone_;
+    Knob hatLevel_;
+    Knob hatTone_;
+    Knob hatDecay_;
     juce::Rectangle<int> noteBarArea_;
     juce::Rectangle<int> pitchRowArea_;
     juce::Rectangle<int> bodyRowArea_;
+    juce::Rectangle<int> snareArea_;
+    juce::Rectangle<int> clapArea_;
+    juce::Rectangle<int> hatArea_;
     juce::ParameterAttachment noteWatcher_;
 };
 

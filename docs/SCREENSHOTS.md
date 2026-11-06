@@ -2,7 +2,11 @@
 
 ![Native plugin editor](../assets/native-ui.png)
 
-`assets/native-ui.png` shows the v1.1.0 native JUCE editor at 1100 × 880, captured directly from the release build. It displays **Festival 1/64 Drop Rush** in **Auto Mode A** with the phrase forced to **1 Bar** so the 1/64 steps stay readable, **LOCK IN (WAV)** active, the chromatic keyboard on **F1**, the gold pitch-drop trace, the output meter, and the Kicking Mule stage.
+`assets/native-ui.png` shows the v1.2.0 native JUCE editor at 1100 × 972, captured directly from the release build. It displays **Festival 1/64 Drop Rush** in **Auto Mode A** with the phrase forced to **1 Bar** so the 1/64 steps stay readable, **LOCK IN (WAV)** active, the chromatic keyboard on **F1**, the gold pitch-drop trace, the snare/clap/hat layer row at zero, the output meter, and the Kicking Mule stage.
+
+![Layered kick editor](../assets/native-ui-layers.png)
+
+`assets/native-ui-layers.png` is the **Stacked Snare Clap Hat (F1)** preset, with each layer's level and modifiers visible.
 
 ![Beat 4 reverse editor](../assets/native-ui-reverse.png)
 

@@ -1,4 +1,5 @@
 #include "Parameters.h"
+#include "KickSynth.h"
 #include <algorithm>
 #include <ranges>
 
@@ -29,6 +30,22 @@ const Formatter kFormatCents = [](float cents, int) {
 };
 const Formatter kFormatSemitones = [](float st, int) {
     return "+" + juce::String(st, 1) + " st";
+};
+const Formatter kFormatSnareDecay = [](float amount, int) {
+    return juce::String(juce::roundToInt(openedmkick::core::snareDecayMs(amount))) + " ms";
+};
+const Formatter kFormatClapSpread = [](float amount, int) {
+    if (amount <= 0.04f) {
+        return juce::String("Tight");
+    }
+    if (amount >= 0.96f) {
+        return juce::String("Wide");
+    }
+    return juce::String(openedmkick::core::clapSpreadMs(amount), 0) + " ms";
+};
+const Formatter kFormatHatDecay = [](float amount, int) {
+    const int ms = juce::roundToInt(openedmkick::core::hatDecayMs(amount));
+    return ms < 40 ? juce::String("Closed ") + juce::String(ms) + " ms" : juce::String(ms) + " ms";
 };
 
 juce::NormalisableRange<float> skewedRange(float min, float max, float centre) {
@@ -132,6 +149,15 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout() {
     addFloat(layout, kClickLevel, "Click Level", { 0.0f, 1.0f }, 0.35f, kFormatPercent);
     addFloat(layout, kClickFreq, "Click Freq", skewedRange(500.0f, 10000.0f, 2500.0f), 2800.0f, kFormatHz);
     addFloat(layout, kPunch, "Punch", { 0.0f, 1.0f }, 0.45f, kFormatPercent);
+    addFloat(layout, kSnareLevel, "Snare Level", { 0.0f, 1.0f }, 0.0f, kFormatPercent);
+    addFloat(layout, kSnareTone, "Snare Tone", { 0.0f, 1.0f }, 0.55f, kFormatPercent);
+    addFloat(layout, kSnareDecay, "Snare Decay", { 0.0f, 1.0f }, 0.4f, kFormatSnareDecay);
+    addFloat(layout, kClapLevel, "Clap Level", { 0.0f, 1.0f }, 0.0f, kFormatPercent);
+    addFloat(layout, kClapSpread, "Clap Spread", { 0.0f, 1.0f }, 0.45f, kFormatClapSpread);
+    addFloat(layout, kClapTone, "Clap Tone", { 0.0f, 1.0f }, 0.6f, kFormatPercent);
+    addFloat(layout, kHatLevel, "Hat Level", { 0.0f, 1.0f }, 0.0f, kFormatPercent);
+    addFloat(layout, kHatTone, "Hat Tone", { 0.0f, 1.0f }, 0.7f, kFormatPercent);
+    addFloat(layout, kHatDecay, "Hat Decay", { 0.0f, 1.0f }, 0.25f, kFormatHatDecay);
     addBool(layout, kLockIn, "Lock In (Cached WAV)", false);
 
     // Transport & Clock Sync

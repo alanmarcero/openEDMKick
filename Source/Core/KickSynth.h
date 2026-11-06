@@ -26,9 +26,35 @@ struct KickSynthSettings {
     float clickLevel = 0.35f;  // 0..1
     float clickFreqHz = 2800.0f;
     float punch = 0.45f;       // 0..1
+    // Optional timbre layers. Levels default to 0 so existing kicks stay unchanged.
+    float snareLevel = 0.0f;   // 0..1
+    float snareTone = 0.55f;   // 0 body .. 1 wires
+    float snareDecay = 0.4f;   // 0 short .. 1 long
+    float clapLevel = 0.0f;    // 0..1
+    float clapSpread = 0.45f;  // 0 tight .. 1 wide flam
+    float clapTone = 0.6f;     // 0 dark .. 1 bright
+    float hatLevel = 0.0f;     // 0..1
+    float hatTone = 0.7f;      // 0 chunky .. 1 thin
+    float hatDecay = 0.25f;    // 0 closed .. 1 open
 
     bool operator==(const KickSynthSettings&) const noexcept = default;
 };
+
+// Layer time mappings shared by the synth and the parameter readouts.
+[[nodiscard]] inline float snareDecayMs(float amount) noexcept {
+    const float clamped = amount < 0.0f ? 0.0f : (amount > 1.0f ? 1.0f : amount);
+    return 28.0f + clamped * 210.0f;
+}
+
+[[nodiscard]] inline float clapSpreadMs(float amount) noexcept {
+    const float clamped = amount < 0.0f ? 0.0f : (amount > 1.0f ? 1.0f : amount);
+    return 4.0f + clamped * 11.0f;
+}
+
+[[nodiscard]] inline float hatDecayMs(float amount) noexcept {
+    const float clamped = amount < 0.0f ? 0.0f : (amount > 1.0f ? 1.0f : amount);
+    return 16.0f + clamped * 340.0f;
+}
 
 // Returns the tuned fundamental frequency in Hz for any of the 12 chromatic notes.
 [[nodiscard]] float fundamentalHzForNote(int noteIndex, int octave = 1, float fineCents = 0.0f) noexcept;
@@ -48,6 +74,16 @@ struct KickOscillatorState {
     float dcX = 0.0f;
     float dcY = 0.0f;
     uint32_t noise = 0x6D2B79F5u;
+    double snarePhase = 0.0;
+    float snareLow = 0.0f;
+    float snareHigh = 0.0f;
+    uint32_t snareNoise = 0x51A4E001u;
+    float clapLow = 0.0f;
+    float clapHigh = 0.0f;
+    uint32_t clapNoise = 0xC1A90001u;
+    std::array<double, 6> hatPhase{};
+    float hatLow = 0.0f;
+    uint32_t hatNoise = 0x8A770001u;
 };
 
 // Synthesizes a complete single-shot kick waveform into a float buffer.
