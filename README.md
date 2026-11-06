@@ -32,7 +32,7 @@ EDM kick drum VSTi with 12-note chromatic tuning, a Lock In WAV cache, host-sync
 - High Pass and Low Pass are 12 dB/oct, with no resonance. They run after the hit, the snare, clap, and hat layers, and the other effects, and before the limiter. Minimum high pass and maximum low pass are off. Cutoff moves are smoothed. Lock In stores the hit before these filters. Playback and the waveform preview still apply the current cutoffs.
 - Auto Mode slots A, B, C, and D hold separate patterns. Switch them in the UI or on the `Auto Mode` automation lane, as in openEDMFilter.
 - Pattern length is 1, 2, 4, 8, 16, 32, or 64 bars.
-- The preset menu has 32 kick programs. The first 19 keep their old names and indexes, from `Init Club Kick (F1)` through `Stacked Snare Clap Hat (F1)`.
+- The preset menu has 56 kick programs. The first 32 keep their old names and indexes, from `Init Club Kick (F1)` through `Full Layer Stack (A#1)`.
 - Fill presets: `Four on the Floor + End Fill`, `Classic EDM Build (1/4 -> 1/32)`, `Festival 1/64 Drop Rush`, `Tech House Groove & Turnaround`, `Big Room Drop Countdown`, `Hardstyle Pitch-Up Build`, `Future Rave Syncopated Fill`, `Halftime to 1/32 Blaster`, `Beat 4 Reverse Pickup Loop`, `Accelerating Exponential Roll`, `Offbeat Stomp & 1/64 Finale`, `Mainstage 64th Machine Gun`, `Offbeat House Pump`, `Dotted Gallop Push`, `Downbeat And 1/32 Tail`, and `Call And Answer Reverse`. Indexes 0–11 are the original patterns.
 - The piano roll edits triggers and pitch from `ROOT` to `+12 st`, down to a 1/64 note.
 - Tail Shortener runs in Auto Mode only. It shortens tails on 1/16, 1/32, and 1/64 rolls. Regular Mode keeps the full tail. The roll labels this Anti-Mud on 1/64 rolls.
