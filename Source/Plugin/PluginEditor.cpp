@@ -41,8 +41,32 @@ OpenEdmKickEditor::OpenEdmKickEditor(OpenEdmKickProcessor& processorToEdit)
         processor_.setCurrentProgram(presetBox_.getSelectedId() - 1);
     };
 
+    prevPresetBtn_.setComponentID("prevPreset");
+    prevPresetBtn_.setTooltip("Previous preset");
+    prevPresetBtn_.setColour(juce::TextButton::buttonOnColourId, theme::kAccentMint);
+    prevPresetBtn_.onClick = [this] {
+        const int num = processor_.getNumPrograms();
+        if (num <= 0) return;
+        const int cur = processor_.getCurrentProgram();
+        const int nextProg = (cur <= 0 ? num : cur) - 1;
+        processor_.setCurrentProgram(nextProg);
+        syncPresetBox();
+    };
+
+    nextPresetBtn_.setComponentID("nextPreset");
+    nextPresetBtn_.setTooltip("Next preset");
+    nextPresetBtn_.setColour(juce::TextButton::buttonOnColourId, theme::kAccentMint);
+    nextPresetBtn_.onClick = [this] {
+        const int num = processor_.getNumPrograms();
+        if (num <= 0) return;
+        const int cur = processor_.getCurrentProgram();
+        const int nextProg = (cur + 1) % num;
+        processor_.setCurrentProgram(nextProg);
+        syncPresetBox();
+    };
+
     std::ranges::for_each(std::initializer_list<juce::Component*>{
-        &presetBox_, &masterBypass_, &synthPanel_, &muleStage_, &autoPanel_, &effectsPanel_
+        &prevPresetBtn_, &presetBox_, &nextPresetBtn_, &masterBypass_, &synthPanel_, &muleStage_, &autoPanel_, &effectsPanel_
     }, [this](juce::Component* c) { addAndMakeVisible(c); });
 
     presetBox_.setTooltip("Factory kicks. Auto Mode, Lock In, and the effect chain are stored with each preset.");
@@ -103,7 +127,11 @@ void OpenEdmKickEditor::paint(juce::Graphics& g) {
 void OpenEdmKickEditor::resized() {
     auto bounds = getLocalBounds().reduced(kMargin);
     auto header = bounds.removeFromTop(kHeaderHeight);
-    presetBox_.setBounds(header.removeFromRight(260).withSizeKeepingCentre(260, 28));
+    nextPresetBtn_.setBounds(header.removeFromRight(26).withSizeKeepingCentre(26, 28));
+    header.removeFromRight(4);
+    presetBox_.setBounds(header.removeFromRight(200).withSizeKeepingCentre(200, 28));
+    header.removeFromRight(4);
+    prevPresetBtn_.setBounds(header.removeFromRight(26).withSizeKeepingCentre(26, 28));
     header.removeFromRight(8);
     masterBypass_.setBounds(header.removeFromRight(78));
 

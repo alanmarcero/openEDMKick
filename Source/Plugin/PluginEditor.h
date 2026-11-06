@@ -24,6 +24,8 @@ private:
     openedmkick::ui::EdmLookAndFeel lookAndFeel_;
     juce::Image faceplate_;
     juce::ComboBox presetBox_;
+    juce::TextButton prevPresetBtn_{"<"};
+    juce::TextButton nextPresetBtn_{">"};
     openedmkick::ui::Toggle masterBypass_;
     openedmkick::ui::KickSynthPanel synthPanel_;
     openedmkick::ui::MuleStagePanel muleStage_;
