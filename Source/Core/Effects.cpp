@@ -234,6 +234,87 @@ float SyncFilterPump::process(
     return std::isfinite(mixed) ? mixed : 0.0f;
 }
 
+namespace {
+
+[[nodiscard]] float onePoleGain(float cutoffHz, double sampleRate) noexcept {
+    const double nyquist = std::max(1000.0, sampleRate) * 0.45;
+    const double cutoff = std::clamp(static_cast<double>(cutoffHz), 5.0, nyquist);
+    return static_cast<float>(1.0 - std::exp(-2.0 * std::numbers::pi * cutoff / std::max(1000.0, sampleRate)));
+}
+
+[[nodiscard]] float onePoleLow(float input, float& state, float gain) noexcept {
+    state += gain * (input - state);
+    if (!std::isfinite(state) || std::abs(state) > 8.0f) {
+        state = 0.0f;
+    }
+    return state;
+}
+
+[[nodiscard]] float mixAmount(float cutoffHz, float bypassHz, bool highPass) noexcept {
+    if (!std::isfinite(cutoffHz)) {
+        return 0.0f;
+    }
+    if (highPass) {
+        if (cutoffHz <= bypassHz) {
+            return 0.0f;
+        }
+        if (cutoffHz >= bypassHz + 12.0f) {
+            return 1.0f;
+        }
+        return (cutoffHz - bypassHz) / 12.0f;
+    }
+    if (cutoffHz >= bypassHz) {
+        return 0.0f;
+    }
+    if (cutoffHz <= bypassHz - 200.0f) {
+        return 1.0f;
+    }
+    return (bypassHz - cutoffHz) / 200.0f;
+}
+
+} // namespace
+
+void ToneFilter::reset() noexcept {
+    hpState1_ = 0.0f;
+    hpState2_ = 0.0f;
+    lpState1_ = 0.0f;
+    lpState2_ = 0.0f;
+}
+
+float ToneFilter::highPass(float input, float cutoffHz, double sampleRate) noexcept {
+    const float gain = onePoleGain(cutoffHz, sampleRate);
+    const float first = input - onePoleLow(input, hpState1_, gain);
+    return first - onePoleLow(first, hpState2_, gain);
+}
+
+float ToneFilter::lowPass(float input, float cutoffHz, double sampleRate) noexcept {
+    const float gain = onePoleGain(cutoffHz, sampleRate);
+    return onePoleLow(onePoleLow(input, lpState1_, gain), lpState2_, gain);
+}
+
+float ToneFilter::process(float input, float highPassHz, float lowPassHz, double sampleRate) noexcept {
+    const float dry = std::isfinite(input) ? input : 0.0f;
+    const float safeRate = std::max(8000.0, sampleRate);
+    float shaped = dry;
+    const float highAmount = mixAmount(highPassHz, kHighPassBypassHz, true);
+    if (highAmount <= 0.0f) {
+        hpState1_ = 0.0f;
+        hpState2_ = 0.0f;
+    } else {
+        const float filtered = highPass(dry, highPassHz, safeRate);
+        shaped = highAmount >= 1.0f ? filtered : dry + highAmount * (filtered - dry);
+    }
+    const float lowAmount = mixAmount(lowPassHz, kLowPassBypassHz, false);
+    if (lowAmount <= 0.0f) {
+        lpState1_ = shaped;
+        lpState2_ = shaped;
+        return std::isfinite(shaped) ? shaped : 0.0f;
+    }
+    const float filtered = lowPass(shaped, lowPassHz, safeRate);
+    const float mixed = lowAmount >= 1.0f ? filtered : shaped + lowAmount * (filtered - shaped);
+    return std::isfinite(mixed) ? mixed : 0.0f;
+}
+
 void PeakLimiter::prepare(double sampleRate) noexcept {
     releaseCoefficient_ = static_cast<float>(std::exp(-1.0 / (kLimiterReleaseMs * 0.001 * std::max(8000.0, sampleRate))));
     reset();

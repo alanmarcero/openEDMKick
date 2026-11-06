@@ -2,7 +2,7 @@
 
 ![Native plugin editor](../assets/native-ui.png)
 
-`assets/native-ui.png` shows the v1.2.0 native JUCE editor at 1100 × 972, captured directly from the release build. It displays **Festival 1/64 Drop Rush** in **Auto Mode A** with the phrase forced to **1 Bar** so the 1/64 steps stay readable, **LOCK IN (WAV)** active, the chromatic keyboard on **F1**, the gold pitch-drop trace, the snare/clap/hat layer row at zero, the output meter, and the Kicking Mule stage.
+`assets/native-ui.png` shows the v1.3.0 native JUCE editor at 1100 × 972. It displays **Festival 1/64 Drop Rush** in **Auto Mode A** with the phrase forced to **1 Bar** so the 1/64 steps stay readable, **LOCK IN (WAV)** active, the chromatic keyboard on **F1**, the gold pitch-drop trace, the snare/clap/hat row at zero, high pass and low pass at Off, the output meter, and the Kicking Mule stage.
 
 ![Layered kick editor](../assets/native-ui-layers.png)
 
@@ -10,7 +10,7 @@
 
 ![Beat 4 reverse editor](../assets/native-ui-reverse.png)
 
-`assets/native-ui-reverse.png` is the same editor on **Beat 4 Reverse Pickup (E1)**, **Auto Mode B**, **2 Bars**, with the reverse pickup notes on beat 4 and the preset menu following the program change.
+`assets/native-ui-reverse.png` is **Beat 4 Reverse Pickup (E1)**, **Auto Mode B**, **2 Bars**, with the reverse pickup notes on beat 4. The preset menu shows that program.
 
 Reproduce on a machine with a display (or `xvfb-run`) from the repository root:
 

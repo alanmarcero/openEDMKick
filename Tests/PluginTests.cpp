@@ -245,10 +245,14 @@ TEST_CASE("Timbre layer parameters default off and survive the session", "[plugi
     REQUIRE_THAT(processor.currentSynthSettings().snareLevel, WithinAbs(0.0f, 1.0e-6f));
     REQUIRE_THAT(processor.currentSynthSettings().clapLevel, WithinAbs(0.0f, 1.0e-6f));
     REQUIRE_THAT(processor.currentSynthSettings().hatLevel, WithinAbs(0.0f, 1.0e-6f));
+    REQUIRE_THAT(processor.parameters.getRawParameterValue("hp_cutoff")->load(), WithinAbs(20.0f, 0.02f));
+    REQUIRE_THAT(processor.parameters.getRawParameterValue("lp_cutoff")->load(), WithinAbs(20000.0f, 1.0f));
 
     setParam(processor, "snare_level", 0.4f);
     setParam(processor, "clap_spread", 0.8f);
     setParam(processor, "hat_decay", 0.66f);
+    setParam(processor, "hp_cutoff", 240.0f);
+    setParam(processor, "lp_cutoff", 3200.0f);
     juce::MemoryBlock saved;
     processor.getStateInformation(saved);
     OpenEdmKickProcessor restored;
@@ -256,6 +260,8 @@ TEST_CASE("Timbre layer parameters default off and survive the session", "[plugi
     REQUIRE_THAT(restored.currentSynthSettings().snareLevel, WithinAbs(0.4f, 0.002f));
     REQUIRE_THAT(restored.currentSynthSettings().clapSpread, WithinAbs(0.8f, 0.002f));
     REQUIRE_THAT(restored.currentSynthSettings().hatDecay, WithinAbs(0.66f, 0.002f));
+    REQUIRE_THAT(restored.parameters.getRawParameterValue("hp_cutoff")->load(), WithinAbs(240.0f, 1.0f));
+    REQUIRE_THAT(restored.parameters.getRawParameterValue("lp_cutoff")->load(), WithinAbs(3200.0f, 20.0f));
 
     restored.setCurrentProgram(0);
     REQUIRE_THAT(restored.currentSynthSettings().snareLevel, WithinAbs(0.0f, 0.002f));

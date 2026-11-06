@@ -18,6 +18,8 @@ private:
     OpenEdmKickProcessor& processor_;
     openedmkick::core::KickSynthSettings cachedSettings_{};
     bool cachedLocked_ = false;
+    float cachedHighPass_ = -1.0f;
+    float cachedLowPass_ = -1.0f;
     std::vector<float> cachedSamples_;
 };
 
@@ -159,8 +161,10 @@ private:
     Knob output_;
     Knob ceiling_;
     Toggle limiter_;
+    Knob highPass_;
+    Knob lowPass_;
     PeakMeter meter_;
-    std::array<Section, 5> sections_;
+    std::array<Section, 6> sections_;
 };
 
 } // namespace openedmkick::ui

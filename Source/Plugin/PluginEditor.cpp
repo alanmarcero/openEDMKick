@@ -88,8 +88,7 @@ void OpenEdmKickEditor::paint(juce::Graphics& g) {
     const auto header = getLocalBounds()
         .reduced(kMargin, 0)
         .removeFromTop(kHeaderHeight + kMargin)
-        .withTrimmedTop(kMargin)
-        .withHeight(28);
+        .withTrimmedTop(kMargin);
     g.setFont(juce::FontOptions(24.0f, juce::Font::bold));
     g.setColour(theme::kText);
     g.drawText("open", header, juce::Justification::centredLeft);
@@ -99,12 +98,6 @@ void OpenEdmKickEditor::paint(juce::Graphics& g) {
     const int edmWidth = juce::GlyphArrangement::getStringWidthInt(g.getCurrentFont(), "EDM");
     g.setColour(theme::kAccentGold);
     g.drawText("Kick", header.withTrimmedLeft(openWidth + edmWidth), juce::Justification::centredLeft);
-
-    g.setFont(juce::FontOptions(11.0f));
-    g.setColour(theme::kTextDim);
-    g.drawText("12-Note Kick VSTi  /  Locked-In WAV Cache  /  A/B/C/D 1/64 Auto Builds  /  Beat-4 Synced Reverse & FX",
-               header.translated(2, 27).withHeight(14).withWidth(680),
-               juce::Justification::centredLeft);
 }
 
 void OpenEdmKickEditor::resized() {

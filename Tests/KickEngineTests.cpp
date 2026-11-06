@@ -1,6 +1,8 @@
 #include "KickEngine.h"
 #include <algorithm>
 #include <catch2/catch_test_macros.hpp>
+#include <cstdlib>
+#include <fstream>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 #include <cmath>
 #include <numeric>
@@ -167,4 +169,82 @@ TEST_CASE("Hot kicks stay finite and under the limiter ceiling", "[engine]") {
         REQUIRE(std::isfinite(sample));
         REQUIRE(std::abs(sample) <= 0.5001f);
     });
+}
+
+namespace {
+
+[[nodiscard]] std::vector<float> renderFilteredKick(float highPassHz, float lowPassHz) {
+    core::KickEngine engine;
+    engine.prepare(48000.0);
+    core::EngineSettings settings{};
+    settings.effects.drive = 0.0f;
+    settings.effects.limiterEnabled = false;
+    settings.effects.highPassHz = highPassHz;
+    settings.effects.lowPassHz = lowPassHz;
+    settings.synth.tailLengthMs = 380.0f;
+    const core::Transport transport{ 128.0, 0.0, 4.0, true };
+    const std::array<core::MidiTrigger, 1> trigger{ { { 0, 60, 1.0f, false } } };
+    std::vector<float> buffer(20000, 0.0f);
+    float* pointer = buffer.data();
+    engine.process(settings, transport, trigger, &pointer, 1, static_cast<int>(buffer.size()));
+    return buffer;
+}
+
+[[nodiscard]] double slowEnergy(const std::vector<float>& samples) {
+    float state = 0.0f;
+    const float gain = 0.02f;
+    double energy = 0.0;
+    std::ranges::for_each(samples, [&](float sample) {
+        state += gain * (sample - state);
+        energy += static_cast<double>(state) * static_cast<double>(state);
+    });
+    return energy;
+}
+
+[[nodiscard]] double edgeEnergy(const std::vector<float>& samples) {
+    double energy = 0.0;
+    std::ranges::for_each(std::views::iota(size_t{ 1 }, samples.size()), [&](size_t i) {
+        const double delta = static_cast<double>(samples[i] - samples[i - 1]);
+        energy += delta * delta;
+    });
+    return energy;
+}
+
+void writeWav(const std::string& path, const std::vector<float>& samples) {
+    const auto bytes = core::encodeWavBytes(samples, 48000u);
+    std::ofstream out(path, std::ios::binary);
+    out.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+}
+
+} // namespace
+
+TEST_CASE("Default high pass and low pass match an explicit bypass on a kick", "[engine][filter]") {
+    const auto dry = renderFilteredKick(core::ToneFilter::kHighPassBypassHz, core::ToneFilter::kLowPassBypassHz);
+    const auto explicitBypass = renderFilteredKick(20.0f, 20000.0f);
+    REQUIRE(dry.size() == explicitBypass.size());
+    std::ranges::for_each(std::views::iota(size_t{ 0 }, dry.size()), [&](size_t i) {
+        REQUIRE(dry[i] == explicitBypass[i]);
+        REQUIRE(std::isfinite(dry[i]));
+    });
+
+    const auto highPassed = renderFilteredKick(350.0f, 20000.0f);
+    const auto lowPassed = renderFilteredKick(20.0f, 700.0f);
+    REQUIRE(slowEnergy(highPassed) < slowEnergy(dry) * 0.55);
+    REQUIRE(edgeEnergy(lowPassed) < edgeEnergy(dry) * 0.7);
+    REQUIRE(slowEnergy(lowPassed) > slowEnergy(highPassed));
+
+    if (const char* directory = std::getenv("OEK_RENDER_DIR")) {
+        const int gap = static_cast<int>(0.08 * 48000.0);
+        std::vector<float> comparison;
+        const std::array<const std::vector<float>*, 3> order{ &dry, &highPassed, &lowPassed };
+        std::ranges::for_each(order, [&](const std::vector<float>* hit) {
+            comparison.insert(comparison.end(), hit->begin(), hit->end());
+            comparison.insert(comparison.end(), static_cast<size_t>(gap), 0.0f);
+        });
+        const std::string root(directory);
+        writeWav(root + "/filter-dry.wav", dry);
+        writeWav(root + "/filter-highpass.wav", highPassed);
+        writeWav(root + "/filter-lowpass.wav", lowPassed);
+        writeWav(root + "/filter-comparison.wav", comparison);
+    }
 }

@@ -91,6 +91,26 @@ private:
     float ic2eq_ = 0.0f;
 };
 
+// Fixed 12 dB/oct high-pass then low-pass. No resonance control.
+// The minimum high-pass and maximum low-pass return the input unchanged.
+class ToneFilter {
+public:
+    static constexpr float kHighPassBypassHz = 20.0f;
+    static constexpr float kLowPassBypassHz = 20000.0f;
+
+    void reset() noexcept;
+    [[nodiscard]] float process(float input, float highPassHz, float lowPassHz, double sampleRate) noexcept;
+
+private:
+    [[nodiscard]] float highPass(float input, float cutoffHz, double sampleRate) noexcept;
+    [[nodiscard]] float lowPass(float input, float cutoffHz, double sampleRate) noexcept;
+
+    float hpState1_ = 0.0f;
+    float hpState2_ = 0.0f;
+    float lpState1_ = 0.0f;
+    float lpState2_ = 0.0f;
+};
+
 // Zero-latency peak limiter. Instant attack keeps the kick transient on the
 // MIDI/grid sample; release recovers gain without a lookahead delay.
 class PeakLimiter {

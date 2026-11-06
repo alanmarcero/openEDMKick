@@ -84,12 +84,17 @@ KickWaveformView::KickWaveformView(OpenEdmKickProcessor& processor)
 void KickWaveformView::refreshCache() {
     const auto settings = processor_.currentSynthSettings();
     const bool locked = processor_.isKickLockedIn();
-    if (!cachedSamples_.empty() && sameSynthSettings(settings, cachedSettings_) && locked == cachedLocked_) {
+    const float highPass = processor_.parameters.getRawParameterValue(params::kHighPass)->load();
+    const float lowPass = processor_.parameters.getRawParameterValue(params::kLowPass)->load();
+    if (!cachedSamples_.empty() && sameSynthSettings(settings, cachedSettings_) && locked == cachedLocked_
+        && sameFloatBits(highPass, cachedHighPass_) && sameFloatBits(lowPass, cachedLowPass_)) {
         return;
     }
     cachedSamples_ = processor_.previewKickWaveform();
     cachedSettings_ = settings;
     cachedLocked_ = locked;
+    cachedHighPass_ = highPass;
+    cachedLowPass_ = lowPass;
 }
 
 void KickWaveformView::paint(juce::Graphics& g) {
@@ -183,7 +188,7 @@ void KickWaveformView::paint(juce::Graphics& g) {
 
     const juce::String modeStatus = locked
         ? "LOCKED IN: CACHED RIFF WAV (SYNTH BYPASSED)"
-        : (processor_.displayReversing.load() ? "SYNC REVERSE ACTIVE" : "LIVE SYNTHESIS ENGINE");
+        : (processor_.displayReversing.load() ? "SYNC REVERSE ACTIVE" : "LIVE SYNTHESIS");
     g.setColour(locked ? theme::kAccentGold : theme::kAccentMint);
     g.drawText(modeStatus, bounds.reduced(8.0f, 2.0f).removeFromTop(14.0f), juce::Justification::centredRight);
 }
@@ -250,7 +255,7 @@ KickSynthPanel::KickSynthPanel(OpenEdmKickProcessor& processor)
     snareLevel_.setTooltip("Snare layer amount. Zero leaves the kick unchanged.");
     snareTone_.setTooltip("Snare color. Low is a woody shell, high is bright wire buzz.");
     snareDecay_.setTooltip("Snare ring. The kick tail still ends the layer.");
-    clapLevel_.setTooltip("Clap layer amount. A clustered noise flam, not the snare.");
+    clapLevel_.setTooltip("Clap layer amount. Four staggered noise hits.");
     clapSpread_.setTooltip("Clap flam width. Tight is one crack, wide is four staggered hits.");
     clapTone_.setTooltip("Clap brightness. Low is a muffled hand, high is a sharp crack.");
     hatLevel_.setTooltip("Hi-hat layer amount. Inharmonic metal plus a short chiff.");
@@ -275,7 +280,7 @@ void KickSynthPanel::updateNoteButtons(int activeNote) {
 
 void KickSynthPanel::paint(juce::Graphics& g) {
     drawPanel(g, getLocalBounds(), "Kick Synth & 12-Note Chromatic Tuner", theme::kAccentMint);
-    drawCaption(g, noteBarArea_, "Chromatic Keyboard — click a key to tune and audition");
+    drawCaption(g, noteBarArea_, "Chromatic keyboard. Click a key to tune and audition.");
     g.setFont(juce::FontOptions(10.0f, juce::Font::bold));
     g.setColour(theme::kAccentGold);
     g.drawText("SNARE", snareArea_.withHeight(12), juce::Justification::centredLeft);
@@ -586,7 +591,7 @@ void PianoRollView::paint(juce::Graphics& g) {
         g.fillRoundedRectangle(banner, 3.0f);
         g.setColour(theme::kAccentGold);
         g.setFont(juce::FontOptions(10.0f, juce::Font::bold));
-        g.drawFittedText("AUTO MODE OFF — edit the roll here. TRIG and MIDI audition the tuned kick.",
+        g.drawFittedText("AUTO MODE OFF. Edit the roll here. TRIG and MIDI audition the tuned kick.",
                          banner.toNearestInt().reduced(4, 0), juce::Justification::centredLeft, 1);
     }
 
@@ -787,21 +792,26 @@ EffectsPanel::EffectsPanel(OpenEdmKickProcessor& processor)
       output_(processor.parameters, params::kOutput, "Output", theme::kAccentOut),
       ceiling_(processor.parameters, params::kCeiling, "Ceiling", theme::kAccentOut),
       limiter_(processor.parameters, params::kLimiter, "LIMIT", theme::kAccentOut),
+      highPass_(processor.parameters, params::kHighPass, "High Pass", theme::kAccentFx),
+      lowPass_(processor.parameters, params::kLowPass, "Low Pass", theme::kAccentFx),
       meter_(processor),
       sections_{ {
           { "Reverse Sync", theme::kAccentReverse, 2, {} },
           { "Bitcrush", theme::kAccentFx, 3, {} },
           { "Beat Stutter", theme::kAccentMint, 2, {} },
           { "Sync Gate & Pump", theme::kAccentGold, 4, {} },
+          { "Filter", theme::kAccentFx, 3, {} },
           { "Drive & Output", theme::kAccentOut, 4, {} }
       } } {
     std::ranges::for_each(std::initializer_list<juce::Component*>{
         &reverseMode_, &reverseMix_, &crushRate_, &crushBits_, &crushMix_,
         &stutterRate_, &stutterMix_, &gateRate_, &gateMix_, &pumpRate_, &pumpMix_,
-        &drive_, &output_, &ceiling_, &limiter_, &meter_
+        &drive_, &output_, &ceiling_, &limiter_, &highPass_, &lowPass_, &meter_
     }, [this](juce::Component* c) { addAndMakeVisible(c); });
     reverseMode_.setTooltip("Beat 4 Auto reverses kicks that land on the last beat so the swell ends on the bar line.");
     limiter_.setTooltip("Zero-latency ceiling. Transients stay on the grid and are caught on the sample that crosses the ceiling.");
+    highPass_.setTooltip("High-pass cutoff. Minimum is off. No resonance.");
+    lowPass_.setTooltip("Low-pass cutoff. Maximum is off. No resonance.");
 }
 
 void EffectsPanel::paint(juce::Graphics& g) {
@@ -833,7 +843,8 @@ void EffectsPanel::resized() {
     layoutRow(content(1), { &crushRate_, &crushBits_, &crushMix_ });
     layoutRow(content(2), { &stutterRate_, &stutterMix_ });
     layoutRow(content(3), { &gateRate_, &gateMix_, &pumpRate_, &pumpMix_ });
-    auto outputRow = content(4);
+    layoutRow(content(4), { &highPass_, &lowPass_ });
+    auto outputRow = content(5);
     meter_.setBounds(outputRow.removeFromRight(18).reduced(1, 6));
     outputRow.removeFromRight(4);
     layoutRow(outputRow, { &drive_, &output_, &ceiling_, &limiter_ });

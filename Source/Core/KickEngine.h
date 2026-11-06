@@ -39,6 +39,8 @@ struct EffectSettings {
     float outputGain = 1.0f;
     bool limiterEnabled = true;
     float ceilingGain = 0.966f;
+    float highPassHz = ToneFilter::kHighPassBypassHz;
+    float lowPassHz = ToneFilter::kLowPassBypassHz;
 };
 
 struct EngineSettings {
@@ -105,7 +107,12 @@ private:
     BitCrusher crusher_;
     BeatStutter stutter_;
     SyncFilterPump filterPump_;
+    ToneFilter toneFilter_;
     PeakLimiter limiter_;
+    float smoothedHighPassHz_ = ToneFilter::kHighPassBypassHz;
+    float smoothedLowPassHz_ = ToneFilter::kLowPassBypassHz;
+    float toneSmooth_ = 0.0f;
+    bool toneSnap_ = true;
 };
 
 } // namespace openedmkick::core

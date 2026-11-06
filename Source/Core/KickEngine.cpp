@@ -10,6 +10,7 @@ void KickEngine::prepare(double sampleRate) {
     wavCache_.prepare(sampleRate_);
     stutter_.prepare(sampleRate_);
     limiter_.prepare(sampleRate_);
+    toneSmooth_ = static_cast<float>(1.0 - std::exp(-1.0 / (0.015 * sampleRate_)));
     forwardVoice_.prepare(sampleRate_);
     reverseVoice_.prepare(sampleRate_);
     reset();
@@ -25,6 +26,10 @@ void KickEngine::reset() noexcept {
     crusher_.reset();
     stutter_.reset();
     filterPump_.reset();
+    toneFilter_.reset();
+    smoothedHighPassHz_ = ToneFilter::kHighPassBypassHz;
+    smoothedLowPassHz_ = ToneFilter::kLowPassBypassHz;
+    toneSnap_ = true;
     limiter_.reset();
 }
 
@@ -216,6 +221,15 @@ void KickEngine::process(
 
         const float gateGain = TempoGate::gainAt(samplePpq, gateBeats, settings.effects.gateMix);
         float finalSample = pumped * gateGain * settings.effects.outputGain;
+        if (toneSnap_) {
+            smoothedHighPassHz_ = settings.effects.highPassHz;
+            smoothedLowPassHz_ = settings.effects.lowPassHz;
+            toneSnap_ = false;
+        } else {
+            smoothedHighPassHz_ += toneSmooth_ * (settings.effects.highPassHz - smoothedHighPassHz_);
+            smoothedLowPassHz_ += toneSmooth_ * (settings.effects.lowPassHz - smoothedLowPassHz_);
+        }
+        finalSample = toneFilter_.process(finalSample, smoothedHighPassHz_, smoothedLowPassHz_, sampleRate_);
         if (!std::isfinite(finalSample)) {
             finalSample = 0.0f;
         }

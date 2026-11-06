@@ -108,6 +108,8 @@ private:
         std::atomic<float>* gateMix;
         std::atomic<float>* pumpRate;
         std::atomic<float>* pumpMix;
+        std::atomic<float>* highPass;
+        std::atomic<float>* lowPass;
         std::atomic<float>* output;
         std::atomic<float>* limiter;
         std::atomic<float>* ceiling;

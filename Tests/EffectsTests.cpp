@@ -2,6 +2,7 @@
 #include "KickSynth.h"
 #include <algorithm>
 #include <catch2/catch_test_macros.hpp>
+#include <numbers>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 #include <cmath>
 #include <limits>
@@ -108,4 +109,61 @@ TEST_CASE("Sync filter pump stays finite across a full sweep", "[effects]") {
         REQUIRE(std::abs(filtered) < 4.0f);
     });
     REQUIRE_THAT(pump.process(std::numeric_limits<float>::infinity(), 0.0, 0.25, 1.0f, 48000.0), WithinAbs(0.0f, 1.0e-6f));
+}
+
+namespace {
+
+[[nodiscard]] double bandRms(const std::vector<float>& samples, double sampleRate, float cutoffHz, bool highBand) {
+    float state = 0.0f;
+    const float gain = static_cast<float>(1.0 - std::exp(-2.0 * std::numbers::pi * static_cast<double>(cutoffHz) / sampleRate));
+    double energy = 0.0;
+    std::ranges::for_each(samples, [&](float sample) {
+        state += gain * (sample - state);
+        const float band = highBand ? sample - state : state;
+        energy += static_cast<double>(band) * static_cast<double>(band);
+    });
+    return std::sqrt(energy / static_cast<double>(std::max<size_t>(1, samples.size())));
+}
+
+[[nodiscard]] std::vector<float> filteredTone(float frequencyHz, float highPassHz, float lowPassHz) {
+    core::ToneFilter filter;
+    std::vector<float> output(4800);
+    std::ranges::for_each(std::views::iota(0, static_cast<int>(output.size())), [&](int i) {
+        const float input = std::sin(2.0f * std::numbers::pi_v<float> * frequencyHz * static_cast<float>(i) / 48000.0f);
+        output[static_cast<size_t>(i)] = filter.process(input, highPassHz, lowPassHz, 48000.0);
+    });
+    return output;
+}
+
+} // namespace
+
+TEST_CASE("High pass and low pass bypass exactly and cut the expected band", "[effects][filter]") {
+    core::ToneFilter filter;
+    std::ranges::for_each(std::views::iota(0, 512), [&](int i) {
+        const float input = 0.25f * std::sin(static_cast<float>(i) * 0.2f);
+        const float output = filter.process(input, core::ToneFilter::kHighPassBypassHz, core::ToneFilter::kLowPassBypassHz, 48000.0);
+        REQUIRE(output == input);
+    });
+
+    const auto lowDry = filteredTone(80.0f, core::ToneFilter::kHighPassBypassHz, core::ToneFilter::kLowPassBypassHz);
+    const auto lowHp = filteredTone(80.0f, 800.0f, core::ToneFilter::kLowPassBypassHz);
+    const auto highDry = filteredTone(6000.0f, core::ToneFilter::kHighPassBypassHz, core::ToneFilter::kLowPassBypassHz);
+    const auto highLp = filteredTone(6000.0f, core::ToneFilter::kHighPassBypassHz, 500.0f);
+    const int settled = 800;
+    REQUIRE(bandRms(lowHp, 48000.0, 200.0f, false) < bandRms(lowDry, 48000.0, 200.0f, false) * 0.35);
+    REQUIRE(bandRms(highLp, 48000.0, 1500.0f, true) < bandRms(highDry, 48000.0, 1500.0f, true) * 0.45);
+    (void)settled;
+
+    std::ranges::for_each(std::array{ 8000.0, 44100.0, 96000.0, 192000.0 }, [&](double rate) {
+        core::ToneFilter swept;
+        float cutoff = 20.0f;
+        std::ranges::for_each(std::views::iota(0, 2000), [&](int i) {
+            cutoff = 20.0f + static_cast<float>(i) * 8.0f;
+            const float lowPass = 20000.0f - static_cast<float>(i) * 6.0f;
+            const float input = (i % 64 == 0) ? std::numeric_limits<float>::quiet_NaN() : std::sin(static_cast<float>(i) * 0.13f);
+            const float output = swept.process(input, cutoff, lowPass, rate);
+            REQUIRE(std::isfinite(output));
+            REQUIRE(std::abs(output) < 4.0f);
+        });
+    });
 }

@@ -40,7 +40,8 @@ OpenEdmKickProcessor::OpenEdmKickProcessor()
               raw(params::kReverseMode), raw(params::kReverseMix), raw(params::kDrive),
               raw(params::kCrushRate), raw(params::kCrushBits), raw(params::kCrushMix),
               raw(params::kStutterRate), raw(params::kStutterMix), raw(params::kGateRate),
-              raw(params::kGateMix), raw(params::kPumpRate), raw(params::kPumpMix),
+              raw(params::kGateMix),               raw(params::kPumpRate), raw(params::kPumpMix),
+              raw(params::kHighPass), raw(params::kLowPass),
               raw(params::kOutput), raw(params::kLimiter), raw(params::kCeiling),
               raw(params::kMasterBypass)
           };
@@ -119,10 +120,21 @@ core::AutoSlotSettings OpenEdmKickProcessor::currentAutoSlotSettings() const noe
 
 std::vector<float> OpenEdmKickProcessor::previewKickWaveform() const {
     const std::scoped_lock lock(stateMutex_);
+    std::vector<float> wave;
+    double rate = 24000.0;
     if (engine_.isKickLocked() && !engine_.wavCache().samples().empty()) {
-        return engine_.wavCache().samples();
+        wave = engine_.wavCache().samples();
+        rate = engine_.wavCache().sampleRate();
+    } else {
+        wave = core::renderKickWaveform(currentSynthSettings(), rate, 0.0f);
     }
-    return core::renderKickWaveform(currentSynthSettings(), 24000.0, 0.0f);
+    core::ToneFilter filter;
+    const float highPass = values_.highPass->load();
+    const float lowPass = values_.lowPass->load();
+    std::ranges::for_each(wave, [&](float& sample) {
+        sample = filter.process(sample, highPass, lowPass, rate);
+    });
+    return wave;
 }
 
 std::vector<core::PianoRollNote> OpenEdmKickProcessor::currentPianoRollNotes() const {
@@ -189,7 +201,9 @@ void OpenEdmKickProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
             values_.pumpMix->load(),
             juce::Decibels::decibelsToGain(values_.output->load()),
             isOn(values_.limiter),
-            juce::Decibels::decibelsToGain(values_.ceiling->load())
+            juce::Decibels::decibelsToGain(values_.ceiling->load()),
+            values_.highPass->load(),
+            values_.lowPass->load()
         },
         isOn(values_.masterBypass)
     };

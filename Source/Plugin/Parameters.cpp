@@ -47,6 +47,12 @@ const Formatter kFormatHatDecay = [](float amount, int) {
     const int ms = juce::roundToInt(openedmkick::core::hatDecayMs(amount));
     return ms < 40 ? juce::String("Closed ") + juce::String(ms) + " ms" : juce::String(ms) + " ms";
 };
+const Formatter kFormatHighPass = [](float hz, int) {
+    return hz <= 20.5f ? juce::String("Off") : formatHz(hz);
+};
+const Formatter kFormatLowPass = [](float hz, int) {
+    return hz >= 19900.0f ? juce::String("Off") : formatHz(hz);
+};
 
 juce::NormalisableRange<float> skewedRange(float min, float max, float centre) {
     juce::NormalisableRange<float> range(min, max);
@@ -197,6 +203,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout() {
     addFloat(layout, kGateMix, "Gate Mix", { 0.0f, 1.0f }, 0.0f, kFormatPercent);
     addChoice(layout, kPumpRate, "Pump Rate", syncDivisions, 0);
     addFloat(layout, kPumpMix, "Pump Mix", { 0.0f, 1.0f }, 0.0f, kFormatPercent);
+    addFloat(layout, kHighPass, "High Pass", skewedRange(20.0f, 8000.0f, 250.0f), 20.0f, kFormatHighPass);
+    addFloat(layout, kLowPass, "Low Pass", skewedRange(40.0f, 20000.0f, 2500.0f), 20000.0f, kFormatLowPass);
     addFloat(layout, kOutput, "Output", { -24.0f, 12.0f }, 0.0f, kFormatDb);
     addBool(layout, kLimiter, "Limiter", true);
     addFloat(layout, kCeiling, "Ceiling", { -18.0f, 0.0f }, -0.3f, kFormatDb);
