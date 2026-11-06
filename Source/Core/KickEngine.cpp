@@ -30,6 +30,11 @@ void KickEngine::reset() noexcept {
     smoothedHighPassHz_ = ToneFilter::kHighPassBypassHz;
     smoothedLowPassHz_ = ToneFilter::kLowPassBypassHz;
     toneSnap_ = true;
+    midiVolume_ = 1.0f;
+    midiExpression_ = 1.0f;
+    midiBrightness_ = 1.0f;
+    reverseArmed_ = false;
+    hasLastPpq_ = false;
     limiter_.reset();
 }
 
@@ -60,6 +65,7 @@ void KickEngine::triggerNote(
     float semitoneOffset,
     float effectiveTailMs,
     bool reverseCue) noexcept {
+    ++triggerSerial_;
     const bool useReverse = shouldTriggerReverse(
         settings.effects.reverseMode,
         reverseCue,
@@ -76,6 +82,16 @@ void KickEngine::triggerNote(
             bpm,
             beatsPerBar,
             sampleRate_);
+        if (reverseSamples <= 0) {
+            forwardVoice_.triggerForward(
+                settings.synth,
+                wavCache_,
+                sampleRate_,
+                velocity,
+                semitoneOffset,
+                effectiveTailMs);
+            return;
+        }
         reverseVoice_.triggerReverse(
             settings.synth,
             wavCache_,
@@ -83,6 +99,11 @@ void KickEngine::triggerNote(
             reverseSamples,
             velocity * settings.effects.reverseMix,
             semitoneOffset);
+        const double reverseEnd = reverseTargetPpq(effectiveMode, samplePpq, beatsPerBar);
+        reverseVoice_.armMusicalReverse(samplePpq, reverseEnd);
+        reverseArmed_ = true;
+        reverseStartPpq_ = samplePpq;
+        reverseEndPpq_ = reverseEnd;
         if (settings.effects.reverseMix >= 0.999f) {
             forwardVoice_.reset();
             return;
@@ -105,7 +126,8 @@ void KickEngine::process(
     std::span<const MidiTrigger> midiTriggers,
     float* const* channels,
     int numChannels,
-    int numSamples) noexcept {
+    int numSamples,
+    std::span<const MidiCcEvent> controlChanges) noexcept {
     if (numChannels <= 0 || numSamples <= 0) {
         return;
     }
@@ -149,6 +171,47 @@ void KickEngine::process(
         const double samplePpq = blockStartPpq + static_cast<double>(sampleIdx) * ppqPerSample;
         currentBeatPhase_ = static_cast<float>(samplePpq - std::floor(samplePpq));
 
+        if (reverseArmed_ && (!transport.isPlaying
+                || (hasLastPpq_ && samplePpq + 1.0e-7 < lastSamplePpq_)
+                || samplePpq >= reverseEndPpq_)) {
+            reverseVoice_.reset();
+            reverseArmed_ = false;
+        }
+        hasLastPpq_ = true;
+        lastSamplePpq_ = samplePpq;
+
+        std::ranges::for_each(controlChanges, [&](const MidiCcEvent& event) {
+            if (event.sampleOffset != sampleIdx) {
+                return;
+            }
+            const float unit = std::clamp(event.value, 0, 127) / 127.0f;
+            switch (event.controller) {
+                case 7:
+                    midiVolume_ = unit;
+                    break;
+                case 11:
+                    midiExpression_ = unit;
+                    break;
+                case 74:
+                    midiBrightness_ = unit;
+                    break;
+                case 120:
+                    forwardVoice_.reset();
+                    reverseVoice_.reset();
+                    reverseArmed_ = false;
+                    break;
+                case 121:
+                    midiVolume_ = 1.0f;
+                    midiExpression_ = 1.0f;
+                    midiBrightness_ = 1.0f;
+                    break;
+                case 123:
+                    break;
+                default:
+                    break;
+            }
+        });
+
         if (autoActive && transport.isPlaying) {
             const auto autoEvent = sequencer_.stepSample(
                 activeSlot,
@@ -176,20 +239,23 @@ void KickEngine::process(
             // Regular Mode plays the tuned kick for every note. Auto Mode ignores
             // MIDI except explicit auditions, and the tail shortener stays off.
             if ((!autoActive || trig.audition) && trig.sampleOffset == sampleIdx && trig.velocity > 0.0f) {
+                const float semitones = (settings.noteTracking && !trig.audition)
+                    ? trackedSemitoneOffset(settings.synth.note, settings.synth.octave, trig.noteNumber)
+                    : 0.0f;
                 triggerNote(
                     settings,
                     samplePpq,
                     safeBpm,
                     safeBeatsPerBar,
                     trig.velocity,
-                    0.0f,
+                    semitones,
                     -1.0f,
                     false);
             }
         });
 
-        const float rawKick = forwardVoice_.nextSample(settings.synth, wavCache_, sampleRate_)
-            + reverseVoice_.nextSample(settings.synth, wavCache_, sampleRate_);
+        const float rawKick = forwardVoice_.nextSample(settings.synth, wavCache_, sampleRate_, samplePpq)
+            + reverseVoice_.nextSample(settings.synth, wavCache_, sampleRate_, samplePpq);
 
         const float driven = saturate(rawKick, settings.effects.drive);
 
@@ -229,7 +295,10 @@ void KickEngine::process(
             smoothedHighPassHz_ += toneSmooth_ * (settings.effects.highPassHz - smoothedHighPassHz_);
             smoothedLowPassHz_ += toneSmooth_ * (settings.effects.lowPassHz - smoothedLowPassHz_);
         }
-        finalSample = toneFilter_.process(finalSample, smoothedHighPassHz_, smoothedLowPassHz_, sampleRate_);
+        const float brightnessCutoff = 40.0f + midiBrightness_ * (ToneFilter::kLowPassBypassHz - 40.0f);
+        const float lowPassHz = std::min(smoothedLowPassHz_, brightnessCutoff);
+        finalSample *= midiVolume_ * midiExpression_;
+        finalSample = toneFilter_.process(finalSample, smoothedHighPassHz_, lowPassHz, sampleRate_);
         if (!std::isfinite(finalSample)) {
             finalSample = 0.0f;
         }

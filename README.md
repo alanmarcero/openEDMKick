@@ -16,15 +16,15 @@ EDM kick drum VSTi with 12-note chromatic tuning, a Lock In WAV cache, host-sync
 
 ![openEDMKick native editor - Beat 4 Reverse Pickup Loop](assets/native-ui-reverse.png)
 
-*Captured from the native v1.3.0 editor. [Capture details and provenance](docs/SCREENSHOTS.md).*
+*Captured from the native v1.4.0 editor. [Capture details and provenance](docs/SCREENSHOTS.md).*
 
 ## Features
 
-- Regular Mode (`IS_SYNTH`): any MIDI note triggers the kick at its tuned fundamental.
+- Regular Mode (`IS_SYNTH`): Fixed trigger plays the panel tuning for every note. Note trigger pitches from that tuning. See MIDI below.
 - Snare, clap, and hat layers mix into that hit. Levels default to off. Modifiers are snare tone and decay, clap spread and tone, and hat tone and decay. They follow velocity, semitone offset, Lock In, and the waveform preview. Tail Length still ends the voice. Details are in [docs/AUDIO.md](docs/AUDIO.md).
 - Tuning runs C through B, octaves `0 Sub`, `1 Club`, and `2 Punch`, with fine tune from -50 to +50 cents. Pitch controls are `Start Hz`, `Pitch Decay`, and `Pitch Curve`. Body controls are `Tail Length`, `Tail Curve`, `Sub Drive`, and `Punch`. Click controls are `Click Level` and `Click Freq`. The gold trace is the pitch drop.
 - `LOCK IN (WAV)` stores the kick as an internal 32-bit float RIFF WAV and plays that buffer. The WAV is saved in the session. A host sample-rate change resamples it.
-- Reverse Sync modes are `Off`, `Beat End (Sync)`, `Beat 4 Auto`, `1/2 Beat`, and `1/4 Beat`. A hit on beat 4 ends at the bar line.
+- Reverse Sync modes are `Off`, `Beat End (Sync)`, `Beat 4 Auto`, `1/2 Beat`, and `1/4 Beat`. The swell's last sample is the one before the target: the next beat, half beat, quarter beat, or, for Beat 4 Auto, the end of the bar. Host PPQ, tempo, and meter pick that sample. A note that arrives late in the beat gets a short reverse. The plugin does not start the swell before the note. A stop, seek, or loop cuts a reverse that is already playing. The forward mix can keep ringing after the reverse ends.
 - Bitcrush has `Rate` (200 Hz to 48 kHz), `Bits` (1 to 16), and `Mix`. Auto Mode can raise the mix with Crush Ramp.
 - Beat Stutter repeats the hit on host divisions from 1/4 to 1/64.
 - Sync Gate and Filter Pump use the same divisions.
@@ -36,6 +36,32 @@ EDM kick drum VSTi with 12-note chromatic tuning, a Lock In WAV cache, host-sync
 - The piano roll edits triggers and pitch from `ROOT` to `+12 st`, down to a 1/64 note.
 - Tail Shortener runs in Auto Mode only. It shortens tails on 1/16, 1/32, and 1/64 rolls. Regular Mode keeps the full tail. The roll labels this Anti-Mud on 1/64 rolls.
 - Kicking Mule Stage draws the Kick Mule in front of a subwoofer cone and spotlights that follow the output and the host beat.
+
+## MIDI
+
+Omni: every channel is read. Note-off and the sustain pedal leave the hit running. This is a one-shot. The tail finishes unless All Sound Off arrives.
+
+`midi_mode` defaults to Fixed.
+
+- Fixed: the note number is ignored. Every note-on plays the panel kick.
+- Note: semitone offset is the incoming MIDI note minus the panel root. Oct 0 Sub C is MIDI 12. Oct 1 Club C is 24. Oct 1 Club F is 29. Oct 2 Punch C is 36. MIDI note 60 is C4. A DAW that labels 60 as C3 still sends 60. The offset is clamped to ±48 semitones. Fine tune stays on the root.
+
+TRIG plays the root, including while Auto Mode is running. Auto Mode uses the piano-roll pitch, not the incoming note. A note-on with velocity 0 is a note-off and does not trigger.
+
+Velocity scales amplitude. 127 is full level. 64 is about half amplitude. Layers and a locked WAV use that same scale.
+
+CC values are performance state. They are not saved. They do not write parameters, so host automation of those parameters stays in place. Reset All Controllers, and a sample-rate change, return CC 7, 11, and 74 to 127.
+
+| CC | Name | Effect | 0 | 127 |
+| --- | --- | --- | --- | --- |
+| 7 | Volume | Output trim, multiplied with the Output knob | silence | unity |
+| 11 | Expression | Output trim, multiplied with Volume | silence | unity |
+| 74 | Brightness | Low pass. Uses the lower of this and the Low Pass knob | 40 Hz | knob value |
+| 120 | All Sound Off | Silence the current hit | | |
+| 121 | Reset Controllers | CC 7, 11, and 74 return to 127 | | |
+| 123 | All Notes Off | Ignored. The hit rings | | |
+
+Other CCs, including sustain, are ignored. High pass has no CC.
 
 ## Engine notes
 

@@ -248,3 +248,187 @@ TEST_CASE("Default high pass and low pass match an explicit bypass on a kick", "
         writeWav(root + "/filter-comparison.wav", comparison);
     }
 }
+
+namespace {
+
+[[nodiscard]] int risingCrossings(const std::vector<float>& samples, int start, int end) {
+    int count = 0;
+    const int i0 = std::clamp(start, 1, static_cast<int>(samples.size()));
+    const int i1 = std::clamp(end, i0, static_cast<int>(samples.size()));
+    std::ranges::for_each(std::views::iota(i0, i1), [&](int i) {
+        const float previous = samples[static_cast<size_t>(i - 1)];
+        const float current = samples[static_cast<size_t>(i)];
+        if (previous <= 0.0f && current > 0.0f) {
+            ++count;
+        }
+    });
+    return count;
+}
+
+[[nodiscard]] std::vector<float> playMidiKick(bool noteTracking, int note, float velocity, bool lockWav = false) {
+    core::KickEngine engine;
+    engine.prepare(48000.0);
+    core::EngineSettings settings{};
+    settings.noteTracking = noteTracking;
+    settings.effects.drive = 0.0f;
+    settings.effects.limiterEnabled = false;
+    settings.synth.tailLengthMs = 360.0f;
+    settings.synth.pitchDecayMs = 30.0f;
+    settings.synth.note = 5;
+    settings.synth.octave = 1;
+    if (lockWav) {
+        engine.lockCurrentKick(settings.synth);
+        settings.lockIn = true;
+    }
+    const core::Transport transport{ 120.0, 0.0, 4.0, true };
+    const std::array<core::MidiTrigger, 1> trigger{ { { 0, note, velocity, false } } };
+    std::vector<float> buffer(18000, 0.0f);
+    float* pointer = buffer.data();
+    engine.process(settings, transport, trigger, &pointer, 1, static_cast<int>(buffer.size()));
+    return buffer;
+}
+
+[[nodiscard]] double totalEnergy(const std::vector<float>& samples) {
+    return std::accumulate(samples.begin(), samples.end(), 0.0, [](double acc, float sample) {
+        return acc + std::abs(static_cast<double>(sample));
+    });
+}
+
+} // namespace
+
+TEST_CASE("Fixed ignores note number and Note tracking follows the MIDI root", "[engine][midi]") {
+    REQUIRE(core::midiRootForTuning(5, 1) == 29);
+    REQUIRE(core::midiRootForTuning(0, 1) == 24);
+    REQUIRE(core::midiRootForTuning(0, 2) == 36);
+    REQUIRE_THAT(core::trackedSemitoneOffset(5, 1, 41), WithinAbs(12.0f, 0.001f));
+
+    const auto fixedLow = playMidiKick(false, 29, 1.0f);
+    const auto fixedHigh = playMidiKick(false, 41, 1.0f);
+    std::ranges::for_each(std::views::iota(size_t{ 0 }, fixedLow.size()), [&](size_t i) {
+        REQUIRE_THAT(fixedHigh[i], WithinAbs(fixedLow[i], 1.0e-5f));
+    });
+
+    const auto trackedRoot = playMidiKick(true, 29, 1.0f);
+    const auto trackedOctave = playMidiKick(true, 41, 1.0f);
+    const int tailStart = 9000;
+    const int tailEnd = 16000;
+    const int rootCrossings = risingCrossings(trackedRoot, tailStart, tailEnd);
+    const int octaveCrossings = risingCrossings(trackedOctave, tailStart, tailEnd);
+    REQUIRE(rootCrossings > 4);
+    REQUIRE(octaveCrossings > rootCrossings * 3 / 2);
+
+    const auto lockedRoot = playMidiKick(true, 29, 1.0f, true);
+    const auto lockedOctave = playMidiKick(true, 41, 1.0f, true);
+    REQUIRE(risingCrossings(lockedOctave, 2000, 7000) > risingCrossings(lockedRoot, 2000, 7000));
+    const auto lastLoud = [](const std::vector<float>& samples) {
+        for (int i = static_cast<int>(samples.size()) - 1; i >= 0; --i) {
+            if (std::abs(samples[static_cast<size_t>(i)]) > 0.01f) {
+                return i;
+            }
+        }
+        return -1;
+    };
+    REQUIRE(lastLoud(lockedOctave) < lastLoud(lockedRoot) * 7 / 10);
+
+    const auto full = playMidiKick(false, 60, 1.0f);
+    const auto half = playMidiKick(false, 60, 0.5f);
+    const auto quiet = playMidiKick(false, 60, 0.25f);
+    const auto silent = playMidiKick(false, 60, 0.0f);
+    const auto lockedFull = playMidiKick(false, 60, 1.0f, true);
+    const auto lockedHalf = playMidiKick(false, 60, 0.5f, true);
+    REQUIRE(totalEnergy(silent) < 1.0e-4);
+    REQUIRE(totalEnergy(full) > totalEnergy(half) * 1.7);
+    REQUIRE(totalEnergy(full) < totalEnergy(half) * 2.4);
+    REQUIRE(totalEnergy(half) > totalEnergy(quiet) * 1.7);
+    REQUIRE(totalEnergy(lockedFull) > totalEnergy(lockedHalf) * 1.7);
+    REQUIRE(totalEnergy(lockedFull) < totalEnergy(lockedHalf) * 2.4);
+
+    core::KickEngine layered;
+    layered.prepare(48000.0);
+    core::EngineSettings layerSettings{};
+    layerSettings.effects.drive = 0.0f;
+    layerSettings.effects.limiterEnabled = false;
+    layerSettings.synth.snareLevel = 1.0f;
+    layerSettings.synth.clapLevel = 0.8f;
+    layerSettings.synth.hatLevel = 0.7f;
+    const core::Transport layerTransport{ 120.0, 0.0, 4.0, true };
+    auto layeredEnergy = [&](float velocity) {
+        layered.reset();
+        const std::array<core::MidiTrigger, 1> trig{ { { 0, 36, velocity, false } } };
+        std::vector<float> buffer(8000, 0.0f);
+        float* pointer = buffer.data();
+        layered.process(layerSettings, layerTransport, trig, &pointer, 1, 8000);
+        return totalEnergy(buffer);
+    };
+    const double layeredFull = layeredEnergy(1.0f);
+    const double layeredHalf = layeredEnergy(0.5f);
+    REQUIRE(layeredFull > layeredHalf * 1.7);
+    REQUIRE(layeredFull < layeredHalf * 2.4);
+
+    core::KickEngine engine;
+    engine.prepare(48000.0);
+    core::EngineSettings settings{};
+    settings.effects.drive = 0.0f;
+    settings.effects.limiterEnabled = false;
+    const core::Transport transport{ 120.0, 0.0, 4.0, true };
+    const std::array<core::MidiTrigger, 2> retrigger{ { { 0, 36, 1.0f, false }, { 6000, 48, 1.0f, false } } };
+    std::vector<float> both(12000, 0.0f);
+    float* bothPtr = both.data();
+    engine.process(settings, transport, retrigger, &bothPtr, 1, 12000);
+    const double firstHit = std::accumulate(both.begin() + 100, both.begin() + 2000, 0.0, [](double acc, float sample) {
+        return acc + std::abs(sample);
+    });
+    const double secondHit = std::accumulate(both.begin() + 6100, both.begin() + 8000, 0.0, [](double acc, float sample) {
+        return acc + std::abs(sample);
+    });
+    REQUIRE(firstHit > 5.0);
+    REQUIRE(secondHit > 5.0);
+
+    const std::array<core::MidiCcEvent, 1> soundOff{ { { 400, 120, 0 } } };
+    engine.reset();
+    std::vector<float> choked(4000, 0.0f);
+    float* chokedPtr = choked.data();
+    const std::array<core::MidiTrigger, 1> one{ { { 0, 40, 1.0f, false } } };
+    engine.process(settings, transport, one, &chokedPtr, 1, 4000, soundOff);
+    const double afterOff = std::accumulate(choked.begin() + 800, choked.end(), 0.0, [](double acc, float sample) {
+        return acc + std::abs(sample);
+    });
+    REQUIRE(afterOff < 1.0e-3);
+    REQUIRE(std::accumulate(choked.begin() + 50, choked.begin() + 300, 0.0, [](double acc, float sample) {
+        return acc + std::abs(sample);
+    }) > 1.0);
+
+    engine.reset();
+    const std::array<core::MidiCcEvent, 1> volumeOff{ { { 0, 7, 0 } } };
+    std::vector<float> muted(2000, 0.0f);
+    float* mutedPtr = muted.data();
+    engine.process(settings, transport, one, &mutedPtr, 1, 2000, volumeOff);
+    REQUIRE(totalEnergy(muted) < 1.0e-4);
+
+    const std::array<core::MidiCcEvent, 1> resetCc{ { { 0, 121, 0 } } };
+    std::vector<float> restored(2000, 0.0f);
+    float* restoredPtr = restored.data();
+    engine.process(settings, transport, one, &restoredPtr, 1, 2000, resetCc);
+    REQUIRE(totalEnergy(restored) > 10.0);
+
+    if (const char* directory = std::getenv("OEK_RENDER_DIR")) {
+        const int gap = static_cast<int>(0.08 * 48000.0);
+        const std::array<std::vector<float>, 7> hits{
+            fixedLow, fixedHigh, trackedRoot, trackedOctave, full, half, quiet
+        };
+        std::vector<float> comparison;
+        std::ranges::for_each(hits, [&](const std::vector<float>& hit) {
+            comparison.insert(comparison.end(), hit.begin(), hit.end());
+            comparison.insert(comparison.end(), static_cast<size_t>(gap), 0.0f);
+        });
+        const std::string root(directory);
+        writeWav(root + "/midi-fixed-root.wav", fixedLow);
+        writeWav(root + "/midi-fixed-plus12.wav", fixedHigh);
+        writeWav(root + "/midi-track-root.wav", trackedRoot);
+        writeWav(root + "/midi-track-plus12.wav", trackedOctave);
+        writeWav(root + "/midi-velocity-full.wav", full);
+        writeWav(root + "/midi-velocity-half.wav", half);
+        writeWav(root + "/midi-velocity-quarter.wav", quiet);
+        writeWav(root + "/midi-comparison.wav", comparison);
+    }
+}

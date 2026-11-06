@@ -2,7 +2,7 @@
 
 ![Native plugin editor](../assets/native-ui.png)
 
-`assets/native-ui.png` shows the v1.3.0 native JUCE editor at 1100 × 972. It displays **Festival 1/64 Drop Rush** in **Auto Mode A** with the phrase forced to **1 Bar** so the 1/64 steps stay readable, **LOCK IN (WAV)** active, the chromatic keyboard on **F1**, the gold pitch-drop trace, the snare/clap/hat row at zero, high pass and low pass at Off, the output meter, and the Kicking Mule stage.
+`assets/native-ui.png` shows the v1.4.0 native JUCE editor at 1100 × 972. The trigger menu defaults to Fixed. It displays **Festival 1/64 Drop Rush** in **Auto Mode A** with the phrase forced to **1 Bar** so the 1/64 steps stay readable, **LOCK IN (WAV)** active, the chromatic keyboard on **F1**, the gold pitch-drop trace, the snare/clap/hat row at zero, high pass and low pass at Off, the output meter, and the Kicking Mule stage.
 
 ![Layered kick editor](../assets/native-ui-layers.png)
 

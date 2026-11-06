@@ -486,6 +486,7 @@ void KickVoice::reset() noexcept {
     cacheReadStep_ = 1.0;
     lastOutput_ = 0.0f;
     declick_ = 0.0f;
+    reverseMusical_ = false;
     reverseBuffer_.clear();
 }
 
@@ -534,7 +535,8 @@ void KickVoice::triggerReverse(
     reversing_ = true;
     usingCache_ = cache.isLocked() && !cache.samples().empty();
     sampleIndex_ = 0;
-    totalSamples_ = std::max(16, durationSamples);
+    totalSamples_ = std::max(1, durationSamples);
+    reverseMusical_ = false;
     declick_ = previous;
     velocity_ = std::clamp(velocity, 0.0f, 1.5f);
     semitoneOffset_ = semitoneOffset;
@@ -546,6 +548,12 @@ void KickVoice::triggerReverse(
         }
         renderKickWaveformInto(reverseBuffer_, settings, safeRate, semitoneOffset);
     }
+}
+
+void KickVoice::armMusicalReverse(double startPpq, double endPpq) noexcept {
+    reverseStartPpq_ = startPpq;
+    reverseEndPpq_ = endPpq;
+    reverseMusical_ = reversing_ && endPpq > startPpq;
 }
 
 float KickVoice::synthesizeCurrentSample(const KickSynthSettings& settings, double sampleRate) noexcept {
@@ -561,11 +569,19 @@ float KickVoice::synthesizeCurrentSample(const KickSynthSettings& settings, doub
 float KickVoice::nextSample(
     const KickSynthSettings& liveSettings,
     const KickWavCache& cache,
-    double sampleRate) noexcept {
+    double sampleRate,
+    double currentPpq) noexcept {
     if (!active_) {
         return 0.0f;
     }
-    if (sampleIndex_ >= totalSamples_) {
+    const bool musicalReverse = reversing_ && reverseMusical_ && currentPpq >= 0.0;
+    if (musicalReverse && currentPpq >= reverseEndPpq_) {
+        active_ = false;
+        lastOutput_ = 0.0f;
+        declick_ = 0.0f;
+        return 0.0f;
+    }
+    if (!musicalReverse && sampleIndex_ >= totalSamples_) {
         active_ = false;
         lastOutput_ = 0.0f;
         declick_ = 0.0f;
@@ -583,17 +599,21 @@ float KickVoice::nextSample(
             active_ = false;
             return 0.0f;
         }
-        const float progress = static_cast<float>(sampleIndex_) / static_cast<float>(std::max(1, totalSamples_ - 1));
+        const float progress = musicalReverse
+            ? std::clamp(static_cast<float>((currentPpq - reverseStartPpq_) / std::max(1.0e-9, reverseEndPpq_ - reverseStartPpq_)), 0.0f, 1.0f)
+            : static_cast<float>(sampleIndex_) / static_cast<float>(std::max(1, totalSamples_ - 1));
         const float reversePos = (1.0f - progress) * static_cast<float>(source.size() - 1u);
         const size_t idx0 = std::min(static_cast<size_t>( std::max(0.0f, reversePos) ), source.size() - 1u);
         const size_t idx1 = std::min(idx0 + 1u, source.size() - 1u);
         const float frac = reversePos - static_cast<float>(idx0);
         const float raw = source[idx0] + frac * (source[idx1] - source[idx0]);
         const float startFade = std::min(1.0f, static_cast<float>(sampleIndex_ + 1) / releaseSamples);
-        const float edgeFade = std::min(1.0f, remaining / std::max(4.0f, releaseSamples * 0.4f));
+        const float edgeFade = musicalReverse
+            ? std::min(1.0f, static_cast<float>((reverseEndPpq_ - currentPpq) / std::max(1.0e-6, (reverseEndPpq_ - reverseStartPpq_) * 0.04)))
+            : std::min(1.0f, remaining / std::max(4.0f, releaseSamples * 0.4f));
         const float swellGain = progress * progress;
         ++sampleIndex_;
-        if (sampleIndex_ >= totalSamples_) {
+        if (!musicalReverse && sampleIndex_ >= totalSamples_) {
             active_ = false;
         }
         float shaped = sanitize(raw * swellGain * startFade * edgeFade * velocity_);

@@ -27,6 +27,19 @@ inline constexpr std::array<double, 5> kSyncDivisionBeats = {
 
 // Computes the exact number of samples until the target beat/subdivision boundary so the reverse kick
 // finishes in exact lockstep with the host clock (e.g., finishing right at the end of Beat 4).
+// Musical PPQ where a reverse swell must stop. Beat 4 Auto uses the bar end.
+[[nodiscard]] double reverseTargetPpq(
+    ReverseSyncMode mode,
+    double ppqPosition,
+    double beatsPerBar) noexcept;
+
+// Samples to play so the last reverse sample is the one before targetPpq.
+[[nodiscard]] int samplesUntilPpq(
+    double ppqPosition,
+    double targetPpq,
+    double bpm,
+    double sampleRate) noexcept;
+
 [[nodiscard]] int computeSyncedReverseSamples(
     ReverseSyncMode mode,
     double ppqPosition,

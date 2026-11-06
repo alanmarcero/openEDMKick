@@ -1,4 +1,5 @@
 #include "Effects.h"
+#include "KickEngine.h"
 #include "KickSynth.h"
 #include <algorithm>
 #include <catch2/catch_test_macros.hpp>
@@ -53,6 +54,137 @@ TEST_CASE("Beat 4 reverse effect finishes at the exact end of Beat 4", "[effects
     });
     REQUIRE(!voice.isActive());
     REQUIRE(lateEnergy > earlyEnergy * 4.0f);
+}
+
+TEST_CASE("Beat synced reverse ends on the target sample across clocks and block sizes", "[effects][reverse]") {
+    const auto expectSamples = [](core::ReverseSyncMode mode, double ppq, double bpm, double beats, double rate) {
+        const double target = core::reverseTargetPpq(mode, ppq, beats);
+        const double ppqPerSample = bpm / (60.0 * rate);
+        const double exact = (target - ppq) / ppqPerSample;
+        return std::max(0, static_cast<int>(std::ceil(exact - 1.0e-9)));
+    };
+
+    REQUIRE(core::reverseTargetPpq(core::ReverseSyncMode::Beat4Auto, 3.2, 4.0) == 4.0);
+    REQUIRE(core::reverseTargetPpq(core::ReverseSyncMode::BeatEnd, 1.2, 4.0) == 2.0);
+    REQUIRE(core::reverseTargetPpq(core::ReverseSyncMode::HalfBeat, 1.2, 4.0) == 1.5);
+    REQUIRE(core::reverseTargetPpq(core::ReverseSyncMode::QuarterBeat, 1.2, 4.0) == 1.25);
+    REQUIRE(core::reverseTargetPpq(core::ReverseSyncMode::Beat4Auto, 3.1, 3.5) == 3.5);
+    REQUIRE(core::shouldTriggerReverse(core::ReverseSyncMode::Beat4Auto, false, 3.1, 3.5));
+
+    const auto walk = [&](core::ReverseSyncMode mode, double startPpq, double bpm, double beats, double rate, int blockSize) {
+        core::KickEngine engine;
+        engine.prepare(rate);
+        core::EngineSettings settings{};
+        settings.effects.reverseMode = mode;
+        settings.effects.reverseMix = 1.0f;
+        settings.effects.drive = 0.0f;
+        settings.effects.limiterEnabled = false;
+        settings.synth.tailLengthMs = 400.0f;
+        const int expected = core::computeSyncedReverseSamples(mode, startPpq, bpm, beats, rate);
+        if (expected != expectSamples(mode, startPpq, bpm, beats, rate) || expected <= 0) {
+            return -1;
+        }
+        const double ppqPerSample = bpm / (60.0 * rate);
+        int processed = 0;
+        while (processed < expected) {
+            const int count = std::min(blockSize, expected - processed);
+            core::Transport transport{ bpm, startPpq + static_cast<double>(processed) * ppqPerSample, beats, true };
+            std::vector<core::MidiTrigger> triggers;
+            if (processed == 0) {
+                triggers.push_back(core::MidiTrigger{ 0, 60, 1.0f, false });
+            }
+            std::vector<float> buffer(static_cast<size_t>(count), 0.0f);
+            float* pointer = buffer.data();
+            engine.process(settings, transport, triggers, &pointer, 1, count);
+            processed += count;
+            if (!engine.isVoiceReversing()) {
+                return -2;
+            }
+        }
+        core::Transport boundary{ bpm, startPpq + static_cast<double>(expected) * ppqPerSample, beats, true };
+        float sample = 0.0f;
+        float* pointer = &sample;
+        engine.process(settings, boundary, {}, &pointer, 1, 1);
+        return engine.isVoiceReversing() ? -3 : expected;
+    };
+
+    const std::array<double, 3> rates{ 44100.0, 48000.0, 96000.0 };
+    const std::array<double, 3> tempos{ 96.0, 128.5, 174.0 };
+    const std::array<int, 3> blocks{ 1, 128, 513 };
+    for (double rate : rates) {
+        for (double bpm : tempos) {
+            for (int block : blocks) {
+                REQUIRE(walk(core::ReverseSyncMode::Beat4Auto, 3.0, bpm, 4.0, rate, block)
+                    == core::computeSyncedReverseSamples(core::ReverseSyncMode::Beat4Auto, 3.0, bpm, 4.0, rate));
+                REQUIRE(walk(core::ReverseSyncMode::BeatEnd, 0.37, bpm, 4.0, rate, block)
+                    == core::computeSyncedReverseSamples(core::ReverseSyncMode::BeatEnd, 0.37, bpm, 4.0, rate));
+                REQUIRE(walk(core::ReverseSyncMode::QuarterBeat, 2.05, bpm, 4.0, rate, block)
+                    == core::computeSyncedReverseSamples(core::ReverseSyncMode::QuarterBeat, 2.05, bpm, 4.0, rate));
+            }
+        }
+    }
+
+    const double nearEnd = 4.0 - (5.0 * 90.0 / (60.0 * 48000.0));
+    const int shortReverse = core::computeSyncedReverseSamples(
+        core::ReverseSyncMode::BeatEnd, nearEnd, 90.0, 4.0, 48000.0);
+    REQUIRE(shortReverse > 0);
+    REQUIRE(shortReverse < 16);
+    REQUIRE(walk(core::ReverseSyncMode::BeatEnd, nearEnd, 90.0, 4.0, 48000.0, 1) == shortReverse);
+
+    core::KickEngine crossing;
+    crossing.prepare(48000.0);
+    core::EngineSettings crossingSettings{};
+    crossingSettings.effects.reverseMode = core::ReverseSyncMode::Beat4Auto;
+    crossingSettings.effects.reverseMix = 1.0f;
+    crossingSettings.effects.drive = 0.0f;
+    crossingSettings.effects.limiterEnabled = false;
+    const int beatSamples = core::computeSyncedReverseSamples(core::ReverseSyncMode::Beat4Auto, 3.0, 120.0, 4.0, 48000.0);
+    std::vector<float> longBlock(static_cast<size_t>(beatSamples + 300), 0.0f);
+    float* longPtr = longBlock.data();
+    const std::array<core::MidiTrigger, 1> downbeat{ { { 0, 60, 1.0f, false } } };
+    crossing.process(crossingSettings, core::Transport{ 120.0, 3.0, 4.0, true }, downbeat, &longPtr, 1, beatSamples + 300);
+    REQUIRE(!crossing.isVoiceReversing());
+
+    core::KickEngine sought;
+    sought.prepare(48000.0);
+    float one = 0.0f;
+    float* onePtr = &one;
+    sought.process(crossingSettings, core::Transport{ 120.0, 3.0, 4.0, true }, downbeat, &onePtr, 1, 1);
+    REQUIRE(sought.isVoiceReversing());
+    sought.process(crossingSettings, core::Transport{ 120.0, 4.5, 4.0, true }, {}, &onePtr, 1, 1);
+    REQUIRE(!sought.isVoiceReversing());
+
+    core::KickEngine shifted;
+    shifted.prepare(48000.0);
+    double cursor = 3.0;
+    int steps = 0;
+    bool armed = false;
+    while (steps < 100000) {
+        const double bpm = steps < 2000 ? 100.0 : 170.0;
+        float sample = 0.0f;
+        float* pointer = &sample;
+        std::vector<core::MidiTrigger> triggers;
+        if (steps == 0) {
+            triggers.push_back(core::MidiTrigger{ 0, 60, 1.0f, false });
+        }
+        shifted.process(crossingSettings, core::Transport{ bpm, cursor, 4.0, true }, triggers, &pointer, 1, 1);
+        if (shifted.isVoiceReversing()) {
+            armed = true;
+        } else if (armed) {
+            break;
+        }
+        cursor += bpm / (60.0 * 48000.0);
+        ++steps;
+    }
+    double independent = 3.0;
+    int independentSteps = 0;
+    while (independent < 4.0 && independentSteps < 100000) {
+        const double bpm = independentSteps < 2000 ? 100.0 : 170.0;
+        independent += bpm / (60.0 * 48000.0);
+        ++independentSteps;
+    }
+    REQUIRE(armed);
+    REQUIRE(steps == independentSteps);
 }
 
 TEST_CASE("Bitcrusher quantizes amplitude and sample rate", "[effects]") {

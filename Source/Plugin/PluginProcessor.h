@@ -53,6 +53,7 @@ public:
     std::atomic<float> displayBeatsPerBar{ 4.0f };
     std::atomic<bool> displayLockedIn{ false };
     std::atomic<bool> displayReversing{ false };
+    std::atomic<uint32_t> displayTriggerCount{ 0 };
 
 private:
     void syncSequencerPresets(const std::array<openedmkick::core::AutoSlotSettings, openedmkick::core::kNumAutoSlots>& slots);
@@ -113,6 +114,7 @@ private:
         std::atomic<float>* output;
         std::atomic<float>* limiter;
         std::atomic<float>* ceiling;
+        std::atomic<float>* midiMode;
         std::atomic<float>* masterBypass;
     };
 
@@ -123,6 +125,7 @@ private:
     std::array<int, openedmkick::core::kNumAutoSlots> lastSlotBars_{ 0, 0, 0, 0 };
     std::atomic<bool> auditionPending_{ false };
     std::vector<openedmkick::core::MidiTrigger> midiScratch_;
+    std::vector<openedmkick::core::MidiCcEvent> midiCcScratch_;
     int currentProgram_ = 0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(OpenEdmKickProcessor)

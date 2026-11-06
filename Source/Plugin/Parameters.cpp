@@ -144,6 +144,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout() {
 
     // Kick drum synthesis & 12-note tuning
     addChoice(layout, kNote, "Kick Note", notes, 5); // Default F
+    addChoice(layout, kMidiMode, "Trigger", { "Fixed", "Note" }, 0);
     addChoice(layout, kOctave, "Kick Octave", octaves, 1);
     addFloat(layout, kFineTune, "Fine Tune", { -50.0f, 50.0f }, 0.0f, kFormatCents);
     addFloat(layout, kStartPitch, "Start Pitch", skewedRange(100.0f, 2500.0f, 450.0f), 420.0f, kFormatHz);

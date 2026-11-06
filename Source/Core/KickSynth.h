@@ -56,6 +56,20 @@ struct KickSynthSettings {
     return 16.0f + clamped * 340.0f;
 }
 
+// MIDI note number for the panel tuning. C4 is 60.
+// Oct 1 Club C is 24. Oct 1 Club F is 29. Oct 2 Punch C is 36.
+[[nodiscard]] inline int midiRootForTuning(int noteIndex, int octave) noexcept {
+    const int note = noteIndex >= 0 ? noteIndex % kNumNotes : (noteIndex % kNumNotes + kNumNotes) % kNumNotes;
+    const int oct = octave < 0 ? 0 : (octave > 3 ? 3 : octave);
+    return 12 + oct * 12 + note;
+}
+
+[[nodiscard]] inline float trackedSemitoneOffset(int noteIndex, int octave, int midiNote) noexcept {
+    const int delta = midiNote - midiRootForTuning(noteIndex, octave);
+    const int clamped = delta < -48 ? -48 : (delta > 48 ? 48 : delta);
+    return static_cast<float>(clamped);
+}
+
 // Returns the tuned fundamental frequency in Hz for any of the 12 chromatic notes.
 [[nodiscard]] float fundamentalHzForNote(int noteIndex, int octave = 1, float fineCents = 0.0f) noexcept;
 
@@ -149,10 +163,13 @@ public:
     [[nodiscard]] bool isReversing() const noexcept { return reversing_; }
     [[nodiscard]] bool isUsingCachedWav() const noexcept { return usingCache_; }
 
+    void armMusicalReverse(double startPpq, double endPpq) noexcept;
+
     [[nodiscard]] float nextSample(
         const KickSynthSettings& liveSettings,
         const KickWavCache& cache,
-        double sampleRate) noexcept;
+        double sampleRate,
+        double currentPpq = -1.0) noexcept;
 
 private:
     [[nodiscard]] float synthesizeCurrentSample(const KickSynthSettings& settings, double sampleRate) noexcept;
@@ -172,6 +189,9 @@ private:
     float lastOutput_ = 0.0f;
     float declick_ = 0.0f;
     float declickCoeff_ = 0.95f;
+    bool reverseMusical_ = false;
+    double reverseStartPpq_ = 0.0;
+    double reverseEndPpq_ = 0.0;
     std::vector<float> reverseBuffer_;
 };
 

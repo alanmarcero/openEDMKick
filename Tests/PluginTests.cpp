@@ -268,3 +268,85 @@ TEST_CASE("Timbre layer parameters default off and survive the session", "[plugi
     REQUIRE_THAT(restored.currentSynthSettings().clapLevel, WithinAbs(0.0f, 0.002f));
     REQUIRE_THAT(restored.currentSynthSettings().hatLevel, WithinAbs(0.0f, 0.002f));
 }
+
+TEST_CASE("MIDI note-on velocity zero and other channels follow the trigger rules", "[plugin][midi]") {
+    OpenEdmKickProcessor processor;
+    processor.prepareToPlay(48000.0, 512);
+    setParam(processor, "drive", 0.0f);
+    setParam(processor, "limiter", 0.0f);
+    REQUIRE(processor.parameters.getParameter("midi_mode")->getValue() == 0.0f);
+
+    juce::AudioBuffer<float> buffer(2, 512);
+    juce::MidiBuffer midi;
+    midi.addEvent(juce::MidiMessage::noteOn(1, 60, static_cast<juce::uint8>(0)), 0);
+    midi.addEvent(juce::MidiMessage::noteOff(3, 60), 20);
+    processor.processBlock(buffer, midi);
+    float silent = 0.0f;
+    std::ranges::for_each(std::views::iota(0, buffer.getNumSamples()), [&](int i) {
+        silent += std::abs(buffer.getSample(0, i));
+    });
+    REQUIRE_THAT(silent, WithinAbs(0.0f, 1.0e-5f));
+
+    midi.clear();
+    midi.addEvent(juce::MidiMessage::noteOn(5, 48, 0.9f), 16);
+    processor.processBlock(buffer, midi);
+    float heard = 0.0f;
+    std::ranges::for_each(std::views::iota(16, buffer.getNumSamples()), [&](int i) {
+        heard += std::abs(buffer.getSample(0, i));
+    });
+    REQUIRE(heard > 1.0f);
+
+    setParam(processor, "midi_mode", 1.0f);
+    juce::MemoryBlock saved;
+    processor.getStateInformation(saved);
+    OpenEdmKickProcessor restored;
+    restored.setStateInformation(saved.getData(), static_cast<int>(saved.getSize()));
+    REQUIRE(restored.parameters.getParameter("midi_mode")->getValue() > 0.5f);
+}
+
+TEST_CASE("Mule artwork kicks when a trigger arrives", "[plugin][ui][mule]") {
+#if JUCE_LINUX
+    if (std::getenv("DISPLAY") == nullptr) SKIP("Native editor requires a display");
+#endif
+    juce::ScopedJuceInitialiser_GUI gui;
+    OpenEdmKickProcessor processor;
+    processor.prepareToPlay(48000.0, 256);
+    std::unique_ptr<juce::AudioProcessorEditor> editor(processor.createEditor());
+    const auto idle = editor->createComponentSnapshot(editor->getLocalBounds(), true, 1.0f);
+
+    juce::AudioBuffer<float> buffer(2, 256);
+    juce::MidiBuffer midi;
+    midi.addEvent(juce::MidiMessage::noteOn(1, 36, 1.0f), 0);
+    processor.processBlock(buffer, midi);
+    REQUIRE(processor.displayTriggerCount.load() == 1u);
+    juce::Thread::sleep(40);
+    juce::Timer::callPendingTimersSynchronously();
+    juce::Thread::sleep(50);
+    const auto strike = editor->createComponentSnapshot(editor->getLocalBounds(), true, 1.0f);
+
+    const int x0 = 760;
+    const int x1 = std::min(idle.getWidth(), 1080);
+    const int y0 = 50;
+    const int y1 = std::min(idle.getHeight(), 320);
+    int different = 0;
+    for (int y = y0; y < y1; y += 2) {
+        for (int x = x0; x < x1; x += 2) {
+            if (idle.getPixelAt(x, y) != strike.getPixelAt(x, y)) {
+                ++different;
+            }
+        }
+    }
+    REQUIRE(different > 30);
+
+    if (const char* directory = std::getenv("OEK_MULE_DIR")) {
+        const auto write = [&](const juce::Image& image, const char* name) {
+            juce::FileOutputStream stream{ juce::File(juce::String(directory) + "/" + name) };
+            REQUIRE(stream.openedOk());
+            REQUIRE(juce::PNGImageFormat().writeImageToStream(image, stream));
+        };
+        write(idle, "mule-idle.png");
+        write(strike, "mule-strike.png");
+        juce::Thread::sleep(120);
+        write(editor->createComponentSnapshot(editor->getLocalBounds(), true, 1.0f), "mule-recoil.png");
+    }
+}

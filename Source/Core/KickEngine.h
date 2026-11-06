@@ -3,6 +3,7 @@
 #include "AutoSequencer.h"
 #include "Effects.h"
 #include "KickSynth.h"
+#include <cstdint>
 #include <optional>
 #include <span>
 #include <vector>
@@ -21,6 +22,13 @@ struct MidiTrigger {
     int noteNumber = 60;
     float velocity = 1.0f;
     bool audition = false;
+};
+
+// Performance MIDI. Not stored in the session.
+struct MidiCcEvent {
+    int sampleOffset = 0;
+    int controller = 0;
+    int value = 0;
 };
 
 struct EffectSettings {
@@ -49,6 +57,7 @@ struct EngineSettings {
     bool autoEnabled = false;
     bool autoBypass = false;
     int activeAutoSlot = 0; // 0=A, 1=B, 2=C, 3=D
+    bool noteTracking = false;
     std::array<AutoSlotSettings, kNumAutoSlots> autoSlots{};
     EffectSettings effects{};
     bool masterBypass = false;
@@ -67,7 +76,8 @@ public:
         std::span<const MidiTrigger> midiTriggers,
         float* const* channels,
         int numChannels,
-        int numSamples) noexcept;
+        int numSamples,
+        std::span<const MidiCcEvent> controlChanges = {}) noexcept;
 
     void lockCurrentKick(const KickSynthSettings& settings);
     void unlockKick() noexcept;
@@ -82,6 +92,7 @@ public:
     [[nodiscard]] float currentAutoPhase() const noexcept { return sequencer_.currentWindowPhase(); }
     [[nodiscard]] float currentBeatPhase() const noexcept { return currentBeatPhase_; }
     [[nodiscard]] bool isVoiceReversing() const noexcept { return reverseVoice_.isActive(); }
+    [[nodiscard]] uint32_t triggerSerial() const noexcept { return triggerSerial_; }
 
 private:
     void triggerNote(
@@ -113,6 +124,15 @@ private:
     float smoothedLowPassHz_ = ToneFilter::kLowPassBypassHz;
     float toneSmooth_ = 0.0f;
     bool toneSnap_ = true;
+    float midiVolume_ = 1.0f;
+    float midiExpression_ = 1.0f;
+    float midiBrightness_ = 1.0f;
+    uint32_t triggerSerial_ = 0;
+    bool reverseArmed_ = false;
+    double reverseStartPpq_ = 0.0;
+    double reverseEndPpq_ = 0.0;
+    double lastSamplePpq_ = 0.0;
+    bool hasLastPpq_ = false;
 };
 
 } // namespace openedmkick::core

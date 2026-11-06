@@ -43,6 +43,7 @@ OpenEdmKickProcessor::OpenEdmKickProcessor()
               raw(params::kGateMix),               raw(params::kPumpRate), raw(params::kPumpMix),
               raw(params::kHighPass), raw(params::kLowPass),
               raw(params::kOutput), raw(params::kLimiter), raw(params::kCeiling),
+              raw(params::kMidiMode),
               raw(params::kMasterBypass)
           };
       }()) {
@@ -54,6 +55,7 @@ void OpenEdmKickProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
     const std::scoped_lock lock(stateMutex_);
     engine_.prepare(sampleRate);
     midiScratch_.reserve(static_cast<size_t>(std::max(64, samplesPerBlock)));
+    midiCcScratch_.reserve(static_cast<size_t>(std::max(64, samplesPerBlock)));
     // An existing Lock In WAV is resampled on playback. Re-rendering here would
     // replace the frozen hit whenever the host changes sample rate.
     if (values_.lockIn->load() > 0.5f && !engine_.isKickLocked()) {
@@ -185,6 +187,7 @@ void OpenEdmKickProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
         isOn(values_.autoEnabled),
         isOn(values_.autoBypass),
         currentAutoSlot(),
+        choice(values_.midiMode) == 1,
         slotSettings,
         core::EffectSettings{
             static_cast<core::ReverseSyncMode>(std::clamp(choice(values_.reverseMode), 0, 4)),
@@ -241,16 +244,29 @@ void OpenEdmKickProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
     }();
 
     midiScratch_.clear();
+    midiCcScratch_.clear();
+    const int lastSample = std::max(0, buffer.getNumSamples() - 1);
     std::ranges::for_each(midi, [&](const juce::MidiMessageMetadata& meta) {
         const auto msg = meta.getMessage();
+        const int sample = std::clamp(meta.samplePosition, 0, lastSample);
         if (msg.isNoteOn() && msg.getFloatVelocity() > 0.0f) {
             midiScratch_.push_back(core::MidiTrigger{
-                std::clamp(meta.samplePosition, 0, std::max(0, buffer.getNumSamples() - 1)),
+                sample,
                 msg.getNoteNumber(),
                 msg.getFloatVelocity(),
                 false
             });
+            return;
         }
+        if (!msg.isController()) {
+            return;
+        }
+        const int controller = msg.getControllerNumber();
+        if (controller != 7 && controller != 11 && controller != 74
+            && controller != 120 && controller != 121 && controller != 123) {
+            return;
+        }
+        midiCcScratch_.push_back(core::MidiCcEvent{ sample, controller, msg.getControllerValue() });
     });
 
     if (auditionPending_.exchange(false)) {
@@ -264,7 +280,8 @@ void OpenEdmKickProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
         midiScratch_,
         buffer.getArrayOfWritePointers(),
         buffer.getNumChannels(),
-        buffer.getNumSamples());
+        buffer.getNumSamples(),
+        midiCcScratch_);
 
     displayPeak.store(engine_.currentPeak());
     displayAutoPhase.store(engine_.currentAutoPhase());
@@ -273,6 +290,7 @@ void OpenEdmKickProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
     displayBeatsPerBar.store(static_cast<float>(transport.beatsPerBar));
     displayLockedIn.store(engine_.isKickLocked());
     displayReversing.store(engine_.isVoiceReversing());
+    displayTriggerCount.store(engine_.triggerSerial(), std::memory_order_relaxed);
 }
 
 juce::AudioProcessorEditor* OpenEdmKickProcessor::createEditor() {

@@ -49,35 +49,67 @@ bool shouldTriggerReverse(
     return false;
 }
 
+double reverseTargetPpq(
+    ReverseSyncMode mode,
+    double ppqPosition,
+    double beatsPerBar) noexcept {
+    const double position = std::max(0.0, ppqPosition);
+    const double bar = std::max(1.0, beatsPerBar);
+    const auto nextGrid = [](double value, double grid) {
+        const double safeGrid = std::max(1.0e-6, grid);
+        const double index = std::floor(value / safeGrid + 1.0e-9);
+        double boundary = (index + 1.0) * safeGrid;
+        if (boundary <= value) {
+            boundary += safeGrid;
+        }
+        return boundary;
+    };
+    switch (mode) {
+        case ReverseSyncMode::HalfBeat:
+            return nextGrid(position, 0.5);
+        case ReverseSyncMode::QuarterBeat:
+            return nextGrid(position, 0.25);
+        case ReverseSyncMode::Beat4Auto: {
+            const double barIndex = std::floor(position / bar + 1.0e-9);
+            double barEnd = (barIndex + 1.0) * bar;
+            if (barEnd <= position) {
+                barEnd += bar;
+            }
+            return barEnd;
+        }
+        case ReverseSyncMode::Off:
+        case ReverseSyncMode::BeatEnd:
+            break;
+    }
+    return nextGrid(position, 1.0);
+}
+
+int samplesUntilPpq(
+    double ppqPosition,
+    double targetPpq,
+    double bpm,
+    double sampleRate) noexcept {
+    const double safeBpm = std::max(20.0, bpm);
+    const double safeRate = std::max(8000.0, sampleRate);
+    const double ppqPerSample = safeBpm / (60.0 * safeRate);
+    if (!(targetPpq > ppqPosition) || !(ppqPerSample > 0.0)) {
+        return 0;
+    }
+    const double exact = (targetPpq - ppqPosition) / ppqPerSample;
+    return std::max(0, static_cast<int>(std::ceil(exact - 1.0e-9)));
+}
+
 int computeSyncedReverseSamples(
     ReverseSyncMode mode,
     double ppqPosition,
     double bpm,
     double beatsPerBar,
     double sampleRate) noexcept {
-    const double safeBpm = std::max(20.0, bpm);
-    const double safeRate = std::max(8000.0, sampleRate);
-    const double samplesPerBeat = (60.0 / safeBpm) * safeRate;
-    const double safeBeatsPerBar = std::max(1.0, beatsPerBar);
-
-    const double gridBeats = [&] {
-        switch (mode) {
-            case ReverseSyncMode::HalfBeat: return 0.5;
-            case ReverseSyncMode::QuarterBeat: return 0.25;
-            case ReverseSyncMode::Beat4Auto: {
-                const double barPos = std::fmod(std::max(0.0, ppqPosition), safeBeatsPerBar);
-                const double toBarEnd = safeBeatsPerBar - barPos;
-                return (toBarEnd > kBoundaryEpsilon && toBarEnd <= 1.0 + kBoundaryEpsilon) ? 1.0 : 1.0;
-            }
-            case ReverseSyncMode::Off:
-            case ReverseSyncMode::BeatEnd:
-                break;
-        }
-        return 1.0;
-    }();
-
-    const double remainingBeats = remainingBeatsToGrid(ppqPosition, gridBeats);
-    return std::max(16, static_cast<int>(std::round(remainingBeats * samplesPerBeat)));
+    return samplesUntilPpq(
+        std::max(0.0, ppqPosition),
+        reverseTargetPpq(mode, ppqPosition, beatsPerBar),
+        bpm,
+        sampleRate);
 }
 
 float saturate(float input, float drive) noexcept {

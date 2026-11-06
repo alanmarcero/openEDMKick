@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <numbers>
 #include <cstring>
 #include <numeric>
 #include <ranges>
@@ -196,6 +197,7 @@ void KickWaveformView::paint(juce::Graphics& g) {
 KickSynthPanel::KickSynthPanel(OpenEdmKickProcessor& processor)
     : processor_(processor),
       auditionButton_("TRIG"),
+      triggerMode_(processor.parameters, params::kMidiMode, "", theme::kAccentMint),
       lockIn_(processor.parameters, params::kLockIn, "LOCK IN (WAV)", theme::kAccentGold),
       waveformView_(processor),
       octave_(processor.parameters, params::kOctave, "Octave", theme::kAccentMint),
@@ -241,13 +243,15 @@ KickSynthPanel::KickSynthPanel(OpenEdmKickProcessor& processor)
 
     auditionButton_.setComponentID("audition_trig");
     auditionButton_.setColour(juce::TextButton::buttonOnColourId, theme::kAccentMint);
-    auditionButton_.setTooltip("Audition the tuned kick. This still works while Auto Mode is playing.");
+    auditionButton_.setTooltip("Audition the panel tuning. Works in Auto Mode. Ignores Note tracking.");
     auditionButton_.onClick = [this] { processor_.triggerAudition(); };
     addAndMakeVisible(auditionButton_);
+    triggerMode_.setTooltip("Fixed: every note plays the panel kick. Note: pitch follows the MIDI note number. Oct 1 Club F is MIDI 29. MIDI 60 is C4.");
+    addAndMakeVisible(triggerMode_);
     lockIn_.setTooltip("Freeze this kick into an internal 32-bit WAV. Playback keeps that hit if the host sample rate changes.");
 
     std::ranges::for_each(std::initializer_list<juce::Component*>{
-        &lockIn_, &waveformView_, &octave_, &fineTune_, &startPitch_, &pitchDecay_,
+        &lockIn_, &triggerMode_, &waveformView_, &octave_, &fineTune_, &startPitch_, &pitchDecay_,
         &pitchCurve_, &punch_, &tailLength_, &tailCurve_, &subDrive_, &clickLevel_, &clickFreq_,
         &snareLevel_, &snareTone_, &snareDecay_, &clapLevel_, &clapSpread_, &clapTone_,
         &hatLevel_, &hatTone_, &hatDecay_
@@ -296,6 +300,8 @@ void KickSynthPanel::resized() {
     lockIn_.setBounds(header.removeFromRight(118));
     header.removeFromRight(6);
     auditionButton_.setBounds(header.removeFromRight(58).reduced(0, 1));
+    header.removeFromRight(6);
+    triggerMode_.setBounds(header.removeFromRight(78).reduced(0, 1));
 
     bounds.removeFromTop(4);
     noteBarArea_ = bounds.removeFromTop(54);
@@ -356,6 +362,15 @@ MuleStagePanel::MuleStagePanel(OpenEdmKickProcessor& processor)
     startTimerHz(kRefreshHz);
 }
 
+void MuleStagePanel::timerCallback() {
+    const uint32_t serial = processor_.displayTriggerCount.load(std::memory_order_relaxed);
+    if (serial != seenTriggers_) {
+        seenTriggers_ = serial;
+        kickStartedMs_ = juce::Time::getMillisecondCounterHiRes();
+    }
+    repaint();
+}
+
 void MuleStagePanel::paint(juce::Graphics& g) {
     drawPanel(g, getLocalBounds(), "Kicking Mule Stage", theme::kAccentGold);
 
@@ -374,11 +389,31 @@ void MuleStagePanel::paint(juce::Graphics& g) {
     const float beatPhase = std::clamp(processor_.displayBeatPhase.load(), 0.0f, 1.0f);
     const float pulse = std::max(peak, 0.35f * std::pow(1.0f - beatPhase, 3.0f));
     const bool locked = processor_.isKickLockedIn();
+    const double kickAgeMs = juce::Time::getMillisecondCounterHiRes() - kickStartedMs_;
+    const float kickPhase = kickAgeMs < 0.0 ? 0.0f : static_cast<float>(std::min(1.0, kickAgeMs / 220.0));
+    float pose = 0.0f;
+    float coneSquash = 1.0f;
+    float shock = 0.0f;
+    if (kickPhase > 0.0f && kickPhase < 1.0f) {
+        if (kickPhase < 0.18f) {
+            pose = -(kickPhase / 0.18f);
+        } else if (kickPhase < 0.42f) {
+            const float strike = (kickPhase - 0.18f) / 0.24f;
+            pose = -1.0f + 2.0f * strike;
+            coneSquash = 1.0f - 0.22f * std::sin(strike * std::numbers::pi_v<float>);
+            shock = strike;
+        } else {
+            const float recoil = (kickPhase - 0.42f) / 0.58f;
+            pose = 1.0f - recoil;
+            shock = 1.0f - recoil;
+            coneSquash = 1.0f + 0.06f * std::sin(recoil * std::numbers::pi_v<float>);
+        }
+    }
 
     // Subwoofer cone behind the Kicking Mule
     const juce::Point<float> coneCentre{ stage.getX() + stage.getWidth() * 0.36f, stage.getCentreY() + 4.0f };
     const float baseRadius = std::min(stage.getWidth(), stage.getHeight()) * 0.42f;
-    const float pumpRadius = baseRadius + pulse * 8.0f;
+    const float pumpRadius = (baseRadius + pulse * 8.0f) * coneSquash;
     const juce::Rectangle<float> rimRect(
         coneCentre.x - baseRadius - 6.0f, coneCentre.y - baseRadius - 6.0f,
         (baseRadius + 6.0f) * 2.0f, (baseRadius + 6.0f) * 2.0f);
@@ -423,16 +458,16 @@ void MuleStagePanel::paint(juce::Graphics& g) {
     // Shockwave kick rings on the right where the mule kicks
     const juce::Point<float> kickImpact{ stage.getRight() - 52.0f, stage.getCentreY() - 8.0f };
     std::ranges::for_each(std::views::iota(0, 3), [&](int wave) {
-        const float r = 14.0f + static_cast<float>(wave) * 14.0f + pulse * 12.0f;
-        g.setColour(theme::kAccentGold.withAlpha((0.35f - static_cast<float>(wave) * 0.09f) * (0.4f + pulse * 0.6f)));
+        const float r = 14.0f + static_cast<float>(wave) * 14.0f + (pulse + shock) * 12.0f;
+        g.setColour(theme::kAccentGold.withAlpha((0.35f - static_cast<float>(wave) * 0.09f) * (0.35f + shock + pulse * 0.4f)));
         g.drawEllipse(kickImpact.x - r * 0.55f, kickImpact.y - r, r * 1.1f, r * 2.0f, 1.8f);
     });
 
     // Draw the 3D Kicking Mule mascot kicking with pulse animation
     if (mascot_.isValid()) {
         const juce::Graphics::ScopedSaveState muleSave(g);
-        const float kickShiftX = pulse * 5.0f;
-        const float kickShiftY = -pulse * 4.0f;
+        const float kickShiftX = pose * 18.0f + pulse * 2.0f;
+        const float kickShiftY = -std::max(0.0f, pose) * 6.0f;
         g.addTransform(juce::AffineTransform::translation(kickShiftX, kickShiftY));
         g.setColour(juce::Colours::white);
         g.setImageResamplingQuality(juce::Graphics::highResamplingQuality);

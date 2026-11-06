@@ -3,6 +3,7 @@
 #include "Controls.h"
 #include "PluginProcessor.h"
 #include <array>
+#include <cstdint>
 
 namespace openedmkick::ui {
 
@@ -36,6 +37,7 @@ private:
     OpenEdmKickProcessor& processor_;
     std::array<juce::TextButton, openedmkick::core::kNumNotes> noteButtons_;
     juce::TextButton auditionButton_;
+    Choice triggerMode_;
     Toggle lockIn_;
     KickWaveformView waveformView_;
     Choice octave_;
@@ -73,9 +75,11 @@ public:
     void paint(juce::Graphics& g) override;
 
 private:
-    void timerCallback() override { repaint(); }
+    void timerCallback() override;
     OpenEdmKickProcessor& processor_;
     juce::Image mascot_;
+    uint32_t seenTriggers_ = 0;
+    double kickStartedMs_ = -1.0e12;
 };
 
 // Interactive Piano Roll editor that displays and edits kick triggers down to 1/64-note resolution.

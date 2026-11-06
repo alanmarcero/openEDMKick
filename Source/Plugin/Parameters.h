@@ -9,6 +9,7 @@ namespace openedmkick::params {
 
 // Kick drum synthesis & 12-note tuning parameters
 inline constexpr const char* kNote = "note";
+inline constexpr const char* kMidiMode = "midi_mode";
 inline constexpr const char* kOctave = "octave";
 inline constexpr const char* kFineTune = "fine_tune";
 inline constexpr const char* kStartPitch = "start_pitch";
