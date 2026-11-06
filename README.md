@@ -16,19 +16,19 @@ A dedicated EDM kick drum synthesizer VSTi featuring 12-note chromatic sub tunin
 
 ![openEDMKick native editor - Beat 4 Reverse Pickup Loop](assets/native-ui-reverse.png)
 
-*Captured from the native v1.0.0 editor. [Capture details and provenance](docs/SCREENSHOTS.md).*
+*Captured from the native v1.1.0 editor. [Capture details and provenance](docs/SCREENSHOTS.md).*
 
 ## Features
 
 - **Dedicated EDM Kick Drum VSTi (`IS_SYNTH`)**. Built exclusively for crafting phase-accurate, club-ready kick drums. In Regular Mode, any incoming MIDI note triggers the kick drum at its tuned fundamental pitch.
-- **12-Note Chromatic Sub Tuning (`C` through `B`)**. Tune the kick fundamental directly to any of the 12 musical keys (`C`, `C#`, `D`, `D#`, `E`, `F`, `F#`, `G`, `G#`, `A`, `A#`, `B`) across three octave ranges (`Oct 0 Sub`, `Oct 1 Club`, `Oct 2 Punch`) with fine cent adjustment (`-50 .. +50 ct`), pitch envelope (`Start Hz`, `Pitch Decay`, `Pitch Curve`), body/tail shaping (`Tail Length`, `Tail Curve`, `Sub Drive`, `Punch`), and transient beater click (`Click Level`, `Click Freq`).
-- **One-Click "Lock In" Internal WAV Cache (`LOCK IN (WAV)`)**. Freezes the synthesized kick into an internal 32-bit IEEE float RIFF `.wav` buffer managed entirely by the plugin. While locked in, the plugin stops synthesizing oscillators/envelopes in real time and plays directly from the cached WAV, guaranteeing 100% identical phase and transient impact and persisting the locked WAV inside the DAW session state.
+- **12-Note Chromatic Sub Tuning (`C` through `B`)**. Tune the kick fundamental directly to any of the 12 musical keys (`C`, `C#`, `D`, `D#`, `E`, `F`, `F#`, `G`, `G#`, `A`, `A#`, `B`) from a piano keyboard across three octave ranges (`0 Sub`, `1 Club`, `2 Punch`) with fine cent adjustment (`-50 .. +50 ct`), an exponential pitch drop (`Start Hz`, `Pitch Decay`, `Pitch Curve`), body/tail shaping (`Tail Length`, `Tail Curve`, `Sub Drive`, `Punch`), and a beater click (`Click Level`, `Click Freq`). The gold trace on the waveform is that pitch drop.
+- **One-Click "Lock In" Internal WAV Cache (`LOCK IN (WAV)`)**. Freezes the synthesized kick into an internal 32-bit IEEE float RIFF `.wav` buffer managed entirely by the plugin. While locked in, the plugin stops synthesizing oscillators/envelopes in real time and plays directly from the cached WAV, guaranteeing 100% identical phase and transient impact and persisting the locked WAV inside the DAW session state. If the host sample rate changes, that same WAV is resampled instead of being synthesized again.
 - **Host-Synced Kick Effects & Beat-4 Reverse Alignment**:
   - **Reverse Sync (`Off`, `Beat End (Sync)`, `Beat 4 Auto`, `1/2 Beat`, `1/4 Beat`)**: Locks reverse kick swells to the host transport. When triggered on Beat 4 of a bar, the reverse kick automatically calculates the remaining samples in Beat 4 and finishes at the exact end of Beat 4.
   - **Bitcrusher & Sample-Rate Reducer**: `Rate` (`200 Hz – 48 kHz`), `Bits` (`1 – 16`), and `Mix`, plus automatic build-up ramp modulation in Auto Mode.
   - **Beat Stutter (`1/4` to `1/64`)**: Host-synced beat repeat that slices and re-triggers the kick transient on the beat grid.
   - **Sync Gate & Filter Pump (`1/4` to `1/64`)**: Host-clock-synced rhythmic gate chopping and resonant filter pumping.
-  - **Drive & Lookahead Peak Limiter**: `tanh` saturation and zero-overshoot ceiling control.
+  - **Drive & Zero-Latency Peak Limiter**: level-compensated `tanh` saturation and a ceiling that catches the sample which crosses it. Reported plugin latency stays at 0, so the transient stays on the MIDI grid.
 - **A/B/C/D Auto Mode & 1/64-Note Piano Roll**:
   - **Four Automatable Slots (`A`, `B`, `C`, `D`)**: Switch between four independent kick build-up and fill patterns from the UI or the host's `Auto Mode` automation lane, just like `openEDMFilter`.
   - **1, 2, 4, 8, 16, 32, and 64 Bar Lengths**: Loop patterns across any phrase window from single-bar turnarounds to 64-bar marathon risers.
@@ -36,6 +36,17 @@ A dedicated EDM kick drum synthesizer VSTi featuring 12-note chromatic sub tunin
   - **Interactive 1/64-Note Piano Roll**: View and edit kick triggers and semitone pitch offsets (`ROOT` to `+12 st`) down to `1/64` note resolution.
   - **Auto-Mode-Specific Tail Shortener (`Tail Shorten`)**: Automatically shortens the kick tail during Auto Mode (especially on fast `1/16`, `1/32`, and `1/64` rolls) so rapid build-ups never get muddy. This control is exclusive to Auto Mode and never alters the kick tail in Regular Mode.
 - **Kicking Mule Stage**: Features the 3D **Kick Mule** mascot kicking in front of a pulsing studio subwoofer cone and stage spotlights synced to the kick output and host beat phase.
+
+## Engine notes
+
+Parameter IDs, ranges, and saved sessions from v1.0.0 still load. The same knob positions now drive a different oscillator, so a project will not sound sample-identical to 1.0.0 unless it was Locked In (the frozen WAV is restored as-is).
+
+- The pitch drop is exponential and reaches the tuned note at the end of Pitch Decay. A positive Pitch Curve still falls faster than a negative one.
+- Tail Curve keeps that polarity and is exponential, so the body does not ramp down in a straight line.
+- The click is a short chirp plus a deterministic noise tick. Live playback matches Lock In, including the click.
+- Retriggering fades the previous sample out in about 0.45 ms.
+- With Host Sync on, Auto Mode runs only while the host transport is playing. TRIG still auditions the tuned kick. With Host Sync off, the internal clock keeps running.
+- Objective checks for the default F1 club kick at 48 kHz: settled pitch 43.67 Hz against the 43.65 Hz fundamental, DC about `-7e-6`, and peak `-0.89` with no full-scale samples. See [docs/AUDIO.md](docs/AUDIO.md).
 
 ## Build
 

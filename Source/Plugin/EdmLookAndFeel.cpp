@@ -124,8 +124,12 @@ void EdmLookAndFeel::drawButtonBackground(
 void EdmLookAndFeel::drawButtonText(juce::Graphics& g, juce::TextButton& button, bool, bool) {
     const bool isOn = button.getToggleState();
     g.setColour(button.findColour(isOn ? juce::TextButton::textColourOnId : juce::TextButton::textColourOffId));
-    g.setFont(juce::FontOptions(kControlFontSize, juce::Font::bold));
-    g.drawText(button.getButtonText(), button.getLocalBounds(), juce::Justification::centred);
+    float fontSize = kControlFontSize;
+    if (button.getHeight() > 0 && button.getHeight() < 22) {
+        fontSize = juce::jmax(8.0f, static_cast<float>(button.getHeight()) * 0.46f);
+    }
+    g.setFont(juce::FontOptions(fontSize, juce::Font::bold));
+    g.drawText(button.getButtonText(), button.getLocalBounds().reduced(1, 0), juce::Justification::centred);
 }
 
 juce::Font EdmLookAndFeel::getComboBoxFont(juce::ComboBox&) {

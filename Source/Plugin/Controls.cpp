@@ -48,6 +48,11 @@ void Knob::bind(Apvts& state, const juce::String& parameterId) {
     attachment_ = std::make_unique<Apvts::SliderAttachment>(state, parameterId, slider_);
 }
 
+void Knob::setTooltip(const juce::String& text) {
+    slider_.setTooltip(text);
+    title_.setTooltip(text);
+}
+
 void Knob::resized() {
     auto bounds = getLocalBounds();
     title_.setBounds(bounds.removeFromTop(kTitleHeight));
@@ -77,6 +82,10 @@ void Choice::bind(Apvts& state, const juce::String& parameterId) {
     attachment_ = std::make_unique<Apvts::ComboBoxAttachment>(state, parameterId, box_);
 }
 
+void Choice::setTooltip(const juce::String& text) {
+    box_.setTooltip(text);
+}
+
 void Choice::resized() {
     auto bounds = getLocalBounds();
     if (title_.isVisible()) {
@@ -92,6 +101,10 @@ Toggle::Toggle(Apvts& state, const juce::String& parameterId, const juce::String
     button_.setClickingTogglesState(true);
     button_.setColour(juce::TextButton::buttonOnColourId, accent);
     addAndMakeVisible(button_);
+}
+
+void Toggle::setTooltip(const juce::String& text) {
+    button_.setTooltip(text);
 }
 
 void Toggle::resized() {

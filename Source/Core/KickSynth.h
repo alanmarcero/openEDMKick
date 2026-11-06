@@ -36,6 +36,20 @@ struct KickSynthSettings {
 // Shapes a normalized progress (0..1) with a bipolar curve (-1..+1).
 [[nodiscard]] float shapeCurve(float progress, float curve) noexcept;
 
+// Pitch-drop amount for the kick sweep. Returns 1 at the start of the decay
+// and 0 once `progress` reaches 1. Positive curves fall faster.
+[[nodiscard]] float pitchSweepGain(float progress, float pitchCurve) noexcept;
+
+// Oscillator memory for one kick voice. Reset on each trigger so live synthesis
+// matches Lock In renders sample for sample.
+struct KickOscillatorState {
+    double bodyPhase = 0.0;
+    double clickPhase = 0.0;
+    float dcX = 0.0f;
+    float dcY = 0.0f;
+    uint32_t noise = 0x6D2B79F5u;
+};
+
 // Synthesizes a complete single-shot kick waveform into a float buffer.
 [[nodiscard]] std::vector<float> renderKickWaveform(
     const KickSynthSettings& settings,
@@ -55,6 +69,7 @@ struct KickSynthSettings {
 // When locked in, the plugin stops synthesizing the kick in real time and plays from the cached WAV.
 class KickWavCache {
 public:
+    void prepare(double sampleRate);
     void lockIn(const KickSynthSettings& settings, double sampleRate);
     void unlock() noexcept;
     bool loadFromWavBytes(const std::vector<uint8_t>& wavBytes);
@@ -75,6 +90,7 @@ private:
 // Real-time kick voice that either synthesizes audio live or plays from the Locked-In WAV cache.
 class KickVoice {
 public:
+    void prepare(double sampleRate);
     void reset() noexcept;
 
     void triggerForward(
@@ -104,19 +120,22 @@ public:
 
 private:
     [[nodiscard]] float synthesizeCurrentSample(const KickSynthSettings& settings, double sampleRate) noexcept;
+    void updateDeclick(double sampleRate) noexcept;
 
     bool active_ = false;
     bool reversing_ = false;
     bool usingCache_ = false;
     int sampleIndex_ = 0;
     int totalSamples_ = 0;
-    double bodyPhase_ = 0.0;
-    double clickPhase_ = 0.0;
+    KickOscillatorState osc_{};
     double cacheReadPos_ = 0.0;
     double cacheReadStep_ = 1.0;
     float velocity_ = 1.0f;
     float semitoneOffset_ = 0.0f;
     float overrideTailMs_ = -1.0f;
+    float lastOutput_ = 0.0f;
+    float declick_ = 0.0f;
+    float declickCoeff_ = 0.95f;
     std::vector<float> reverseBuffer_;
 };
 

@@ -104,7 +104,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout() {
     const juce::StringArray notes{
         "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"
     };
-    const juce::StringArray octaves{ "Oct 0 (Sub)", "Oct 1 (Club)", "Oct 2 (Punch)" };
+    const juce::StringArray octaves{ "0 Sub", "1 Club", "2 Punch" };
     const juce::StringArray barChoices{
         "1 Bar", "2 Bars", "4 Bars", "8 Bars", "16 Bars", "32 Bars", "64 Bars"
     };

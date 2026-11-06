@@ -7,8 +7,11 @@ namespace openedmkick::core {
 
 void KickEngine::prepare(double sampleRate) {
     sampleRate_ = std::max(8000.0, sampleRate);
+    wavCache_.prepare(sampleRate_);
     stutter_.prepare(sampleRate_);
     limiter_.prepare(sampleRate_);
+    forwardVoice_.prepare(sampleRate_);
+    reverseVoice_.prepare(sampleRate_);
     reset();
 }
 
@@ -164,23 +167,21 @@ void KickEngine::process(
             }
         }
 
-        if (!autoActive) {
-            std::ranges::for_each(midiTriggers, [&](const MidiTrigger& trig) {
-                if (trig.sampleOffset == sampleIdx && trig.velocity > 0.0f) {
-                    // In Regular Mode, ANY MIDI note triggers the tuned kick drum,
-                    // and the Auto Mode Tail Shortener knob does NOT affect the kick (-1.0f).
-                    triggerNote(
-                        settings,
-                        samplePpq,
-                        safeBpm,
-                        safeBeatsPerBar,
-                        trig.velocity,
-                        0.0f,
-                        -1.0f,
-                        false);
-                }
-            });
-        }
+        std::ranges::for_each(midiTriggers, [&](const MidiTrigger& trig) {
+            // Regular Mode plays the tuned kick for every note. Auto Mode ignores
+            // MIDI except explicit auditions, and the tail shortener stays off.
+            if ((!autoActive || trig.audition) && trig.sampleOffset == sampleIdx && trig.velocity > 0.0f) {
+                triggerNote(
+                    settings,
+                    samplePpq,
+                    safeBpm,
+                    safeBeatsPerBar,
+                    trig.velocity,
+                    0.0f,
+                    -1.0f,
+                    false);
+            }
+        });
 
         const float rawKick = forwardVoice_.nextSample(settings.synth, wavCache_, sampleRate_)
             + reverseVoice_.nextSample(settings.synth, wavCache_, sampleRate_);
@@ -214,7 +215,10 @@ void KickEngine::process(
             sampleRate_);
 
         const float gateGain = TempoGate::gainAt(samplePpq, gateBeats, settings.effects.gateMix);
-        const float finalSample = pumped * gateGain * settings.effects.outputGain;
+        float finalSample = pumped * gateGain * settings.effects.outputGain;
+        if (!std::isfinite(finalSample)) {
+            finalSample = 0.0f;
+        }
 
         blockPeak = std::max(blockPeak, std::abs(finalSample));
         std::ranges::for_each(std::views::iota(0, numChannels), [&](int ch) {
@@ -222,7 +226,9 @@ void KickEngine::process(
         });
     });
 
-    fallbackPpq_ = blockStartPpq + static_cast<double>(numSamples) * ppqPerSample;
+    if (transport.isPlaying) {
+        fallbackPpq_ = blockStartPpq + static_cast<double>(numSamples) * ppqPerSample;
+    }
 
     if (settings.effects.limiterEnabled) {
         limiter_.process(channels, numChannels, numSamples, settings.effects.ceilingGain);

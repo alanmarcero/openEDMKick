@@ -2,11 +2,17 @@
 
 ![Native plugin editor](../assets/native-ui.png)
 
-`assets/native-ui.png` shows the v1.0.0 native JUCE editor at 1100 × 880, captured directly from the release build. It displays **Festival 1/64 Drop Rush (8 Bar)** in **Auto Mode C**, with **LOCK IN (WAV)** active, **Beat 4 Auto** reverse sync enabled, the **Kicking Mule** stage mid-kick, and the playhead sweeping across the 1/64-note Piano Roll.
+`assets/native-ui.png` shows the v1.1.0 native JUCE editor at 1100 × 880, captured directly from the release build. It displays **Festival 1/64 Drop Rush** in **Auto Mode A** with the phrase forced to **1 Bar** so the 1/64 steps stay readable, **LOCK IN (WAV)** active, the chromatic keyboard on **F1**, the gold pitch-drop trace, the output meter, and the Kicking Mule stage.
 
-Reproduce on macOS from the repository root:
+![Beat 4 reverse editor](../assets/native-ui-reverse.png)
+
+`assets/native-ui-reverse.png` is the same editor on **Beat 4 Reverse Pickup (E1)**, **Auto Mode B**, **2 Bars**, with the reverse pickup notes on beat 4 and the preset menu following the program change.
+
+Reproduce on a machine with a display (or `xvfb-run`) from the repository root:
 
 ```sh
 cmake --build build --target openedmkick_plugin_tests --parallel
-OEK_CAPTURE="$PWD/assets/native-ui.png" build/openedmkick_plugin_tests '[ui]'
+OEK_CAPTURE="$PWD/assets/native-ui.png" \
+OEK_CAPTURE_REVERSE="$PWD/assets/native-ui-reverse.png" \
+  ./build/openedmkick_plugin_tests '[ui]'
 ```

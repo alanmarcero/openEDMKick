@@ -46,10 +46,13 @@ OpenEdmKickProcessor::OpenEdmKickProcessor()
     engine_.prepare(48000.0);
 }
 
-void OpenEdmKickProcessor::prepareToPlay(double sampleRate, int) {
+void OpenEdmKickProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
     const std::scoped_lock lock(stateMutex_);
     engine_.prepare(sampleRate);
-    if (values_.lockIn->load() > 0.5f) {
+    midiScratch_.reserve(static_cast<size_t>(std::max(64, samplesPerBlock)));
+    // An existing Lock In WAV is resampled on playback. Re-rendering here would
+    // replace the frozen hit whenever the host changes sample rate.
+    if (values_.lockIn->load() > 0.5f && !engine_.isKickLocked()) {
         engine_.lockCurrentKick(currentSynthSettings());
     }
     displayLockedIn.store(engine_.isKickLocked());
@@ -204,33 +207,35 @@ void OpenEdmKickProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
                 beatsPerBar = static_cast<double>(sig.numerator) * (4.0 / static_cast<double>(sig.denominator));
             }
         }
-        if (!position->getIsPlaying() || !position->getPpqPosition().hasValue()) {
-            return core::Transport{ bpm, std::nullopt, beatsPerBar, true };
+        const bool playing = position->getIsPlaying();
+        if (!playing || !position->getPpqPosition().hasValue()) {
+            return core::Transport{ bpm, std::nullopt, beatsPerBar, playing };
         }
         return core::Transport{ bpm, *position->getPpqPosition(), beatsPerBar, true };
     }();
 
-    std::vector<core::MidiTrigger> triggers;
+    midiScratch_.clear();
     std::ranges::for_each(midi, [&](const juce::MidiMessageMetadata& meta) {
         const auto msg = meta.getMessage();
         if (msg.isNoteOn() && msg.getFloatVelocity() > 0.0f) {
-            triggers.push_back(core::MidiTrigger{
+            midiScratch_.push_back(core::MidiTrigger{
                 std::clamp(meta.samplePosition, 0, std::max(0, buffer.getNumSamples() - 1)),
                 msg.getNoteNumber(),
-                msg.getFloatVelocity()
+                msg.getFloatVelocity(),
+                false
             });
         }
     });
 
     if (auditionPending_.exchange(false)) {
-        triggers.push_back(core::MidiTrigger{ 0, 60, 1.0f });
+        midiScratch_.push_back(core::MidiTrigger{ 0, 60, 1.0f, true });
     }
 
     buffer.clear();
     engine_.process(
         settings,
         transport,
-        triggers,
+        midiScratch_,
         buffer.getArrayOfWritePointers(),
         buffer.getNumChannels(),
         buffer.getNumSamples());
@@ -259,6 +264,9 @@ void OpenEdmKickProcessor::setCurrentProgram(int index) {
     }
     currentProgram_ = index;
     openedmkick::presets::apply(presets[static_cast<size_t>(index)], parameters);
+    juce::AudioProcessorListener::ChangeDetails details;
+    details.programChanged = true;
+    updateHostDisplay(details);
 }
 
 const juce::String OpenEdmKickProcessor::getProgramName(int index) {

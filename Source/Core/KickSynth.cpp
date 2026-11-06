@@ -12,10 +12,13 @@ namespace {
 constexpr float kMinTailMs = 15.0f;
 constexpr float kMaxTailMs = 2000.0f;
 constexpr float kAttackRampMs = 1.2f;
+constexpr float kClickAttackMs = 0.18f;
 constexpr float kAntiClickReleaseMs = 3.5f;
 constexpr float kClickDecayMs = 6.5f;
+constexpr float kNoiseDecayMs = 2.4f;
 constexpr float kPunchDecayMs = 24.0f;
 constexpr float kCurveOctaveScale = 2.5f;
+constexpr double kDcBlockHz = 30.0;
 
 void appendU32(std::vector<uint8_t>& out, uint32_t value) {
     out.push_back(static_cast<uint8_t>(value & 0xffu));
@@ -45,61 +48,131 @@ void appendTag(std::vector<uint8_t>& out, const char (&tag)[5]) {
         | static_cast<uint16_t>(static_cast<uint16_t>(ptr[1]) << 8u);
 }
 
+[[nodiscard]] float sanitize(float value) noexcept {
+    return std::isfinite(value) ? value : 0.0f;
+}
+
+// Positive tail curves still decay faster than negative ones (v1 polarity).
+[[nodiscard]] float tailEnvelopeGain(float progress, float tailCurve) noexcept {
+    const float p = std::clamp(progress, 0.0f, 1.0f);
+    if (p <= 0.0f) {
+        return 1.0f;
+    }
+    if (p >= 1.0f) {
+        return 0.0f;
+    }
+    const float k = std::exp2(1.35f + std::clamp(tailCurve, -1.0f, 1.0f) * 1.65f);
+    const float end = std::exp(-k);
+    const float denom = 1.0f - end;
+    if (!(denom > 1.0e-8f)) {
+        return 1.0f - p;
+    }
+    return std::clamp((std::exp(-k * p) - end) / denom, 0.0f, 1.0f);
+}
+
+[[nodiscard]] float nextDeterministicNoise(uint32_t& state) noexcept {
+    state = state * 1664525u + 1013904223u;
+    const float unit = static_cast<float>(state >> 8) * (1.0f / 16777216.0f);
+    return unit * 2.0f - 1.0f;
+}
+
+[[nodiscard]] int kickLengthSamples(float tailMs, double sampleRate) noexcept {
+    const double safeRate = std::max(8000.0, sampleRate);
+    const float clampedTail = std::clamp(tailMs, kMinTailMs, kMaxTailMs);
+    return std::max(32, static_cast<int>(std::round(safeRate * clampedTail * 0.001)));
+}
+
 [[nodiscard]] float computeKickStep(
     const KickSynthSettings& settings,
     double sampleRate,
     int sampleIndex,
     int totalSamples,
     float semitoneOffset,
-    double& bodyPhase,
-    double& clickPhase) noexcept {
+    KickOscillatorState& osc) noexcept {
     const double safeRate = std::max(8000.0, sampleRate);
     const double timeMs = (static_cast<double>(sampleIndex) * 1000.0) / safeRate;
-    const float pitchMultiplier = std::exp2(semitoneOffset / 12.0f);
+    const float pitchMultiplier = std::exp2(std::clamp(semitoneOffset, -48.0f, 48.0f) / 12.0f);
     const float baseHz = fundamentalHzForNote(settings.note, settings.octave, settings.fineCents) * pitchMultiplier;
     const float startHz = std::max(baseHz + 20.0f, settings.startPitchHz * pitchMultiplier);
 
     const float pitchDecayMs = std::max(2.0f, settings.pitchDecayMs);
     const float pitchProgress = std::clamp(static_cast<float>(timeMs) / pitchDecayMs, 0.0f, 1.0f);
-    const float shapedPitch = 1.0f - shapeCurve(pitchProgress, settings.pitchCurve - 0.55f);
-    const float instantaneousHz = baseHz + (startHz - baseHz) * shapedPitch * shapedPitch;
+    const float sweep = pitchSweepGain(pitchProgress, settings.pitchCurve);
+    const float instantaneousHz = std::clamp(baseHz + (startHz - baseHz) * sweep, 8.0f, 18000.0f);
 
     const float tailProgress = std::clamp(
         static_cast<float>(sampleIndex) / static_cast<float>(std::max(1, totalSamples)),
         0.0f,
         1.0f);
-    const float ampDecay = 1.0f - shapeCurve(tailProgress, settings.tailCurve);
+    const float ampDecay = tailEnvelopeGain(tailProgress, settings.tailCurve);
     const float attackSamples = std::max(4.0f, static_cast<float>(safeRate * kAttackRampMs * 0.001));
     const float attackEnv = std::min(1.0f, static_cast<float>(sampleIndex + 1) / attackSamples);
+    const float clickAttackSamples = std::max(2.0f, static_cast<float>(safeRate * kClickAttackMs * 0.001));
+    const float clickAttack = std::min(1.0f, static_cast<float>(sampleIndex + 1) / clickAttackSamples);
     const float releaseSamples = std::max(8.0f, static_cast<float>(safeRate * kAntiClickReleaseMs * 0.001));
     const float remaining = static_cast<float>(std::max(0, totalSamples - sampleIndex));
     const float releaseFade = std::min(1.0f, remaining / releaseSamples);
 
+    const float punchAmount = std::clamp(settings.punch, 0.0f, 1.0f);
     const float punchEnv = std::exp(-static_cast<float>(timeMs) / kPunchDecayMs);
-    const float bodyGain = attackEnv * ampDecay * releaseFade * (1.0f + 0.55f * std::clamp(settings.punch, 0.0f, 1.0f) * punchEnv);
+    const float bodyGain = attackEnv * ampDecay * releaseFade * (1.0f + 0.55f * punchAmount * punchEnv);
 
     const float twoPi = 2.0f * std::numbers::pi_v<float>;
-    const float fundamental = std::sin(static_cast<float>(bodyPhase) * twoPi);
-    const float thirdHarmonic = std::sin(static_cast<float>(bodyPhase) * twoPi * 3.0f);
-    const float rawBody = fundamental + 0.18f * std::clamp(settings.punch, 0.0f, 1.0f) * punchEnv * thirdHarmonic;
+    const float bodyAngle = static_cast<float>(osc.bodyPhase) * twoPi;
+    const float fundamental = std::sin(bodyAngle);
+    // Octave helps the kick translate; the third adds beater knock. Both die
+    // with the punch envelope so the sustain stays a tuned sine.
+    const float octave = std::sin(bodyAngle * 2.0f) * (0.16f * punchAmount * punchEnv);
+    const float thirdHarmonic = std::sin(bodyAngle * 3.0f) * (0.12f * punchAmount * punchEnv);
+    const float rawBody = fundamental + octave + thirdHarmonic;
 
     const float driveAmount = std::clamp(settings.subDrive, 0.0f, 1.0f);
     const float driveGain = 1.0f + 4.5f * driveAmount;
-    const float drivenBody = std::tanh(rawBody * driveGain) / std::tanh(driveGain);
+    const float drivenNorm = std::tanh(driveGain);
+    const float drivenBody = drivenNorm > 1.0e-6f ? std::tanh(rawBody * driveGain) / drivenNorm : rawBody;
     const float blendedBody = rawBody + driveAmount * (drivenBody - rawBody);
 
     const float clickEnv = std::exp(-static_cast<float>(timeMs) / kClickDecayMs);
-    const float clickChirpHz = std::clamp(settings.clickFreqHz, 500.0f, 12000.0f) * (0.5f + 0.5f * clickEnv);
-    const float clickBurst = std::sin(static_cast<float>(clickPhase) * twoPi)
-        + 0.45f * std::sin(static_cast<float>(clickPhase) * twoPi * 2.37f);
-    const float clickSignal = std::clamp(settings.clickLevel, 0.0f, 1.0f) * clickEnv * clickBurst * 0.55f;
+    const float clickChirpHz = std::clamp(settings.clickFreqHz * pitchMultiplier, 200.0f, 16000.0f)
+        * (0.5f + 0.5f * clickEnv);
+    const float noise = nextDeterministicNoise(osc.noise);
+    const float noiseEnv = std::exp(-static_cast<float>(timeMs) / kNoiseDecayMs);
+    const float clickBurst = 0.78f * std::sin(static_cast<float>(osc.clickPhase) * twoPi) + 0.22f * noise * noiseEnv;
+    const float clickSignal = std::clamp(settings.clickLevel, 0.0f, 1.0f) * clickEnv * clickAttack * clickBurst * 0.55f;
 
-    bodyPhase += static_cast<double>(instantaneousHz) / safeRate;
-    bodyPhase -= std::floor(bodyPhase);
-    clickPhase += static_cast<double>(clickChirpHz) / safeRate;
-    clickPhase -= std::floor(clickPhase);
+    osc.bodyPhase += static_cast<double>(instantaneousHz) / safeRate;
+    osc.bodyPhase -= std::floor(osc.bodyPhase);
+    osc.clickPhase += static_cast<double>(clickChirpHz) / safeRate;
+    osc.clickPhase -= std::floor(osc.clickPhase);
 
-    return std::clamp(blendedBody * bodyGain + clickSignal * releaseFade, -1.0f, 1.0f);
+    // Leave a little headroom so the pitch sweep is not flattened, then soft-clip.
+    const float mixed = sanitize((blendedBody * bodyGain + clickSignal * releaseFade) * 0.9f);
+    const float soft = std::tanh(mixed) * 1.08f;
+    const float dcCoeff = static_cast<float>(std::exp(-2.0 * std::numbers::pi * kDcBlockHz / safeRate));
+    const float blocked = soft - osc.dcX + dcCoeff * osc.dcY;
+    osc.dcX = soft;
+    osc.dcY = std::abs(blocked) < 1.0e-20f ? 0.0f : blocked;
+    if (!std::isfinite(osc.dcY)) {
+        osc.dcX = 0.0f;
+        osc.dcY = 0.0f;
+        return 0.0f;
+    }
+    return std::clamp(osc.dcY, -1.0f, 1.0f);
+}
+
+void renderKickWaveformInto(
+    std::vector<float>& buffer,
+    const KickSynthSettings& settings,
+    double sampleRate,
+    float semitoneOffset) noexcept {
+    const double safeRate = std::max(8000.0, sampleRate);
+    const int totalSamples = kickLengthSamples(settings.tailLengthMs, safeRate);
+    buffer.resize(static_cast<size_t>(totalSamples));
+    KickOscillatorState osc;
+    std::ranges::for_each(std::views::iota(0, totalSamples), [&](int i) {
+        buffer[static_cast<size_t>(i)] = computeKickStep(
+            settings, safeRate, i, totalSamples, semitoneOffset, osc);
+    });
 }
 
 } // namespace
@@ -122,29 +195,37 @@ float shapeCurve(float progress, float curve) noexcept {
     return std::pow(clampedProgress, exponent);
 }
 
+float pitchSweepGain(float progress, float pitchCurve) noexcept {
+    const float p = std::clamp(progress, 0.0f, 1.0f);
+    if (p <= 0.0f) {
+        return 1.0f;
+    }
+    if (p >= 1.0f) {
+        return 0.0f;
+    }
+    const float k = std::exp2(0.85f + std::clamp(pitchCurve, -1.0f, 1.0f) * 2.1f);
+    const float end = std::exp(-k);
+    const float denom = 1.0f - end;
+    if (!(denom > 1.0e-8f)) {
+        return 1.0f - p;
+    }
+    return std::clamp((std::exp(-k * p) - end) / denom, 0.0f, 1.0f);
+}
+
 std::vector<float> renderKickWaveform(
     const KickSynthSettings& settings,
     double sampleRate,
     float semitoneOffset) noexcept {
-    const double safeRate = std::max(8000.0, sampleRate);
-    const float tailMs = std::clamp(settings.tailLengthMs, kMinTailMs, kMaxTailMs);
-    const int totalSamples = std::max(32, static_cast<int>(std::round(safeRate * tailMs * 0.001)));
-    std::vector<float> buffer(static_cast<size_t>(totalSamples), 0.0f);
-
-    double bodyPhase = 0.0;
-    double clickPhase = 0.0;
-    std::ranges::for_each(std::views::iota(0, totalSamples), [&](int i) {
-        buffer[static_cast<size_t>(i)] = computeKickStep(
-            settings, safeRate, i, totalSamples, semitoneOffset, bodyPhase, clickPhase);
-    });
+    std::vector<float> buffer;
+    renderKickWaveformInto(buffer, settings, sampleRate, semitoneOffset);
     return buffer;
 }
 
-std::vector<uint8_t> encodeWavBytes(const std::vector<float>& samples, uint32_t sampleRate) {
+void encodeWavInto(std::vector<uint8_t>& bytes, const std::vector<float>& samples, uint32_t sampleRate) {
     const uint32_t dataBytes = static_cast<uint32_t>(samples.size() * sizeof(float));
     const uint32_t riffChunkSize = 36u + dataBytes;
-    std::vector<uint8_t> bytes;
-    bytes.reserve(44u + dataBytes);
+    bytes.clear();
+    bytes.reserve(std::max(bytes.capacity(), static_cast<size_t>(44u) + dataBytes));
 
     appendTag(bytes, "RIFF");
     appendU32(bytes, riffChunkSize);
@@ -165,6 +246,11 @@ std::vector<uint8_t> encodeWavBytes(const std::vector<float>& samples, uint32_t 
     if (dataBytes > 0u) {
         std::memcpy(bytes.data() + headerSize, samples.data(), dataBytes);
     }
+}
+
+std::vector<uint8_t> encodeWavBytes(const std::vector<float>& samples, uint32_t sampleRate) {
+    std::vector<uint8_t> bytes;
+    encodeWavInto(bytes, samples, sampleRate);
     return bytes;
 }
 
@@ -202,10 +288,16 @@ bool decodeWavBytes(
     return true;
 }
 
+void KickWavCache::prepare(double sampleRate) {
+    const size_t count = static_cast<size_t>(std::max(8000.0, sampleRate) * 2.0) + 8u;
+    samples_.reserve(count);
+    wavBytes_.reserve(44u + count * sizeof(float));
+}
+
 void KickWavCache::lockIn(const KickSynthSettings& settings, double sampleRate) {
     sampleRate_ = std::max(8000.0, sampleRate);
-    samples_ = renderKickWaveform(settings, sampleRate_, 0.0f);
-    wavBytes_ = encodeWavBytes(samples_, static_cast<uint32_t>(std::round(sampleRate_)));
+    renderKickWaveformInto(samples_, settings, sampleRate_, 0.0f);
+    encodeWavInto(wavBytes_, samples_, static_cast<uint32_t>(std::round(sampleRate_)));
     locked_ = !samples_.empty();
 }
 
@@ -239,16 +331,32 @@ float KickWavCache::sampleAt(double index) const noexcept {
     return samples_[i0] + frac * (samples_[i1] - samples_[i0]);
 }
 
+void KickVoice::prepare(double sampleRate) {
+    const double safeRate = std::max(8000.0, sampleRate);
+    const size_t count = static_cast<size_t>(safeRate * 2.0) + 8u;
+    if (reverseBuffer_.capacity() < count) {
+        reverseBuffer_.reserve(count);
+    }
+    updateDeclick(safeRate);
+}
+
+void KickVoice::updateDeclick(double sampleRate) noexcept {
+    const double samples = std::max(8.0, std::max(8000.0, sampleRate) * 0.00045);
+    declickCoeff_ = static_cast<float>(std::exp(-1.0 / samples));
+}
+
 void KickVoice::reset() noexcept {
     active_ = false;
     reversing_ = false;
     usingCache_ = false;
     sampleIndex_ = 0;
     totalSamples_ = 0;
-    bodyPhase_ = 0.0;
-    clickPhase_ = 0.0;
+    osc_ = {};
     cacheReadPos_ = 0.0;
     cacheReadStep_ = 1.0;
+    lastOutput_ = 0.0f;
+    declick_ = 0.0f;
+    reverseBuffer_.clear();
 }
 
 void KickVoice::triggerForward(
@@ -259,12 +367,14 @@ void KickVoice::triggerForward(
     float semitoneOffset,
     float effectiveTailMs) noexcept {
     const double safeRate = std::max(8000.0, sampleRate);
+    const float previous = active_ ? lastOutput_ : 0.0f;
+    updateDeclick(safeRate);
     active_ = true;
     reversing_ = false;
     usingCache_ = cache.isLocked() && !cache.samples().empty();
     sampleIndex_ = 0;
-    bodyPhase_ = 0.0;
-    clickPhase_ = 0.0;
+    osc_ = {};
+    declick_ = previous;
     velocity_ = std::clamp(velocity, 0.0f, 1.5f);
     semitoneOffset_ = semitoneOffset;
     overrideTailMs_ = effectiveTailMs;
@@ -288,16 +398,23 @@ void KickVoice::triggerReverse(
     float velocity,
     float semitoneOffset) noexcept {
     const double safeRate = std::max(8000.0, sampleRate);
+    const float previous = active_ ? lastOutput_ : 0.0f;
+    updateDeclick(safeRate);
     active_ = true;
     reversing_ = true;
     usingCache_ = cache.isLocked() && !cache.samples().empty();
     sampleIndex_ = 0;
     totalSamples_ = std::max(16, durationSamples);
+    declick_ = previous;
     velocity_ = std::clamp(velocity, 0.0f, 1.5f);
     semitoneOffset_ = semitoneOffset;
 
     if (!usingCache_) {
-        reverseBuffer_ = renderKickWaveform(settings, safeRate, semitoneOffset);
+        const size_t needed = static_cast<size_t>(kickLengthSamples(settings.tailLengthMs, safeRate));
+        if (reverseBuffer_.capacity() < needed) {
+            reverseBuffer_.reserve(needed);
+        }
+        renderKickWaveformInto(reverseBuffer_, settings, safeRate, semitoneOffset);
     }
 }
 
@@ -308,8 +425,7 @@ float KickVoice::synthesizeCurrentSample(const KickSynthSettings& settings, doub
         sampleIndex_,
         totalSamples_,
         semitoneOffset_,
-        bodyPhase_,
-        clickPhase_);
+        osc_);
 }
 
 float KickVoice::nextSample(
@@ -321,6 +437,8 @@ float KickVoice::nextSample(
     }
     if (sampleIndex_ >= totalSamples_) {
         active_ = false;
+        lastOutput_ = 0.0f;
+        declick_ = 0.0f;
         return 0.0f;
     }
 
@@ -348,19 +466,54 @@ float KickVoice::nextSample(
         if (sampleIndex_ >= totalSamples_) {
             active_ = false;
         }
-        return raw * swellGain * startFade * edgeFade * velocity_;
+        float shaped = sanitize(raw * swellGain * startFade * edgeFade * velocity_);
+        shaped += declick_;
+        declick_ *= declickCoeff_;
+        if (std::abs(declick_) < 1.0e-6f) {
+            declick_ = 0.0f;
+        }
+        if (!std::isfinite(shaped)) {
+            shaped = 0.0f;
+        }
+        lastOutput_ = shaped;
+        if (!active_) {
+            lastOutput_ = 0.0f;
+            declick_ = 0.0f;
+        }
+        return shaped;
     }
 
-    const float sampleValue = usingCache_
-        ? cache.sampleAt(cacheReadPos_) * endFade
-        : synthesizeCurrentSample(liveSettings, safeRate) * endFade;
+    // Live synthesis already fades the final samples. The cache waveform does
+    // too, unless tail shortening stops playback before the cached file ends.
+    float sampleValue = 0.0f;
+    if (usingCache_) {
+        const double samplesLeft = static_cast<double>(cache.samples().size()) - cacheReadPos_;
+        const double samplesUntilStop = static_cast<double>(std::max(1, totalSamples_ - sampleIndex_));
+        const bool truncated = samplesLeft > samplesUntilStop * std::max(0.0, cacheReadStep_) + 2.0;
+        sampleValue = cache.sampleAt(cacheReadPos_) * (truncated ? endFade : 1.0f);
+    } else {
+        sampleValue = synthesizeCurrentSample(liveSettings, safeRate);
+    }
 
     cacheReadPos_ += cacheReadStep_;
     ++sampleIndex_;
     if (sampleIndex_ >= totalSamples_) {
         active_ = false;
     }
-    return sampleValue * velocity_;
+    float shaped = sanitize(sampleValue * velocity_ + declick_);
+    declick_ *= declickCoeff_;
+    if (std::abs(declick_) < 1.0e-6f) {
+        declick_ = 0.0f;
+    }
+    if (!std::isfinite(shaped)) {
+        shaped = 0.0f;
+    }
+    lastOutput_ = shaped;
+    if (!active_) {
+        lastOutput_ = 0.0f;
+        declick_ = 0.0f;
+    }
+    return shaped;
 }
 
 } // namespace openedmkick::core

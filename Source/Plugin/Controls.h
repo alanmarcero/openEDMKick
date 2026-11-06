@@ -12,6 +12,7 @@ public:
     Knob(Apvts& state, const juce::String& parameterId, const juce::String& title, juce::Colour accent);
     void resized() override;
     void bind(Apvts& state, const juce::String& parameterId);
+    void setTooltip(const juce::String& text);
     [[nodiscard]] juce::Slider& slider() noexcept { return slider_; }
 
 private:
@@ -28,6 +29,7 @@ public:
     Choice(Apvts& state, const juce::String& parameterId, const juce::String& title, juce::Colour accent);
     void resized() override;
     void bind(Apvts& state, const juce::String& parameterId);
+    void setTooltip(const juce::String& text);
     [[nodiscard]] juce::ComboBox& box() noexcept { return box_; }
 
 private:
@@ -40,6 +42,7 @@ class Toggle : public juce::Component {
 public:
     Toggle(Apvts& state, const juce::String& parameterId, const juce::String& text, juce::Colour accent);
     void resized() override;
+    void setTooltip(const juce::String& text);
     [[nodiscard]] juce::TextButton& button() noexcept { return button_; }
 
 private:

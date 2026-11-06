@@ -2,7 +2,6 @@
 #include <algorithm>
 #include <cmath>
 #include <numbers>
-#include <numeric>
 #include <ranges>
 
 namespace openedmkick::core {
@@ -82,31 +81,39 @@ int computeSyncedReverseSamples(
 }
 
 float saturate(float input, float drive) noexcept {
+    if (!std::isfinite(input)) {
+        return 0.0f;
+    }
     const float clampedDrive = std::clamp(drive, 0.0f, 1.0f);
     if (clampedDrive <= 0.0001f) {
         return input;
     }
     const float gain = 1.0f + kMaxDriveGain * clampedDrive;
-    const float saturated = std::tanh(gain * input) / std::sqrt(gain);
-    return input + clampedDrive * (saturated - input);
+    const float norm = std::tanh(gain);
+    const float saturated = norm > 1.0e-6f ? std::tanh(gain * input) / norm : input;
+    const float mixed = input + clampedDrive * (saturated - input);
+    return std::isfinite(mixed) ? mixed : 0.0f;
 }
 
 void BitCrusher::reset() noexcept {
-    phase_ = 0.0f;
+    phase_ = 1.0f;
     held_ = 0.0f;
 }
 
 float BitCrusher::process(float input, float rateHz, int bits, double sampleRate) noexcept {
+    const float safeInput = std::isfinite(input) ? std::clamp(input, -1.0f, 1.0f) : 0.0f;
     const double safeRate = std::max(8000.0, sampleRate);
-    const float clampedRate = std::clamp(rateHz, 100.0f, static_cast<float>(safeRate));
+    const float requestedRate = std::isfinite(rateHz) ? rateHz : 1000.0f;
+    const float clampedRate = std::clamp(requestedRate, 100.0f, static_cast<float>(safeRate));
     const int clampedBits = std::clamp(bits, 1, 16);
     const float advanced = phase_ + static_cast<float>(clampedRate / safeRate);
     phase_ = advanced - std::floor(advanced);
     if (advanced >= 1.0f) {
-        const float steps = std::exp2(static_cast<float>(clampedBits));
-        held_ = std::round(input * steps) / steps;
+        // Mid-tread grid: `bits` levels on each side of zero (1 bit -> -1, 0, +1).
+        const float halfSteps = std::exp2(static_cast<float>(clampedBits - 1));
+        held_ = std::round(safeInput * halfSteps) / halfSteps;
     }
-    return held_;
+    return std::isfinite(held_) ? held_ : 0.0f;
 }
 
 void BeatStutter::prepare(double sampleRate) {
@@ -118,6 +125,7 @@ void BeatStutter::prepare(double sampleRate) {
 void BeatStutter::reset() noexcept {
     writePos_ = 0;
     available_ = 0;
+    std::fill(history_.begin(), history_.end(), 0.0f);
 }
 
 float BeatStutter::process(
@@ -127,8 +135,9 @@ float BeatStutter::process(
     double bpm,
     double sampleRate) noexcept {
     if (history_.empty()) {
-        return input;
+        return std::isfinite(input) ? input : 0.0f;
     }
+    const float safeInput = std::isfinite(input) ? input : 0.0f;
     const int capacity = static_cast<int>(history_.size());
     const double safeBpm = std::max(20.0, bpm);
     const double safeRate = std::max(8000.0, sampleRate);
@@ -140,23 +149,26 @@ float BeatStutter::process(
     const int sliceIndex = static_cast<int>(std::floor(beatPhase / sliceBeats)) % 4;
     const int delay = std::clamp(static_cast<int>(std::round(static_cast<double>(sliceIndex) * sliceSamples)), 0, capacity - 1);
 
-    history_[static_cast<size_t>(writePos_)] = input;
-    float output = input;
+    history_[static_cast<size_t>(writePos_)] = safeInput;
+    float output = safeInput;
     if (delay > 0 && available_ >= delay) {
         const int readPos = (writePos_ + capacity - delay) % capacity;
         const float repeated = history_[static_cast<size_t>(readPos)];
         const double slicePos = (beatPhase / sliceBeats) - std::floor(beatPhase / sliceBeats);
         const double edge = std::min(slicePos, 1.0 - slicePos);
         const float fade = static_cast<float>(std::min(1.0, (edge * sliceSamples) / (0.002 * safeRate)));
-        output = input + fade * (repeated - input);
+        output = safeInput + fade * (repeated - safeInput);
     }
 
     writePos_ = (writePos_ + 1) % capacity;
     available_ = std::min(available_ + 1, capacity - 1);
-    return output;
+    return std::isfinite(output) ? output : 0.0f;
 }
 
 float TempoGate::gainAt(double ppqPosition, double divisionBeats, float depth) noexcept {
+    if (!std::isfinite(depth)) {
+        return 1.0f;
+    }
     const float clampedDepth = std::clamp(depth, 0.0f, 1.0f);
     if (clampedDepth <= 0.0001f) {
         return 1.0f;
@@ -182,8 +194,13 @@ float SyncFilterPump::process(
     double divisionBeats,
     float depth,
     double sampleRate) noexcept {
+    if (!std::isfinite(input)) {
+        reset();
+        return 0.0f;
+    }
     const float clampedDepth = std::clamp(depth, 0.0f, 1.0f);
     if (clampedDepth <= 0.0001f) {
+        reset();
         return input;
     }
     const double safeDiv = std::max(0.0625, divisionBeats);
@@ -202,8 +219,19 @@ float SyncFilterPump::process(
     const float v2 = ic2eq_ + a2 * ic1eq_ + a3 * v3;
     ic1eq_ = 2.0f * v1 - ic1eq_;
     ic2eq_ = 2.0f * v2 - ic2eq_;
-    const float filtered = v2 + 0.35f * v1;
-    return input + clampedDepth * (filtered - input);
+    if (!std::isfinite(ic1eq_) || !std::isfinite(ic2eq_) || std::abs(ic1eq_) > 8.0f || std::abs(ic2eq_) > 8.0f) {
+        reset();
+        return input;
+    }
+    if (std::abs(ic1eq_) < 1.0e-15f) {
+        ic1eq_ = 0.0f;
+    }
+    if (std::abs(ic2eq_) < 1.0e-15f) {
+        ic2eq_ = 0.0f;
+    }
+    const float filtered = std::clamp(v2 + 0.35f * v1, -2.0f, 2.0f);
+    const float mixed = input + clampedDepth * (filtered - input);
+    return std::isfinite(mixed) ? mixed : 0.0f;
 }
 
 void PeakLimiter::prepare(double sampleRate) noexcept {
@@ -212,34 +240,36 @@ void PeakLimiter::prepare(double sampleRate) noexcept {
 }
 
 void PeakLimiter::reset() noexcept {
-    releasedGain_ = 1.0f;
-    position_ = 0;
-    requiredGains_.fill(1.0f);
-    releasedGains_.fill(1.0f);
-    delayLines_ = {};
+    gain_ = 1.0f;
 }
 
 void PeakLimiter::process(float* const* channels, int numChannels, int numSamples, float ceiling) noexcept {
-    const float safeCeiling = std::clamp(ceiling, 0.05f, 1.0f);
-    const auto channelIndices = std::views::iota(0, std::min(numChannels, kMaxChannels));
+    const float safeCeiling = std::clamp(std::isfinite(ceiling) ? ceiling : 1.0f, 0.05f, 1.0f);
+    const int channelsToProcess = std::min(numChannels, kMaxChannels);
     std::ranges::for_each(std::views::iota(0, numSamples), [&](int sample) {
-        const float peak = std::accumulate(channelIndices.begin(), channelIndices.end(), 0.0f,
-            [&](float loudest, int ch) { return std::max(loudest, std::abs(channels[ch][sample])); });
-        requiredGains_[static_cast<size_t>(position_)] = peak > safeCeiling ? safeCeiling / peak : 1.0f;
-
-        const float heldGain = std::ranges::min(requiredGains_);
-        releasedGain_ = std::min(heldGain, heldGain + releaseCoefficient_ * (releasedGain_ - heldGain));
-        releasedGains_[static_cast<size_t>(position_)] = releasedGain_;
-        const float gain = std::accumulate(releasedGains_.begin(), releasedGains_.end(), 0.0f)
-            / static_cast<float>(kLookahead);
-
-        const int oldest = (position_ + 1) % kLookahead;
-        std::ranges::for_each(channelIndices, [&](int ch) {
-            auto& delayLine = delayLines_[static_cast<size_t>(ch)];
-            delayLine[static_cast<size_t>(position_)] = channels[ch][sample];
-            channels[ch][sample] = std::clamp(delayLine[static_cast<size_t>(oldest)] * gain, -safeCeiling, safeCeiling);
+        float peak = 0.0f;
+        std::ranges::for_each(std::views::iota(0, channelsToProcess), [&](int ch) {
+            float value = channels[ch][sample];
+            if (!std::isfinite(value)) {
+                value = 0.0f;
+                channels[ch][sample] = 0.0f;
+            }
+            peak = std::max(peak, std::abs(value));
         });
-        position_ = oldest;
+        const float desired = peak > safeCeiling ? safeCeiling / peak : 1.0f;
+        if (!std::isfinite(desired)) {
+            gain_ = 0.0f;
+        } else if (desired < gain_) {
+            gain_ = desired;
+        } else {
+            gain_ = desired + releaseCoefficient_ * (gain_ - desired);
+        }
+        if (!std::isfinite(gain_) || gain_ < 0.0f) {
+            gain_ = 0.0f;
+        }
+        std::ranges::for_each(std::views::iota(0, channelsToProcess), [&](int ch) {
+            channels[ch][sample] = std::clamp(channels[ch][sample] * gain_, -safeCeiling, safeCeiling);
+        });
     });
 }
 

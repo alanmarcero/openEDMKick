@@ -6,6 +6,24 @@
 #include <cmath>
 #include <ranges>
 
+namespace {
+
+class TestPlayHead : public juce::AudioPlayHead {
+public:
+    bool playing = false;
+
+    juce::Optional<PositionInfo> getPosition() const override {
+        PositionInfo info;
+        info.setBpm(128.0);
+        info.setTimeSignature(juce::AudioPlayHead::TimeSignature{ 4, 4 });
+        info.setIsPlaying(playing);
+        info.setPpqPosition(0.0);
+        return info;
+    }
+};
+
+} // namespace
+
 using Catch::Matchers::WithinAbs;
 
 namespace {
@@ -83,6 +101,64 @@ TEST_CASE("Lock In caches WAV in processor state and recalls locked WAV across s
     juce::AudioBuffer<float> restoredBuf(2, 512);
     restored.processBlock(restoredBuf, midi);
     REQUIRE_THAT(restoredBuf.getSample(0, 10), WithinAbs(lockedFirstSample, 0.001f));
+}
+
+TEST_CASE("Lock In keeps the frozen WAV when the host sample rate changes", "[plugin]") {
+    OpenEdmKickProcessor processor;
+    processor.prepareToPlay(48000.0, 256);
+    setParam(processor, "note", 4.0f);
+    setParam(processor, "tail_length", 240.0f);
+    setParam(processor, "lock_in", 1.0f);
+
+    juce::AudioBuffer<float> buffer(2, 256);
+    juce::MidiBuffer midi;
+    midi.addEvent(juce::MidiMessage::noteOn(1, 60, 1.0f), 0);
+    processor.processBlock(buffer, midi);
+    REQUIRE(processor.isKickLockedIn());
+    const auto frozen = processor.previewKickWaveform();
+    REQUIRE(frozen.size() == 11520u);
+
+    processor.prepareToPlay(96000.0, 256);
+    const auto afterRateChange = processor.previewKickWaveform();
+    REQUIRE(processor.isKickLockedIn());
+    REQUIRE(afterRateChange.size() == frozen.size());
+    REQUIRE_THAT(afterRateChange[400], WithinAbs(frozen[400], 1.0e-6f));
+
+    juce::AudioBuffer<float> fast(2, 512);
+    processor.processBlock(fast, midi);
+    std::ranges::for_each(std::views::iota(0, fast.getNumSamples()), [&](int i) {
+        REQUIRE(std::isfinite(fast.getSample(0, i)));
+        REQUIRE(std::isfinite(fast.getSample(1, i)));
+    });
+}
+
+TEST_CASE("Host stop silences Auto Mode and host play resumes it", "[plugin]") {
+    OpenEdmKickProcessor processor;
+    processor.prepareToPlay(48000.0, 512);
+    setParam(processor, "auto_on", 1.0f);
+    setParam(processor, "clock_sync", 1.0f);
+    setParam(processor, "auto_bars", 0.0f);
+    setParam(processor, "auto_fill", 0.0f);
+    TestPlayHead playHead;
+    processor.setPlayHead(&playHead);
+
+    juce::AudioBuffer<float> buffer(2, 1024);
+    juce::MidiBuffer midi;
+    processor.processBlock(buffer, midi);
+    float stoppedEnergy = 0.0f;
+    std::ranges::for_each(std::views::iota(0, buffer.getNumSamples()), [&](int i) {
+        stoppedEnergy += std::abs(buffer.getSample(0, i));
+    });
+    REQUIRE_THAT(stoppedEnergy, WithinAbs(0.0f, 1.0e-5f));
+
+    playHead.playing = true;
+    processor.processBlock(buffer, midi);
+    float playingEnergy = 0.0f;
+    std::ranges::for_each(std::views::iota(0, buffer.getNumSamples()), [&](int i) {
+        playingEnergy += std::abs(buffer.getSample(0, i));
+    });
+    REQUIRE(playingEnergy > 5.0f);
+    processor.setPlayHead(nullptr);
 }
 
 TEST_CASE("Editor renders 12-note tuner, kicking mule stage, 1/64 piano roll, and captures native screenshot", "[plugin][ui]") {

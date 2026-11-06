@@ -5,6 +5,8 @@
 #include "Theme.h"
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
+#include <cstring>
 #include <numeric>
 #include <ranges>
 
@@ -22,6 +24,30 @@ constexpr std::array<int, 6> kPianoRollSemitones = { 12, 7, 5, 3, 1, 0 };
 constexpr std::array<const char*, 6> kPianoRollRowLabels = {
     "+12 st", "+7 st", "+5 st", "+3 st", "+1 st", "ROOT"
 };
+
+[[nodiscard]] bool sameFloatBits(float a, float b) noexcept {
+    static_assert(sizeof(float) == sizeof(uint32_t));
+    uint32_t left = 0;
+    uint32_t right = 0;
+    std::memcpy(&left, &a, sizeof(float));
+    std::memcpy(&right, &b, sizeof(float));
+    return left == right;
+}
+
+[[nodiscard]] bool sameSynthSettings(const core::KickSynthSettings& a, const core::KickSynthSettings& b) noexcept {
+    return a.note == b.note
+        && a.octave == b.octave
+        && sameFloatBits(a.fineCents, b.fineCents)
+        && sameFloatBits(a.startPitchHz, b.startPitchHz)
+        && sameFloatBits(a.pitchDecayMs, b.pitchDecayMs)
+        && sameFloatBits(a.pitchCurve, b.pitchCurve)
+        && sameFloatBits(a.tailLengthMs, b.tailLengthMs)
+        && sameFloatBits(a.tailCurve, b.tailCurve)
+        && sameFloatBits(a.subDrive, b.subDrive)
+        && sameFloatBits(a.clickLevel, b.clickLevel)
+        && sameFloatBits(a.clickFreqHz, b.clickFreqHz)
+        && sameFloatBits(a.punch, b.punch);
+}
 
 bool isSharpNote(int noteIndex) noexcept {
     return noteIndex == 1 || noteIndex == 3 || noteIndex == 6 || noteIndex == 8 || noteIndex == 10;
@@ -46,6 +72,17 @@ KickWaveformView::KickWaveformView(OpenEdmKickProcessor& processor)
     startTimerHz(15);
 }
 
+void KickWaveformView::refreshCache() {
+    const auto settings = processor_.currentSynthSettings();
+    const bool locked = processor_.isKickLockedIn();
+    if (!cachedSamples_.empty() && sameSynthSettings(settings, cachedSettings_) && locked == cachedLocked_) {
+        return;
+    }
+    cachedSamples_ = processor_.previewKickWaveform();
+    cachedSettings_ = settings;
+    cachedLocked_ = locked;
+}
+
 void KickWaveformView::paint(juce::Graphics& g) {
     const auto bounds = getLocalBounds().toFloat();
     g.setColour(theme::kBackground.brighter(0.04f));
@@ -64,8 +101,9 @@ void KickWaveformView::paint(juce::Graphics& g) {
         g.drawVerticalLine(juce::roundToInt(x), plot.getY(), plot.getBottom());
     });
 
-    const auto samples = processor_.previewKickWaveform();
-    const bool locked = processor_.isKickLockedIn();
+    refreshCache();
+    const auto& samples = cachedSamples_;
+    const bool locked = cachedLocked_;
     const auto waveColour = locked ? theme::kAccentGold : theme::kAccentMint;
 
     if (!samples.empty()) {
@@ -101,8 +139,31 @@ void KickWaveformView::paint(juce::Graphics& g) {
         g.strokePath(wavePath, juce::PathStrokeType(1.6f));
     }
 
-    const auto synth = processor_.currentSynthSettings();
+    const auto synth = cachedSettings_;
     const float fundamentalHz = core::fundamentalHzForNote(synth.note, synth.octave, synth.fineCents);
+    const float startHz = std::max(fundamentalHz + 20.0f, synth.startPitchHz);
+    if (startHz > fundamentalHz + 5.0f && synth.tailLengthMs > 1.0f) {
+        juce::Path pitchPath;
+        constexpr int kPitchPoints = 72;
+        std::ranges::for_each(std::views::iota(0, kPitchPoints), [&](int i) {
+            const float frac = static_cast<float>(i) / static_cast<float>(kPitchPoints - 1);
+            const float progress = (frac * synth.tailLengthMs) / std::max(1.0f, synth.pitchDecayMs);
+            const float env = core::pitchSweepGain(progress, synth.pitchCurve);
+            const float x = plot.getX() + frac * plot.getWidth();
+            const float y = plot.getY() + 2.0f + (1.0f - env) * (plot.getHeight() * 0.38f);
+            if (i == 0) {
+                pitchPath.startNewSubPath(x, y);
+                return;
+            }
+            pitchPath.lineTo(x, y);
+        });
+        g.setColour(theme::kAccentGold.withAlpha(0.9f));
+        g.strokePath(pitchPath, juce::PathStrokeType(1.25f));
+        g.setFont(juce::FontOptions(9.0f, juce::Font::bold));
+        g.drawText("PITCH", juce::Rectangle<float>(plot.getRight() - 46.0f, plot.getY(), 42.0f, 12.0f),
+                   juce::Justification::centredRight);
+    }
+
     const auto noteName = juce::String(core::kNoteNames[static_cast<size_t>(std::clamp(synth.note, 0, 11))].data());
     const juce::String pitchLabel = "TUNED: " + noteName + juce::String(synth.octave)
         + " (" + juce::String(fundamentalHz, 1) + " Hz)  |  TAIL: " + juce::String(juce::roundToInt(synth.tailLengthMs)) + " ms";
@@ -140,18 +201,27 @@ KickSynthPanel::KickSynthPanel(OpenEdmKickProcessor& processor)
     std::ranges::for_each(std::views::iota(0, core::kNumNotes), [&](int i) {
         auto& btn = noteButtons_[static_cast<size_t>(i)];
         const auto name = core::kNoteNames[static_cast<size_t>(i)];
+        const bool sharp = isSharpNote(i);
         btn.setButtonText(juce::String(name.data(), name.size()));
         btn.setComponentID("note_" + juce::String(i));
         btn.setColour(juce::TextButton::buttonOnColourId, theme::kAccentMint);
-        btn.setColour(juce::TextButton::buttonColourId, isSharpNote(i) ? theme::kBackground.brighter(0.05f) : theme::kKnobBody);
+        btn.setColour(juce::TextButton::buttonColourId, sharp ? juce::Colour(0xff141a1d) : juce::Colour(0xffe6dfd2));
+        btn.setColour(juce::TextButton::textColourOffId, sharp ? theme::kText : juce::Colour(0xff1c2428));
+        btn.setColour(juce::TextButton::textColourOnId, theme::kBackground);
+        btn.setTooltip("Tune the kick to " + btn.getButtonText() + " and audition it.");
         btn.onClick = [this, i] { selectNote(i); };
         addAndMakeVisible(btn);
+    });
+    std::ranges::for_each(std::array{ 1, 3, 6, 8, 10 }, [&](int sharp) {
+        noteButtons_[static_cast<size_t>(sharp)].toFront(false);
     });
 
     auditionButton_.setComponentID("audition_trig");
     auditionButton_.setColour(juce::TextButton::buttonOnColourId, theme::kAccentMint);
+    auditionButton_.setTooltip("Audition the tuned kick. This still works while Auto Mode is playing.");
     auditionButton_.onClick = [this] { processor_.triggerAudition(); };
     addAndMakeVisible(auditionButton_);
+    lockIn_.setTooltip("Freeze this kick into an internal 32-bit WAV. Playback keeps that hit if the host sample rate changes.");
 
     std::ranges::for_each(std::initializer_list<juce::Component*>{
         &lockIn_, &waveformView_, &octave_, &fineTune_, &startPitch_, &pitchDecay_,
@@ -176,7 +246,7 @@ void KickSynthPanel::updateNoteButtons(int activeNote) {
 
 void KickSynthPanel::paint(juce::Graphics& g) {
     drawPanel(g, getLocalBounds(), "Kick Synth & 12-Note Chromatic Tuner", theme::kAccentMint);
-    drawCaption(g, noteBarArea_, "12-Note Sub Fundamental Tuning (Click Note to Tune & Audition)");
+    drawCaption(g, noteBarArea_, "Chromatic Keyboard — click a key to tune and audition");
 }
 
 void KickSynthPanel::resized() {
@@ -187,18 +257,37 @@ void KickSynthPanel::resized() {
     auditionButton_.setBounds(header.removeFromRight(58).reduced(0, 1));
 
     bounds.removeFromTop(4);
-    noteBarArea_ = bounds.removeFromTop(38);
+    noteBarArea_ = bounds.removeFromTop(54);
     auto notesRow = noteBarArea_.withTrimmedTop(kCaptionHeight);
-    const int noteGap = 3;
-    const int noteWidth = (notesRow.getWidth() - noteGap * (core::kNumNotes - 1)) / core::kNumNotes;
-    std::ranges::for_each(std::views::iota(0, core::kNumNotes), [&](int i) {
-        auto& btn = noteButtons_[static_cast<size_t>(i)];
-        btn.setBounds(i == core::kNumNotes - 1 ? notesRow : notesRow.removeFromLeft(noteWidth));
-        notesRow.removeFromLeft(noteGap);
+    constexpr int kNaturalCount = 7;
+    constexpr int kNaturalGap = 3;
+    const std::array<int, kNaturalCount> naturals{ 0, 2, 4, 5, 7, 9, 11 };
+    const int naturalWidth = (notesRow.getWidth() - kNaturalGap * (kNaturalCount - 1)) / kNaturalCount;
+    std::array<juce::Rectangle<int>, kNaturalCount> naturalBounds{};
+    std::ranges::for_each(std::views::iota(0, kNaturalCount), [&](int i) {
+        const bool last = i == kNaturalCount - 1;
+        auto key = last ? notesRow : notesRow.removeFromLeft(naturalWidth);
+        if (!last) {
+            notesRow.removeFromLeft(kNaturalGap);
+        }
+        naturalBounds[static_cast<size_t>(i)] = key;
+        noteButtons_[static_cast<size_t>(naturals[static_cast<size_t>(i)])].setBounds(key);
+    });
+
+    const int sharpWidth = std::max(14, (naturalWidth * 58) / 100);
+    const int sharpHeight = std::max(16, (naturalBounds[0].getHeight() * 62) / 100);
+    const std::array<int, 5> sharpAfter{ 0, 1, 3, 4, 5 };
+    const std::array<int, 5> sharps{ 1, 3, 6, 8, 10 };
+    std::ranges::for_each(std::views::iota(0, 5), [&](int i) {
+        const auto& left = naturalBounds[static_cast<size_t>(sharpAfter[static_cast<size_t>(i)])];
+        const int boundary = left.getRight() + kNaturalGap / 2;
+        auto& sharp = noteButtons_[static_cast<size_t>(sharps[static_cast<size_t>(i)])];
+        sharp.setBounds(boundary - sharpWidth / 2, left.getY(), sharpWidth, sharpHeight);
+        sharp.toFront(false);
     });
 
     bounds.removeFromTop(6);
-    waveformView_.setBounds(bounds.removeFromTop(74));
+    waveformView_.setBounds(bounds.removeFromTop(64));
     bounds.removeFromTop(6);
 
     pitchRowArea_ = bounds.removeFromLeft((bounds.getWidth() - kSectionGap) * 6 / 11);
@@ -311,9 +400,10 @@ void MuleStagePanel::paint(juce::Graphics& g) {
                footer, juce::Justification::centredLeft);
 
     const float bpm = processor_.displayBpm.load();
+    const bool hostSync = processor_.parameters.getRawParameterValue(params::kClockSync)->load() > 0.5f;
+    const juce::String clockLabel = locked ? "WAV LOCKED" : (hostSync ? "HOST SYNC" : "INTERNAL CLOCK");
     g.setColour(locked ? theme::kAccentGold : theme::kTextDim);
-    g.drawText(juce::String(bpm, 1) + " BPM  |  " + (locked ? "WAV LOCKED" : "HOST SYNC"),
-               footer, juce::Justification::centredRight);
+    g.drawText(juce::String(bpm, 1) + " BPM  |  " + clockLabel, footer, juce::Justification::centredRight);
 }
 
 PianoRollView::PianoRollView(OpenEdmKickProcessor& processor)
@@ -442,6 +532,17 @@ void PianoRollView::paint(juce::Graphics& g) {
         g.drawRoundedRectangle(noteRect, 2.5f, 1.0f);
     });
 
+    const bool autoOn = processor_.parameters.getRawParameterValue(params::kAutoEnabled)->load() > 0.5f;
+    if (!autoOn) {
+        const auto banner = juce::Rectangle<float>(grid.getX(), grid.getBottom() - 18.0f, grid.getWidth(), 16.0f);
+        g.setColour(theme::kBackground.withAlpha(0.88f));
+        g.fillRoundedRectangle(banner, 3.0f);
+        g.setColour(theme::kAccentGold);
+        g.setFont(juce::FontOptions(10.0f, juce::Font::bold));
+        g.drawFittedText("AUTO MODE OFF — edit the roll here. TRIG and MIDI audition the tuned kick.",
+                         banner.toNearestInt().reduced(4, 0), juce::Justification::centredLeft, 1);
+    }
+
     // Live playhead
     const float phase = std::clamp(processor_.displayAutoPhase.load(), 0.0f, 0.9999f);
     const float playheadX = grid.getX() + phase * grid.getWidth();
@@ -516,6 +617,9 @@ AutoPianoRollPanel::AutoPianoRollPanel(OpenEdmKickProcessor& processor)
         &tempo_, &tailShorten_, &pitchRise_, &crushSweep_, &pianoRoll_
     }, [this](juce::Component* c) { addAndMakeVisible(c); });
 
+    tailShorten_.setTooltip("Auto Mode only. Shortens overlapping tails on 1/16, 1/32, and 1/64 rolls. Regular MIDI is unchanged.");
+    clockSync_.setTooltip("Follow the host tempo and playhead. Off uses the Tempo knob, including while the host is stopped.");
+    enabled_.setTooltip("Play the selected A/B/C/D piano-roll pattern from the host clock.");
     bypassWatcher_.sendInitialUpdate();
     slotWatcher_.sendInitialUpdate();
 }
@@ -590,22 +694,53 @@ void AutoPianoRollPanel::resized() {
     pianoRoll_.setBounds(pianoRollArea_.withTrimmedTop(kCaptionHeight));
 }
 
-EffectsPanel::EffectsPanel(Apvts& state)
-    : reverseMode_(state, params::kReverseMode, "Sync Mode", theme::kAccentReverse),
-      reverseMix_(state, params::kReverseMix, "Rev Mix", theme::kAccentReverse),
-      crushRate_(state, params::kCrushRate, "Rate", theme::kAccentFx),
-      crushBits_(state, params::kCrushBits, "Bits", theme::kAccentFx),
-      crushMix_(state, params::kCrushMix, "Mix", theme::kAccentFx),
-      stutterRate_(state, params::kStutterRate, "Sync Div", theme::kAccentMint),
-      stutterMix_(state, params::kStutterMix, "Mix", theme::kAccentMint),
-      gateRate_(state, params::kGateRate, "Gate Div", theme::kAccentGold),
-      gateMix_(state, params::kGateMix, "Gate Mix", theme::kAccentGold),
-      pumpRate_(state, params::kPumpRate, "Pump Div", theme::kAccentGold),
-      pumpMix_(state, params::kPumpMix, "Pump Mix", theme::kAccentGold),
-      drive_(state, params::kDrive, "Drive", theme::kAccentOut),
-      output_(state, params::kOutput, "Output", theme::kAccentOut),
-      ceiling_(state, params::kCeiling, "Ceiling", theme::kAccentOut),
-      limiter_(state, params::kLimiter, "LIMIT", theme::kAccentOut),
+PeakMeter::PeakMeter(OpenEdmKickProcessor& processor)
+    : processor_(processor) {
+    startTimerHz(30);
+    setTooltip("Pre-limiter peak. The gold tick is the limiter ceiling; the bar turns hot when the peak is above it.");
+}
+
+void PeakMeter::paint(juce::Graphics& g) {
+    const auto bounds = getLocalBounds().toFloat();
+    g.setColour(theme::kBackground.brighter(0.08f));
+    g.fillRoundedRectangle(bounds, 3.0f);
+    g.setColour(theme::kPanelEdge);
+    g.drawRoundedRectangle(bounds.reduced(0.5f), 3.0f, 1.0f);
+
+    const float peak = std::clamp(processor_.displayPeak.load(), 0.0f, 1.5f);
+    const float ceilingDb = processor_.parameters.getRawParameterValue(params::kCeiling)->load();
+    const float ceiling = juce::Decibels::decibelsToGain(ceilingDb);
+    constexpr float kMeterFullScale = 1.2f;
+    auto fill = bounds.reduced(2.0f);
+    const float levelHeight = fill.getHeight() * std::clamp(peak / kMeterFullScale, 0.0f, 1.0f);
+    const auto level = fill.removeFromBottom(levelHeight);
+    const bool over = peak > ceiling + 0.001f;
+    g.setColour(over ? juce::Colour(0xffe07a6a) : theme::kAccentMint);
+    if (levelHeight > 0.5f) {
+        g.fillRoundedRectangle(level, 2.0f);
+    }
+    const float tick = bounds.getBottom() - 2.0f - (bounds.getHeight() - 4.0f) * std::clamp(ceiling / kMeterFullScale, 0.0f, 1.0f);
+    g.setColour(theme::kAccentGold);
+    g.drawHorizontalLine(juce::roundToInt(tick), bounds.getX() + 2.0f, bounds.getRight() - 2.0f);
+}
+
+EffectsPanel::EffectsPanel(OpenEdmKickProcessor& processor)
+    : reverseMode_(processor.parameters, params::kReverseMode, "Sync Mode", theme::kAccentReverse),
+      reverseMix_(processor.parameters, params::kReverseMix, "Rev Mix", theme::kAccentReverse),
+      crushRate_(processor.parameters, params::kCrushRate, "Rate", theme::kAccentFx),
+      crushBits_(processor.parameters, params::kCrushBits, "Bits", theme::kAccentFx),
+      crushMix_(processor.parameters, params::kCrushMix, "Mix", theme::kAccentFx),
+      stutterRate_(processor.parameters, params::kStutterRate, "Sync Div", theme::kAccentMint),
+      stutterMix_(processor.parameters, params::kStutterMix, "Mix", theme::kAccentMint),
+      gateRate_(processor.parameters, params::kGateRate, "Gate Div", theme::kAccentGold),
+      gateMix_(processor.parameters, params::kGateMix, "Gate Mix", theme::kAccentGold),
+      pumpRate_(processor.parameters, params::kPumpRate, "Pump Div", theme::kAccentGold),
+      pumpMix_(processor.parameters, params::kPumpMix, "Pump Mix", theme::kAccentGold),
+      drive_(processor.parameters, params::kDrive, "Drive", theme::kAccentOut),
+      output_(processor.parameters, params::kOutput, "Output", theme::kAccentOut),
+      ceiling_(processor.parameters, params::kCeiling, "Ceiling", theme::kAccentOut),
+      limiter_(processor.parameters, params::kLimiter, "LIMIT", theme::kAccentOut),
+      meter_(processor),
       sections_{ {
           { "Reverse Sync", theme::kAccentReverse, 2, {} },
           { "Bitcrush", theme::kAccentFx, 3, {} },
@@ -616,8 +751,10 @@ EffectsPanel::EffectsPanel(Apvts& state)
     std::ranges::for_each(std::initializer_list<juce::Component*>{
         &reverseMode_, &reverseMix_, &crushRate_, &crushBits_, &crushMix_,
         &stutterRate_, &stutterMix_, &gateRate_, &gateMix_, &pumpRate_, &pumpMix_,
-        &drive_, &output_, &ceiling_, &limiter_
+        &drive_, &output_, &ceiling_, &limiter_, &meter_
     }, [this](juce::Component* c) { addAndMakeVisible(c); });
+    reverseMode_.setTooltip("Beat 4 Auto reverses kicks that land on the last beat so the swell ends on the bar line.");
+    limiter_.setTooltip("Zero-latency ceiling. Transients stay on the grid and are caught on the sample that crosses the ceiling.");
 }
 
 void EffectsPanel::paint(juce::Graphics& g) {
@@ -649,7 +786,10 @@ void EffectsPanel::resized() {
     layoutRow(content(1), { &crushRate_, &crushBits_, &crushMix_ });
     layoutRow(content(2), { &stutterRate_, &stutterMix_ });
     layoutRow(content(3), { &gateRate_, &gateMix_, &pumpRate_, &pumpMix_ });
-    layoutRow(content(4), { &drive_, &output_, &ceiling_, &limiter_ });
+    auto outputRow = content(4);
+    meter_.setBounds(outputRow.removeFromRight(18).reduced(1, 6));
+    outputRow.removeFromRight(4);
+    layoutRow(outputRow, { &drive_, &output_, &ceiling_, &limiter_ });
 }
 
 } // namespace openedmkick::ui

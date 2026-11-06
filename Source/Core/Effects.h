@@ -91,12 +91,13 @@ private:
     float ic2eq_ = 0.0f;
 };
 
-// Lookahead peak limiter so processed kicks never exceed the ceiling.
+// Zero-latency peak limiter. Instant attack keeps the kick transient on the
+// MIDI/grid sample; release recovers gain without a lookahead delay.
 class PeakLimiter {
 public:
     static constexpr int kMaxChannels = 2;
-    static constexpr int kLookahead = 64;
-    static constexpr int kLatency = kLookahead - 1;
+    static constexpr int kLookahead = 0;
+    static constexpr int kLatency = 0;
 
     void prepare(double sampleRate) noexcept;
     void reset() noexcept;
@@ -104,11 +105,7 @@ public:
 
 private:
     float releaseCoefficient_ = 0.0f;
-    float releasedGain_ = 1.0f;
-    int position_ = 0;
-    std::array<float, kLookahead> requiredGains_{};
-    std::array<float, kLookahead> releasedGains_{};
-    std::array<std::array<float, kLookahead>, kMaxChannels> delayLines_{};
+    float gain_ = 1.0f;
 };
 
 } // namespace openedmkick::core

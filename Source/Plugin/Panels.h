@@ -13,7 +13,12 @@ public:
 
 private:
     void timerCallback() override { repaint(); }
+    void refreshCache();
+
     OpenEdmKickProcessor& processor_;
+    openedmkick::core::KickSynthSettings cachedSettings_{};
+    bool cachedLocked_ = false;
+    std::vector<float> cachedSamples_;
 };
 
 class KickSynthPanel : public juce::Component {
@@ -103,9 +108,19 @@ private:
     juce::ParameterAttachment slotWatcher_;
 };
 
+class PeakMeter : public juce::Component, public juce::SettableTooltipClient, private juce::Timer {
+public:
+    explicit PeakMeter(OpenEdmKickProcessor& processor);
+    void paint(juce::Graphics& g) override;
+
+private:
+    void timerCallback() override { repaint(); }
+    OpenEdmKickProcessor& processor_;
+};
+
 class EffectsPanel : public juce::Component {
 public:
-    explicit EffectsPanel(Apvts& state);
+    explicit EffectsPanel(OpenEdmKickProcessor& processor);
     void paint(juce::Graphics& g) override;
     void resized() override;
 
@@ -132,6 +147,7 @@ private:
     Knob output_;
     Knob ceiling_;
     Toggle limiter_;
+    PeakMeter meter_;
     std::array<Section, 5> sections_;
 };
 

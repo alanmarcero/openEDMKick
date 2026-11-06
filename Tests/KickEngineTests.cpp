@@ -1,4 +1,5 @@
 #include "KickEngine.h"
+#include <algorithm>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 #include <cmath>
@@ -78,4 +79,92 @@ TEST_CASE("Auto mode tail shortener reduces tail energy on rapid 1/64 rolls", "[
         [](float acc, float s) { return acc + std::abs(s); });
 
     REQUIRE(lateShort < lateLong * 0.55f);
+}
+
+TEST_CASE("Auto mode stays silent while the host transport is stopped", "[engine]") {
+    core::KickEngine engine;
+    engine.prepare(48000.0);
+    engine.sequencer().loadPresetIntoSlot(0, 11, 1);
+
+    core::EngineSettings settings{};
+    settings.autoEnabled = true;
+    settings.synth.tailLengthMs = 400.0f;
+    settings.effects.limiterEnabled = false;
+    settings.autoSlots[0].bars = 1;
+    settings.autoSlots[0].fillPreset = 11;
+
+    const core::Transport stopped{ 128.0, 0.0, 4.0, false };
+    std::vector<float> buffer(4096, 0.0f);
+    float* pointer = buffer.data();
+    engine.process(settings, stopped, {}, &pointer, 1, static_cast<int>(buffer.size()));
+    const float stoppedEnergy = std::accumulate(buffer.begin(), buffer.end(), 0.0f,
+        [](float acc, float sample) { return acc + std::abs(sample); });
+    REQUIRE_THAT(stoppedEnergy, WithinAbs(0.0f, 1.0e-6f));
+
+    engine.reset();
+    const core::Transport playing{ 128.0, 0.0, 4.0, true };
+    std::fill(buffer.begin(), buffer.end(), 0.0f);
+    engine.process(settings, playing, {}, &pointer, 1, static_cast<int>(buffer.size()));
+    const float playingEnergy = std::accumulate(buffer.begin(), buffer.end(), 0.0f,
+        [](float acc, float sample) { return acc + std::abs(sample); });
+    REQUIRE(playingEnergy > 20.0f);
+}
+
+TEST_CASE("Audition triggers during Auto Mode while ordinary MIDI does not", "[engine]") {
+    core::KickEngine ignored;
+    core::KickEngine auditioned;
+    ignored.prepare(48000.0);
+    auditioned.prepare(48000.0);
+    ignored.sequencer().setNotesForSlot(0, {});
+    auditioned.sequencer().setNotesForSlot(0, {});
+
+    core::EngineSettings settings{};
+    settings.autoEnabled = true;
+    settings.effects.limiterEnabled = false;
+    settings.autoSlots[0].bars = 1;
+    const core::Transport transport{ 120.0, 0.0, 4.0, true };
+    const std::array<core::MidiTrigger, 1> midi{ { { 0, 60, 1.0f, false } } };
+    const std::array<core::MidiTrigger, 1> audition{ { { 0, 60, 1.0f, true } } };
+
+    std::vector<float> silent(2048, 0.0f);
+    std::vector<float> heard(2048, 0.0f);
+    float* silentPtr = silent.data();
+    float* heardPtr = heard.data();
+    ignored.process(settings, transport, midi, &silentPtr, 1, static_cast<int>(silent.size()));
+    auditioned.process(settings, transport, audition, &heardPtr, 1, static_cast<int>(heard.size()));
+
+    const float silentEnergy = std::accumulate(silent.begin(), silent.end(), 0.0f,
+        [](float acc, float sample) { return acc + std::abs(sample); });
+    const float heardEnergy = std::accumulate(heard.begin(), heard.end(), 0.0f,
+        [](float acc, float sample) { return acc + std::abs(sample); });
+    REQUIRE_THAT(silentEnergy, WithinAbs(0.0f, 1.0e-6f));
+    REQUIRE(heardEnergy > 10.0f);
+}
+
+TEST_CASE("Hot kicks stay finite and under the limiter ceiling", "[engine]") {
+    core::KickEngine engine;
+    engine.prepare(48000.0);
+    core::EngineSettings settings{};
+    settings.synth.subDrive = 1.0f;
+    settings.synth.clickLevel = 1.0f;
+    settings.synth.punch = 1.0f;
+    settings.synth.startPitchHz = 1800.0f;
+    settings.effects.drive = 1.0f;
+    settings.effects.outputGain = 2.0f;
+    settings.effects.limiterEnabled = true;
+    settings.effects.ceilingGain = 0.5f;
+    settings.effects.crushMix = 1.0f;
+    settings.effects.crushBits = 3;
+    settings.effects.crushRateHz = 1500.0f;
+    settings.effects.pumpMix = 1.0f;
+    settings.effects.stutterMix = 0.5f;
+    const core::Transport transport{ 140.0, 1.25, 4.0, true };
+    const std::array<core::MidiTrigger, 1> trigger{ { { 0, 36, 1.0f, false } } };
+    std::vector<float> buffer(4096, 0.0f);
+    float* pointer = buffer.data();
+    engine.process(settings, transport, trigger, &pointer, 1, static_cast<int>(buffer.size()));
+    std::ranges::for_each(buffer, [](float sample) {
+        REQUIRE(std::isfinite(sample));
+        REQUIRE(std::abs(sample) <= 0.5001f);
+    });
 }

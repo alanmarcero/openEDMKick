@@ -20,6 +20,7 @@ struct MidiTrigger {
     int sampleOffset = 0;
     int noteNumber = 60;
     float velocity = 1.0f;
+    bool audition = false;
 };
 
 struct EffectSettings {

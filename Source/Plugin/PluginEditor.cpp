@@ -25,7 +25,8 @@ OpenEdmKickEditor::OpenEdmKickEditor(OpenEdmKickProcessor& processorToEdit)
       synthPanel_(processorToEdit),
       muleStage_(processorToEdit),
       autoPanel_(processorToEdit),
-      effectsPanel_(processorToEdit.parameters) {
+      effectsPanel_(processorToEdit),
+      tooltipWindow_(this, 700) {
     setLookAndFeel(&lookAndFeel_);
     faceplate_ = juce::ImageCache::getFromMemory(
         BinaryData::analogcyberfaceplate_png, BinaryData::analogcyberfaceplate_pngSize);
@@ -44,11 +45,36 @@ OpenEdmKickEditor::OpenEdmKickEditor(OpenEdmKickProcessor& processorToEdit)
         &presetBox_, &masterBypass_, &synthPanel_, &muleStage_, &autoPanel_, &effectsPanel_
     }, [this](juce::Component* c) { addAndMakeVisible(c); });
 
+    presetBox_.setTooltip("Factory kicks. Auto Mode, Lock In, and the effect chain are stored with each preset.");
+    masterBypass_.setTooltip("Silence the instrument and clear the output.");
+    processor_.addListener(this);
     setSize(kEditorWidth, kEditorHeight);
+    startTimerHz(4);
 }
 
 OpenEdmKickEditor::~OpenEdmKickEditor() {
+    processor_.removeListener(this);
     setLookAndFeel(nullptr);
+}
+
+void OpenEdmKickEditor::timerCallback() {
+    syncPresetBox();
+}
+
+void OpenEdmKickEditor::audioProcessorChanged(juce::AudioProcessor*, const ChangeDetails& details) {
+    if (details.programChanged) {
+        syncPresetBox();
+    }
+}
+
+void OpenEdmKickEditor::audioProcessorParameterChanged(juce::AudioProcessor*, int, float) {
+}
+
+void OpenEdmKickEditor::syncPresetBox() {
+    const int programId = processor_.getCurrentProgram() + 1;
+    if (presetBox_.getSelectedId() != programId) {
+        presetBox_.setSelectedId(programId, juce::dontSendNotification);
+    }
 }
 
 void OpenEdmKickEditor::paint(juce::Graphics& g) {
