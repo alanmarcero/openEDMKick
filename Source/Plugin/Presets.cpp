@@ -163,7 +163,95 @@ const std::vector<FactoryPreset>& factoryPresets() {
             { params::kClapLevel, 0.62f }, { params::kClapSpread, 0.4f }, { params::kClapTone, 0.75f },
             { params::kClapDecay, 0.8f },
             { params::kHatLevel, 0.55f }, { params::kHatTone, 0.6f }, { params::kHatDecay, 0.7f }
-        } }
+        } },
+        { "138 Uplifting Euphoria (F1)", {
+            { params::kNote, 5.0f }, { params::kStartPitch, 480.0f }, { params::kPitchDecay, 34.0f },
+            { params::kTailLength, 350.0f }, { params::kPunch, 0.68f }, { params::kSubDrive, 0.35f },
+            { params::kClickLevel, 0.45f }, { params::kClickFreq, 3400.0f }, { params::kDrive, 0.20f } } },
+        { "138 Pure Trance Slammer (G1)", {
+            { params::kNote, 7.0f }, { params::kStartPitch, 520.0f }, { params::kPitchDecay, 32.0f },
+            { params::kTailLength, 360.0f }, { params::kPunch, 0.72f }, { params::kSubDrive, 0.38f },
+            { params::kClickLevel, 0.48f }, { params::kClickFreq, 3600.0f }, { params::kDrive, 0.22f } } },
+        { "ASOT Anthem Driver (A1)", {
+            { params::kNote, 9.0f }, { params::kStartPitch, 460.0f }, { params::kPitchDecay, 35.0f },
+            { params::kTailLength, 340.0f }, { params::kPunch, 0.75f }, { params::kSubDrive, 0.32f },
+            { params::kClickLevel, 0.42f }, { params::kClickFreq, 4000.0f }, { params::kDrive, 0.18f } } },
+        { "Psytrance Woody Tok (F#1)", {
+            { params::kNote, 6.0f }, { params::kStartPitch, 580.0f }, { params::kPitchDecay, 22.0f },
+            { params::kTailLength, 220.0f }, { params::kTailCurve, -0.22f }, { params::kPunch, 0.72f },
+            { params::kClickLevel, 0.58f }, { params::kClickFreq, 4800.0f }, { params::kSubDrive, 0.28f } } },
+        { "Psytrance Deep Forest Stomp (E1)", {
+            { params::kNote, 4.0f }, { params::kStartPitch, 620.0f }, { params::kPitchDecay, 24.0f },
+            { params::kTailLength, 240.0f }, { params::kTailCurve, -0.18f }, { params::kPunch, 0.70f },
+            { params::kClickLevel, 0.52f }, { params::kClickFreq, 5200.0f }, { params::kSubDrive, 0.35f },
+            { params::kDrive, 0.25f } } },
+        { "Tech-Trance Hard Hitter (A#1)", {
+            { params::kNote, 10.0f }, { params::kStartPitch, 680.0f }, { params::kPitchDecay, 42.0f },
+            { params::kTailLength, 380.0f }, { params::kPunch, 0.78f }, { params::kSubDrive, 0.55f },
+            { params::kClickLevel, 0.50f }, { params::kClickFreq, 3200.0f }, { params::kDrive, 0.35f } } },
+        { "Tech-Trance Distorted Tok (G#1)", {
+            { params::kNote, 8.0f }, { params::kStartPitch, 750.0f }, { params::kPitchDecay, 45.0f },
+            { params::kTailLength, 390.0f }, { params::kPunch, 0.76f }, { params::kSubDrive, 0.62f },
+            { params::kClickLevel, 0.60f }, { params::kClickFreq, 3800.0f }, { params::kDrive, 0.42f },
+            { params::kCrushRate, 7200.0f }, { params::kCrushBits, 10.0f }, { params::kCrushMix, 0.22f } } },
+        { "Progressive Trance Velvet Sub (D1)", {
+            { params::kNote, 2.0f }, { params::kStartPitch, 320.0f }, { params::kPitchDecay, 48.0f },
+            { params::kTailLength, 420.0f }, { params::kTailCurve, 0.25f }, { params::kPunch, 0.48f },
+            { params::kSubDrive, 0.22f }, { params::kClickLevel, 0.25f }, { params::kClickFreq, 2200.0f },
+            { params::kDrive, 0.12f } } },
+        { "Progressive Trance Deep Click (C1)", {
+            { params::kNote, 0.0f }, { params::kStartPitch, 300.0f }, { params::kPitchDecay, 50.0f },
+            { params::kTailLength, 440.0f }, { params::kTailCurve, 0.20f }, { params::kPunch, 0.52f },
+            { params::kSubDrive, 0.30f }, { params::kClickLevel, 0.40f }, { params::kClickFreq, 2600.0f } } },
+        { "Classic 1999 Trance 909 (F1)", {
+            { params::kNote, 5.0f }, { params::kStartPitch, 380.0f }, { params::kPitchDecay, 38.0f },
+            { params::kTailLength, 390.0f }, { params::kTailCurve, 0.10f }, { params::kPunch, 0.58f },
+            { params::kSubDrive, 0.26f }, { params::kClickLevel, 0.36f }, { params::kClickFreq, 2800.0f },
+            { params::kDrive, 0.16f } } },
+        { "Paul van Dyk Gate Runner (G1)", {
+            { params::kNote, 7.0f }, { params::kTailLength, 400.0f }, { params::kGateRate, 2.0f },
+            { params::kGateMix, 0.68f }, { params::kPunch, 0.65f }, { params::kSubDrive, 0.32f },
+            { params::kDrive, 0.24f } } },
+        { "Armin ASOT 138 Stutter Drop (A1)", {
+            { params::kNote, 9.0f }, { params::kTailLength, 380.0f }, { params::kStutterRate, 2.0f },
+            { params::kStutterMix, 0.65f }, { params::kPunch, 0.70f }, { params::kDrive, 0.26f } } },
+        { "Hard Trance Reverse Bass Tok (D#1)", {
+            { params::kNote, 3.0f }, { params::kTailLength, 440.0f }, { params::kReverseMode, 2.0f },
+            { params::kReverseMix, 1.0f }, { params::kPunch, 0.72f }, { params::kSubDrive, 0.40f },
+            { params::kDrive, 0.30f } } },
+        { "Hard Trance Reverse Beat Sync (C#1)", {
+            { params::kNote, 1.0f }, { params::kTailLength, 430.0f }, { params::kReverseMode, 1.0f },
+            { params::kReverseMix, 1.0f }, { params::kPunch, 0.74f }, { params::kSubDrive, 0.44f },
+            { params::kDrive, 0.32f } } },
+        { "Ferry Gouryella Euphoric Sub (B1)", {
+            { params::kNote, 11.0f }, { params::kStartPitch, 460.0f }, { params::kPitchDecay, 36.0f },
+            { params::kTailLength, 370.0f }, { params::kPunch, 0.66f }, { params::kSubDrive, 0.30f },
+            { params::kClickLevel, 0.44f }, { params::kClickFreq, 3600.0f }, { params::kDrive, 0.20f } } },
+        { "Vocal Trance Sidechain Thump (F1)", {
+            { params::kNote, 5.0f }, { params::kTailLength, 360.0f }, { params::kPumpRate, 0.0f },
+            { params::kPumpMix, 0.32f }, { params::kPunch, 0.65f }, { params::kSubDrive, 0.28f },
+            { params::kDrive, 0.18f } } },
+        { "138 BPM Rolling Offbeat Lock (G1)", {
+            { params::kNote, 7.0f }, { params::kStartPitch, 500.0f }, { params::kPitchDecay, 30.0f },
+            { params::kTailLength, 320.0f }, { params::kTailCurve, -0.15f }, { params::kPunch, 0.72f },
+            { params::kClickLevel, 0.52f }, { params::kClickFreq, 4200.0f }, { params::kLockIn, 1.0f } } },
+        { "Ibiza Sunset Progressive Driver (A1)", {
+            { params::kNote, 9.0f }, { params::kStartPitch, 360.0f }, { params::kPitchDecay, 44.0f },
+            { params::kTailLength, 380.0f }, { params::kPunch, 0.55f }, { params::kSubDrive, 0.24f },
+            { params::kClickLevel, 0.32f }, { params::kClickFreq, 2800.0f }, { params::kDrive, 0.16f } } },
+        makeMultiSlotBuildPreset("Trance 138 Build Riser (8 Bar)", 5.0f, 360.0f, 3.0f, 1.0f, 0.75f, 7.0f, 0.60f, 0.28f),
+        makeMultiSlotBuildPreset("Trance Uplifting Odyssey (16 Bar)", 7.0f, 380.0f, 4.0f, 2.0f, 0.78f, 10.0f, 0.70f, 0.30f),
+        makeMultiSlotBuildPreset("Trance Epic Arena Ascent (32 Bar)", 9.0f, 400.0f, 5.0f, 4.0f, 0.82f, 12.0f, 0.80f, 0.34f),
+        makeMultiSlotBuildPreset("Trance 1/64 Machine Rush (4 Bar)", 2.0f, 340.0f, 2.0f, 11.0f, 0.85f, 6.0f, 0.50f, 0.26f),
+        { "138 Trance Kick + Offbeat Hat (F1)", {
+            { params::kNote, 5.0f }, { params::kTailLength, 360.0f }, { params::kPunch, 0.65f },
+            { params::kSubDrive, 0.30f }, { params::kHatLevel, 0.44f }, { params::kHatTone, 0.80f },
+            { params::kHatDecay, 0.32f } } },
+        { "138 Trance Kick + Snare Clap Stack (G1)", {
+            { params::kNote, 7.0f }, { params::kTailLength, 370.0f }, { params::kPunch, 0.68f },
+            { params::kSubDrive, 0.34f }, { params::kSnareLevel, 0.50f }, { params::kSnareTone, 0.65f },
+            { params::kSnareDecay, 0.40f }, { params::kClapLevel, 0.42f }, { params::kClapSpread, 0.50f },
+            { params::kClapTone, 0.68f } } }
     };
     return presets;
 }

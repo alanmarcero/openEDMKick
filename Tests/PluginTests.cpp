@@ -448,3 +448,29 @@ TEST_CASE("Factory kick programs and Auto Mode patterns keep old indexes", "[plu
     REQUIRE(restored.currentAutoSlotSettings().fillPreset == 15);
     REQUIRE_THAT(restored.currentSynthSettings().clapDecay, WithinAbs(0.9f, 0.002f));
 }
+
+TEST_CASE("All 56 factory kick presets load and report valid program names", "[plugin][presets]") {
+    OpenEdmKickProcessor processor;
+    const auto& presets = openedmkick::presets::factoryPresets();
+    REQUIRE(presets.size() == 56);
+    REQUIRE(processor.getNumPrograms() == 56);
+
+    for (int i = 0; i < 56; ++i) {
+        REQUIRE(processor.getProgramName(i).isNotEmpty());
+        processor.setCurrentProgram(i);
+        REQUIRE(processor.getCurrentProgram() == i);
+    }
+
+    // Spot-check key trance kicks
+    const std::array<const char*, 5> tranceKicks{{
+        "138 Uplifting Euphoria (F1)",
+        "138 Pure Trance Slammer (G1)",
+        "ASOT Anthem Driver (A1)",
+        "Psytrance Woody Tok (F#1)",
+        "Trance Uplifting Odyssey (16 Bar)"
+    }};
+    for (const auto* name : tranceKicks) {
+        const auto it = std::ranges::find_if(presets, [&](const auto& p) { return std::string(p.name) == name; });
+        REQUIRE(it != presets.end());
+    }
+}
