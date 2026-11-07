@@ -318,11 +318,13 @@ const std::vector<FactoryPreset>& fillBuildPresets() {
         std::vector<FactoryPreset> list;
         const std::array<float, core::kNumFillPresets> defaultShorten{
             0.55f, 0.68f, 0.82f, 0.50f, 0.76f, 0.70f, 0.58f, 0.72f, 0.45f, 0.80f, 0.78f, 0.88f,
-            0.62f, 0.70f, 0.48f, 0.74f
+            0.62f, 0.70f, 0.48f, 0.74f,
+            0.65f, 0.75f, 0.80f, 0.60f, 0.70f, 0.50f, 0.85f, 0.62f, 0.72f, 0.78f, 0.55f, 0.82f
         };
         const std::array<float, core::kNumFillPresets> defaultPitchRise{
             0.0f, 4.0f, 7.0f, 0.0f, 6.0f, 12.0f, 2.0f, 5.0f, 0.0f, 8.0f, 5.0f, 9.0f,
-            3.0f, 6.0f, 1.0f, 8.0f
+            3.0f, 6.0f, 1.0f, 8.0f,
+            4.0f, 7.0f, 12.0f, 3.0f, 5.0f, 0.0f, 12.0f, 2.0f, 7.0f, 6.0f, 2.0f, 8.0f
         };
         std::ranges::for_each(std::views::iota(0, core::kNumFillPresets), [&](int idx) {
             list.push_back(FactoryPreset{

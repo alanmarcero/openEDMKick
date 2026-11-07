@@ -9,7 +9,7 @@ namespace openedmkick::core {
 inline constexpr int kStepsPerBeat64 = 16; // 16 sixty-fourth notes per quarter-note beat
 inline constexpr int kStepsPerBar64 = 64;  // 64 sixty-fourth notes per 4/4 bar
 inline constexpr int kNumAutoSlots = 4;
-inline constexpr int kNumFillPresets = 16;
+inline constexpr int kNumFillPresets = 28;
 
 inline constexpr std::array<int, 7> kAutoBarCounts = { 1, 2, 4, 8, 16, 32, 64 };
 
@@ -33,7 +33,19 @@ inline constexpr std::array<std::string_view, kNumFillPresets> kFillPresetNames 
     "Offbeat House Pump",
     "Dotted Gallop Push",
     "Downbeat And 1/32 Tail",
-    "Call And Answer Reverse"
+    "Call And Answer Reverse",
+    "Trance 138 Rolling Sub Fill",
+    "Psytrance Triplet Rush",
+    "Uplifting 16-Bar Riser",
+    "Eurodance Offbeat Stutter",
+    "Hard Trance Reverse Kick Rush",
+    "Vocal Trance Breakdown Drop",
+    "Anthem Trance 32-Bar Odyssey",
+    "Tech-Trance Slog Snare-Kick",
+    "Classic Tiësto 1999 Build",
+    "Gouryella Double-Time Roll",
+    "Anjunabeats Progressive Groove",
+    "Hands-Up 16th Staccato"
 };
 
 struct PianoRollNote {
