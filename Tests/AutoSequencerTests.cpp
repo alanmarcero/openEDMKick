@@ -22,12 +22,14 @@ TEST_CASE("All 16 fill presets generate valid patterns across 1 to 64 bars", "[a
 }
 
 TEST_CASE("Original fill indexes keep their patterns and the new ones are separate", "[auto]") {
-    REQUIRE(core::kNumFillPresets == 16);
-    REQUIRE(core::kFillPresetNames.size() == 16u);
+    REQUIRE(core::kNumFillPresets == 28);
+    REQUIRE(core::kFillPresetNames.size() == 28u);
     REQUIRE(core::kFillPresetNames[0] == "Four on the Floor + End Fill");
     REQUIRE(core::kFillPresetNames[11] == "Mainstage 64th Machine Gun");
     REQUIRE(core::kFillPresetNames[12] == "Offbeat House Pump");
     REQUIRE(core::kFillPresetNames[15] == "Call And Answer Reverse");
+    REQUIRE(core::kFillPresetNames[16] == "Trance 138 Rolling Sub Fill");
+    REQUIRE(core::kFillPresetNames[27] == "Hands-Up 16th Staccato");
 
     const auto floor = core::buildPresetPattern(0, 1);
     REQUIRE(floor.size() == 8u);

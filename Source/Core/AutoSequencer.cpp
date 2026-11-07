@@ -211,6 +211,158 @@ std::vector<PianoRollNote> buildPresetPattern(int presetIndex, int bars) {
             });
             break;
         }
+        case 16: { // 16: Trance 138 Rolling Sub Fill
+            std::ranges::for_each(std::views::iota(0, safeBars), [&](int bar) {
+                const int base = bar * kStepsPerBar64;
+                addNote(notes, base + 0, 16, 0, 1.0f);
+                addNote(notes, base + 16, 16, 0, 0.95f);
+                addNote(notes, base + 32, 16, 0, 1.0f);
+                const bool isLastBar = (bar == safeBars - 1);
+                if (isLastBar) {
+                    addNote(notes, base + 48, 4, 1, 0.90f);
+                    addNote(notes, base + 52, 4, 2, 0.92f);
+                    addNote(notes, base + 56, 4, 3, 0.95f);
+                    addNote(notes, base + 60, 4, 5, 1.0f);
+                    return;
+                }
+                addNote(notes, base + 44, 4, 1, 0.82f);
+                addNote(notes, base + 48, 16, 0, 0.95f);
+            });
+            break;
+        }
+        case 17: { // 17: Psytrance Triplet Rush
+            std::ranges::for_each(std::views::iota(0, safeBars), [&](int bar) {
+                const int base = bar * kStepsPerBar64;
+                constexpr std::array<int, 8> kPsyHits{ 0, 6, 12, 16, 22, 28, 32, 48 };
+                std::ranges::for_each(kPsyHits, [&](int hit) {
+                    addNote(notes, base + hit, 4, hit % 16 == 0 ? 0 : 2, 0.92f);
+                });
+            });
+            appendSteppedRange(notes, std::max(0, totalSteps - 16), totalSteps, 2, 2, 9, 0.85f, 1.0f);
+            break;
+        }
+        case 18: { // 18: Uplifting 16-Bar Riser
+            const int q1 = totalSteps / 4;
+            const int q2 = totalSteps / 2;
+            const int q3 = (totalSteps * 3) / 4;
+            appendSteppedRange(notes, 0, q1, 32, 0, 0, 0.90f, 0.95f);
+            appendSteppedRange(notes, q1, q2, 16, 0, 2, 0.92f, 0.98f);
+            appendSteppedRange(notes, q2, q3, 8, 2, 5, 0.90f, 1.0f);
+            appendSteppedRange(notes, q3, totalSteps, 4, 5, 12, 0.85f, 1.0f);
+            break;
+        }
+        case 19: { // 19: Eurodance Offbeat Stutter
+            const int regularEnd = std::max(0, totalSteps - 16);
+            const int regularBars = regularEnd / kStepsPerBar64;
+            std::ranges::for_each(std::views::iota(0, std::max(1, regularBars)), [&](int bar) {
+                const int base = bar * kStepsPerBar64;
+                constexpr std::array<int, 6> kEuro{ 0, 8, 16, 24, 32, 48 };
+                std::ranges::for_each(kEuro, [&](int step) {
+                    addNote(notes, base + step, 6, step % 16 == 0 ? 0 : 3, step % 16 == 0 ? 1.0f : 0.88f);
+                });
+            });
+            appendSteppedRange(notes, regularEnd, totalSteps, 2, 3, 10, 0.85f, 1.0f);
+            break;
+        }
+        case 20: { // 20: Hard Trance Reverse Kick Rush
+            std::ranges::for_each(std::views::iota(0, safeBars), [&](int bar) {
+                const int base = bar * kStepsPerBar64;
+                addNote(notes, base + 0, 16, 0, 1.0f, false);
+                addNote(notes, base + 16, 16, 0, 1.0f, false);
+                addNote(notes, base + 32, 16, 0, 1.0f, false);
+                const bool even = (bar % 2 == 0);
+                if (even) {
+                    addNote(notes, base + 44, 8, 4, 0.88f, true);
+                    addNote(notes, base + 52, 12, 4, 0.95f, true);
+                    return;
+                }
+                addNote(notes, base + 48, 16, 3, 1.0f, true);
+            });
+            appendSteppedRange(notes, std::max(0, totalSteps - 8), totalSteps, 2, 4, 12, 0.9f, 1.0f);
+            break;
+        }
+        case 21: { // 21: Vocal Trance Breakdown Drop
+            const int sparseEnd = std::max(0, totalSteps - 32);
+            const int sparseBars = sparseEnd / kStepsPerBar64;
+            std::ranges::for_each(std::views::iota(0, std::max(1, sparseBars)), [&](int bar) {
+                const int base = bar * kStepsPerBar64;
+                addNote(notes, base + 0, 16, 0, 0.95f);
+                addNote(notes, base + 40, 12, 2, 0.85f);
+            });
+            appendSteppedRange(notes, sparseEnd, totalSteps - 16, 16, 0, 2, 0.95f, 1.0f);
+            appendSteppedRange(notes, totalSteps - 16, totalSteps - 8, 8, 2, 5, 0.9f, 1.0f);
+            appendSteppedRange(notes, totalSteps - 8, totalSteps, 4, 5, 8, 0.95f, 1.0f);
+            break;
+        }
+        case 22: { // 22: Anthem Trance 32-Bar Odyssey
+            const int p1 = totalSteps / 4;
+            const int p2 = totalSteps / 2;
+            const int p3 = (totalSteps * 3) / 4;
+            appendSteppedRange(notes, 0, p1, 16, 0, 0, 0.90f, 1.0f);
+            appendSteppedRange(notes, p1, p2, 8, 0, 3, 0.92f, 1.0f);
+            appendSteppedRange(notes, p2, p3, 4, 3, 7, 0.88f, 1.0f);
+            appendSteppedRange(notes, p3, totalSteps, 2, 7, 12, 0.85f, 1.0f);
+            break;
+        }
+        case 23: { // 23: Tech-Trance Slog Snare-Kick
+            std::ranges::for_each(std::views::iota(0, safeBars), [&](int bar) {
+                const int base = bar * kStepsPerBar64;
+                addNote(notes, base + 0, 12, 0, 1.0f);
+                addNote(notes, base + 12, 4, -1, 0.80f);
+                addNote(notes, base + 16, 12, 0, 0.95f);
+                addNote(notes, base + 28, 4, 2, 0.88f);
+                addNote(notes, base + 32, 12, 0, 1.0f);
+                addNote(notes, base + 44, 4, 1, 0.85f);
+                addNote(notes, base + 48, 16, 0, 0.98f);
+            });
+            break;
+        }
+        case 24: { // 24: Classic Tiësto 1999 Build
+            const int half = totalSteps / 2;
+            const int threeQuarters = (totalSteps * 3) / 4;
+            appendSteppedRange(notes, 0, half, 16, 0, 0, 0.92f, 1.0f);
+            appendSteppedRange(notes, half, threeQuarters, 8, 0, 3, 0.90f, 1.0f);
+            appendSteppedRange(notes, threeQuarters, totalSteps, 4, 3, 7, 0.88f, 1.0f);
+            break;
+        }
+        case 25: { // 25: Gouryella Double-Time Roll
+            std::ranges::for_each(std::views::iota(0, safeBars), [&](int bar) {
+                const int base = bar * kStepsPerBar64;
+                addNote(notes, base + 0, 16, 0, 1.0f);
+                addNote(notes, base + 16, 16, 0, 0.95f);
+                addNote(notes, base + 32, 16, 0, 1.0f);
+                addNote(notes, base + 48, 8, 0, 0.95f);
+                addNote(notes, base + 56, 2, 2, 0.90f);
+                addNote(notes, base + 58, 2, 4, 0.92f);
+                addNote(notes, base + 60, 2, 6, 0.95f);
+                addNote(notes, base + 62, 2, 8, 1.0f);
+            });
+            break;
+        }
+        case 26: { // 26: Anjunabeats Progressive Groove
+            std::ranges::for_each(std::views::iota(0, safeBars), [&](int bar) {
+                const int base = bar * kStepsPerBar64;
+                addNote(notes, base + 0, 10, 0, 1.0f);
+                addNote(notes, base + 10, 6, 1, 0.80f);
+                addNote(notes, base + 16, 10, 0, 0.95f);
+                addNote(notes, base + 26, 6, 2, 0.82f);
+                addNote(notes, base + 32, 10, 0, 1.0f);
+                addNote(notes, base + 42, 6, 1, 0.80f);
+                addNote(notes, base + 48, 16, 0, 0.95f);
+            });
+            break;
+        }
+        case 27: { // 27: Hands-Up 16th Staccato
+            std::ranges::for_each(std::views::iota(0, safeBars), [&](int bar) {
+                const int base = bar * kStepsPerBar64;
+                constexpr std::array<int, 6> kJumpHits{ 0, 6, 16, 22, 32, 48 };
+                std::ranges::for_each(kJumpHits, [&](int hit) {
+                    addNote(notes, base + hit, 5, hit % 16 == 0 ? 0 : 4, hit % 16 == 0 ? 1.0f : 0.88f);
+                });
+            });
+            appendSteppedRange(notes, std::max(0, totalSteps - 8), totalSteps, 2, 4, 11, 0.85f, 1.0f);
+            break;
+        }
         default:
             break;
     }

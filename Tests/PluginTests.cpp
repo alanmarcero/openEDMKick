@@ -370,7 +370,7 @@ TEST_CASE("Factory kick programs and Auto Mode patterns keep old indexes", "[plu
     const auto& programs = openedmkick::presets::factoryPresets();
     const auto& patterns = openedmkick::presets::fillBuildPresets();
     REQUIRE(programs.size() >= 32u);
-    REQUIRE(patterns.size() == 16u);
+    REQUIRE(patterns.size() == 28u);
     const std::array<const char*, 19> kOriginal{ {
         "Init Club Kick (F1)",
         "Big Room Sub Cannon (G1)",
@@ -398,6 +398,8 @@ TEST_CASE("Factory kick programs and Auto Mode patterns keep old indexes", "[plu
     REQUIRE(std::string(patterns[0].name) == "Four on the Floor + End Fill");
     REQUIRE(std::string(patterns[11].name) == "Mainstage 64th Machine Gun");
     REQUIRE(std::string(patterns[15].name) == "Call And Answer Reverse");
+    REQUIRE(std::string(patterns[16].name) == "Trance 138 Rolling Sub Fill");
+    REQUIRE(std::string(patterns[27].name) == "Hands-Up 16th Staccato");
 
     OpenEdmKickProcessor processor;
     REQUIRE(processor.getNumPrograms() == static_cast<int>(programs.size()));

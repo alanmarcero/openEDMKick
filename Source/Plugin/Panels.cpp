@@ -689,7 +689,7 @@ AutoPianoRollPanel::AutoPianoRollPanel(OpenEdmKickProcessor& processor)
         addAndMakeVisible(button);
     });
 
-    quickPresetBox_.setTextWhenNothingSelected("12 Kick Fill Presets...");
+    quickPresetBox_.setTextWhenNothingSelected("Kick Fill Presets...");
     const auto& buildPresets = openedmkick::presets::fillBuildPresets();
     std::ranges::for_each(buildPresets, [&, id = 1](const auto& preset) mutable {
         quickPresetBox_.addItem(preset.name, id++);
