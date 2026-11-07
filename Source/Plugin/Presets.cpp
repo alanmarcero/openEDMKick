@@ -251,7 +251,64 @@ const std::vector<FactoryPreset>& factoryPresets() {
             { params::kNote, 7.0f }, { params::kTailLength, 370.0f }, { params::kPunch, 0.68f },
             { params::kSubDrive, 0.34f }, { params::kSnareLevel, 0.50f }, { params::kSnareTone, 0.65f },
             { params::kSnareDecay, 0.40f }, { params::kClapLevel, 0.42f }, { params::kClapSpread, 0.50f },
-            { params::kClapTone, 0.68f } } }
+            { params::kClapTone, 0.68f } } },
+        { "Festival Mainstage Drop (G1)", {
+            { params::kNote, 7.0f }, { params::kStartPitch, 540.0f }, { params::kPitchDecay, 45.0f },
+            { params::kTailLength, 420.0f }, { params::kTailCurve, 0.25f }, { params::kPunch, 0.75f },
+            { params::kSubDrive, 0.45f }, { params::kDrive, 0.35f }, { params::kClickLevel, 0.65f },
+            { params::kClickFreq, 4500.0f } } },
+        { "Melodic Techno Low End (F1)", {
+            { params::kNote, 5.0f }, { params::kStartPitch, 380.0f }, { params::kPitchDecay, 36.0f },
+            { params::kTailLength, 340.0f }, { params::kTailCurve, -0.1f }, { params::kPunch, 0.5f },
+            { params::kSubDrive, 0.25f }, { params::kClickLevel, 0.3f }, { params::kClickFreq, 3200.0f },
+            { params::kLowPass, 220.0f } } },
+        { "Future Bass Air Cannon (D#1)", {
+            { params::kNote, 3.0f }, { params::kStartPitch, 490.0f }, { params::kPitchDecay, 42.0f },
+            { params::kTailLength, 510.0f }, { params::kTailCurve, 0.3f }, { params::kPunch, 0.65f },
+            { params::kSubDrive, 0.5f }, { params::kSnareLevel, 0.35f }, { params::kSnareTone, 0.5f },
+            { params::kHatLevel, 0.25f }, { params::kHatDecay, 0.4f } } },
+        { "Psytrance Triplet Click (E1)", {
+            { params::kNote, 4.0f }, { params::kStartPitch, 720.0f }, { params::kPitchDecay, 22.0f },
+            { params::kTailLength, 160.0f }, { params::kTailCurve, -0.4f }, { params::kPunch, 0.85f },
+            { params::kClickLevel, 0.9f }, { params::kClickFreq, 6500.0f }, { params::kHighPass, 45.0f } } },
+        { "Hardstyle Screamer Tok (A1)", {
+            { params::kNote, 9.0f }, { params::kStartPitch, 980.0f }, { params::kPitchDecay, 68.0f },
+            { params::kTailLength, 480.0f }, { params::kTailCurve, 0.4f }, { params::kPunch, 0.8f },
+            { params::kSubDrive, 0.9f }, { params::kDrive, 0.75f }, { params::kClickLevel, 0.85f },
+            { params::kClickFreq, 5800.0f } } },
+        { "Bass House Thump & Layer (F#1)", {
+            { params::kNote, 6.0f }, { params::kStartPitch, 460.0f }, { params::kPitchDecay, 38.0f },
+            { params::kTailLength, 290.0f }, { params::kTailCurve, 0.05f }, { params::kPunch, 0.7f },
+            { params::kSubDrive, 0.4f }, { params::kClapLevel, 0.55f }, { params::kClapSpread, 0.45f },
+            { params::kClapTone, 0.7f }, { params::kClapDecay, 0.35f } } },
+        { "Deep Tech Rolling Thud (C1)", {
+            { params::kNote, 0.0f }, { params::kStartPitch, 310.0f }, { params::kPitchDecay, 30.0f },
+            { params::kTailLength, 380.0f }, { params::kTailCurve, -0.2f }, { params::kPunch, 0.45f },
+            { params::kClickLevel, 0.2f }, { params::kClickFreq, 2800.0f }, { params::kSubDrive, 0.35f } } },
+        { "Slap House Knock (A#1)", {
+            { params::kNote, 10.0f }, { params::kStartPitch, 580.0f }, { params::kPitchDecay, 26.0f },
+            { params::kTailLength, 210.0f }, { params::kTailCurve, -0.15f }, { params::kPunch, 0.8f },
+            { params::kSubDrive, 0.3f }, { params::kClickLevel, 0.75f }, { params::kClickFreq, 5200.0f },
+            { params::kSnareLevel, 0.25f }, { params::kSnareDecay, 0.15f } } },
+        { "Dubstep Heavy Heavy Weight (D1)", {
+            { params::kNote, 2.0f }, { params::kStartPitch, 640.0f }, { params::kPitchDecay, 52.0f },
+            { params::kTailLength, 560.0f }, { params::kTailCurve, 0.35f }, { params::kPunch, 0.7f },
+            { params::kSubDrive, 0.7f }, { params::kDrive, 0.45f }, { params::kCrushRate, 4200.0f },
+            { params::kCrushBits, 7.0f }, { params::kCrushMix, 0.35f } } },
+        { "Progressive Trance Driving Sub (B1)", {
+            { params::kNote, 11.0f }, { params::kStartPitch, 420.0f }, { params::kPitchDecay, 34.0f },
+            { params::kTailLength, 440.0f }, { params::kTailCurve, 0.15f }, { params::kPunch, 0.6f },
+            { params::kSubDrive, 0.35f }, { params::kDrive, 0.2f }, { params::kHatLevel, 0.3f },
+            { params::kHatDecay, 0.25f } } },
+        { "Electro Punk Raw Smasher (G#1)", {
+            { params::kNote, 8.0f }, { params::kStartPitch, 820.0f }, { params::kPitchDecay, 48.0f },
+            { params::kTailLength, 360.0f }, { params::kTailCurve, 0.2f }, { params::kPunch, 0.75f },
+            { params::kSubDrive, 0.8f }, { params::kDrive, 0.65f }, { params::kClickLevel, 0.7f },
+            { params::kClapLevel, 0.45f }, { params::kClapTone, 0.8f } } },
+        { "DnB Rolling Sub 174 (C#1)", {
+            { params::kNote, 1.0f }, { params::kStartPitch, 450.0f }, { params::kPitchDecay, 24.0f },
+            { params::kTailLength, 180.0f }, { params::kTailCurve, -0.3f }, { params::kPunch, 0.85f },
+            { params::kClickLevel, 0.6f }, { params::kClickFreq, 4800.0f }, { params::kSubDrive, 0.35f } } }
     };
     return presets;
 }

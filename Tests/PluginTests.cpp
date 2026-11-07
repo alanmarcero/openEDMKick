@@ -449,13 +449,13 @@ TEST_CASE("Factory kick programs and Auto Mode patterns keep old indexes", "[plu
     REQUIRE_THAT(restored.currentSynthSettings().clapDecay, WithinAbs(0.9f, 0.002f));
 }
 
-TEST_CASE("All 56 factory kick presets load and report valid program names", "[plugin][presets]") {
+TEST_CASE("All 68 factory kick presets load and report valid program names", "[plugin][presets]") {
     OpenEdmKickProcessor processor;
     const auto& presets = openedmkick::presets::factoryPresets();
-    REQUIRE(presets.size() == 56);
-    REQUIRE(processor.getNumPrograms() == 56);
+    REQUIRE(presets.size() == 68);
+    REQUIRE(processor.getNumPrograms() == 68);
 
-    for (int i = 0; i < 56; ++i) {
+    for (int i = 0; i < 68; ++i) {
         REQUIRE(processor.getProgramName(i).isNotEmpty());
         processor.setCurrentProgram(i);
         REQUIRE(processor.getCurrentProgram() == i);
@@ -470,6 +470,19 @@ TEST_CASE("All 56 factory kick presets load and report valid program names", "[p
         "Trance Uplifting Odyssey (16 Bar)"
     }};
     for (const auto* name : tranceKicks) {
+        const auto it = std::ranges::find_if(presets, [&](const auto& p) { return std::string(p.name) == name; });
+        REQUIRE(it != presets.end());
+    }
+
+    // Spot-check key EDM kicks
+    const std::array<const char*, 5> edmKicks{{
+        "Festival Mainstage Drop (G1)",
+        "Melodic Techno Low End (F1)",
+        "Future Bass Air Cannon (D#1)",
+        "Hardstyle Screamer Tok (A1)",
+        "DnB Rolling Sub 174 (C#1)"
+    }};
+    for (const auto* name : edmKicks) {
         const auto it = std::ranges::find_if(presets, [&](const auto& p) { return std::string(p.name) == name; });
         REQUIRE(it != presets.end());
     }
