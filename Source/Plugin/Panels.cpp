@@ -197,7 +197,7 @@ void KickWaveformView::paint(juce::Graphics& g) {
 
 KickSynthPanel::KickSynthPanel(OpenEdmKickProcessor& processor)
     : processor_(processor),
-      auditionButton_("TRIG"),
+      auditionButton_("PUSH IT"),
       triggerMode_(processor.parameters, params::kMidiMode, "", theme::kAccentMint),
       lockIn_(processor.parameters, params::kLockIn, "LOCK IN (WAV)", theme::kAccentGold),
       waveformView_(processor),
@@ -286,8 +286,24 @@ void KickSynthPanel::updateNoteButtons(int activeNote) {
 }
 
 void KickSynthPanel::paint(juce::Graphics& g) {
-    drawPanel(g, getLocalBounds(), "Kick Synth & 12-Note Chromatic Tuner", theme::kAccentMint);
+    drawPanel(g, getLocalBounds(), "Kick Synth & Chromatic Tuning Engine", theme::kAccentMint);
     drawCaption(g, noteBarArea_, "Chromatic keyboard. Click a key to tune and audition.");
+
+    // Prominent Tunable Tail & Harmonic Body Section
+    if (!pitchRowArea_.isEmpty() && !bodyRowArea_.isEmpty()) {
+        const auto pitchBox = pitchRowArea_.getUnion(bodyRowArea_).toFloat().expanded(4.0f, 2.0f);
+        drawGlow(g, pitchBox, theme::kAccentGold.withAlpha(0.08f));
+        g.setColour(theme::kBackground.brighter(0.03f));
+        g.fillRoundedRectangle(pitchBox, 5.0f);
+        g.setColour(theme::kAccentGold.withAlpha(0.65f));
+        g.drawRoundedRectangle(pitchBox, 5.0f, 1.0f);
+
+        const auto badge = juce::Rectangle<float>(pitchBox.getX() + 6.0f, pitchBox.getY() + 2.0f, 240.0f, 12.0f);
+        g.setFont(juce::FontOptions(9.5f, juce::Font::bold));
+        g.setColour(theme::kAccentGold);
+        g.drawText("★ KEY TUNING & RESONANT TAIL", badge, juce::Justification::centredLeft);
+    }
+
     g.setFont(juce::FontOptions(10.0f, juce::Font::bold));
     g.setColour(theme::kAccentGold);
     g.drawText("SNARE", snareArea_.withHeight(12), juce::Justification::centredLeft);
@@ -302,7 +318,7 @@ void KickSynthPanel::resized() {
     auto header = bounds.removeFromTop(26);
     lockIn_.setBounds(header.removeFromRight(118));
     header.removeFromRight(6);
-    auditionButton_.setBounds(header.removeFromRight(58).reduced(0, 1));
+    auditionButton_.setBounds(header.removeFromRight(76).reduced(0, 1));
     header.removeFromRight(6);
     triggerMode_.setBounds(header.removeFromRight(78).reduced(0, 1));
 
