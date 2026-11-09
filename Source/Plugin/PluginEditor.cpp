@@ -117,15 +117,12 @@ void OpenEdmKickEditor::paint(juce::Graphics& g) {
     g.setColour(theme::kText);
     g.drawText("open", header, juce::Justification::centredLeft);
     const int openWidth = juce::GlyphArrangement::getStringWidthInt(g.getCurrentFont(), "open");
-    g.setColour(theme::kAccentMint);
-    g.drawText("EDM", header.withTrimmedLeft(openWidth), juce::Justification::centredLeft);
-    const int edmWidth = juce::GlyphArrangement::getStringWidthInt(g.getCurrentFont(), "EDM");
     g.setColour(theme::kAccentGold);
-    g.drawText("Kick", header.withTrimmedLeft(openWidth + edmWidth), juce::Justification::centredLeft);
-    const int kickWidth = openWidth + edmWidth + juce::GlyphArrangement::getStringWidthInt(g.getCurrentFont(), "Kick");
+    g.drawText("Kicker", header.withTrimmedLeft(openWidth), juce::Justification::centredLeft);
+    const int kickerWidth = openWidth + juce::GlyphArrangement::getStringWidthInt(g.getCurrentFont(), "Kicker");
     g.setFont(juce::FontOptions(11.0f, juce::Font::bold));
     g.setColour(theme::kTextDim.withAlpha(0.65f));
-    g.drawText("ANALOG TRANSIENT SYNTHESIS", header.withTrimmedLeft(kickWidth + 24), juce::Justification::centredLeft);
+    g.drawText("CHROMATIC TUNING & TRANSIENT SYNTHESIS", header.withTrimmedLeft(kickerWidth + 24), juce::Justification::centredLeft);
 }
 
 void OpenEdmKickEditor::resized() {

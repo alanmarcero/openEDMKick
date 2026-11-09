@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(OpenEDMKick VERSION 1.8.0 LANGUAGES C CXX)
+project(OpenKicker VERSION 1.9.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -38,7 +38,7 @@ if(OEK_BUILD_PLUGIN)
     juce_add_plugin(OpenEDMKick
         COMPANY_NAME "Alan Marcero"
         BUNDLE_ID "com.alanmarcero.openedmkick"
-        PRODUCT_NAME "openEDMKick"
+        PRODUCT_NAME "openKicker"
         PLUGIN_MANUFACTURER_CODE Amrc
         PLUGIN_CODE Oedk
         FORMATS VST3 AU LV2 Standalone
