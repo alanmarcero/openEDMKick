@@ -281,7 +281,10 @@ void appendTag(std::vector<uint8_t>& out, const char (&tag)[5]) {
         * (0.5f + 0.5f * clickEnv);
     const float noise = nextDeterministicNoise(osc.noise);
     const float noiseEnv = std::exp(-static_cast<float>(timeMs) / kNoiseDecayMs);
-    const float clickBurst = 0.78f * std::sin(static_cast<float>(osc.clickPhase) * twoPi) + 0.22f * noise * noiseEnv;
+    const float fastCrack = std::exp(-static_cast<float>(timeMs) / (kClickDecayMs * 0.35f));
+    const float clickBurst = 0.65f * std::sin(static_cast<float>(osc.clickPhase) * twoPi)
+                           + 0.20f * std::sin(static_cast<float>(osc.clickPhase) * 2.7f * twoPi) * fastCrack
+                           + 0.15f * noise * noiseEnv;
     const float clickSignal = sampleIndex >= bodySamples
         ? 0.0f
         : std::clamp(settings.clickLevel, 0.0f, 1.0f) * clickEnv * clickAttack * clickBurst * 0.55f * bodyRelease;
