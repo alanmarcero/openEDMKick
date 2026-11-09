@@ -1,20 +1,20 @@
-# openEDMKick
+# openKicker
 
 [Install with OpenVST Manager](https://github.com/alanmarcero/alan-m-OpenVSTManager/releases/latest)
 
-EDM kick drum VSTi with 12-note chromatic tuning, a Lock In WAV cache, host-synced reverse and effects, and A/B/C/D Auto Mode with a 1/64-note piano roll and Tail Shortener. Packages include VST3, LV2, and a standalone app on macOS, Windows, and Linux. macOS also includes AU.
+openKicker (formerly openEDMKick) is an EDM kick drum synth plugin with 12-note chromatic tuning, dedicated Key Tuning & Resonant Tail engine controls, "Push It" audition button, a Lock In WAV cache, host-synced reverse and effects, and A/B/C/D Auto Mode with a 1/64-note piano roll and Tail Shortener. Packages include VST3, LV2, and a standalone app on macOS, Windows, and Linux. macOS also includes AU.
 
 ## Screenshots
 
 ### 1/64-note drop build, Auto Mode A
 
-![openEDMKick native editor - 1/64 Drop Rush & Locked-In WAV](assets/native-ui.png)
+![openKicker native editor - 1/64 Drop Rush & Locked-In WAV](assets/native-ui.png)
 
 ### Beat 4 reverse pickup, Auto Mode B
 
-![openEDMKick native editor - Beat 4 Reverse Pickup Loop](assets/native-ui-reverse.png)
+![openKicker native editor - Beat 4 Reverse Pickup Loop](assets/native-ui-reverse.png)
 
-*Captured from the native v1.8.0 editor. [Capture details and provenance](docs/SCREENSHOTS.md).*
+*Captured from the native v1.9.0 editor. [Capture details and provenance](docs/SCREENSHOTS.md).*
 
 ## Features
 
