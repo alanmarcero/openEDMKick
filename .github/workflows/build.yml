@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) && 'release' || github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -34,30 +34,33 @@ jobs:
 
       - name: Sign ad hoc
         run: |
-          codesign --force --deep --sign - "$ARTEFACTS/VST3/openEDMKick.vst3"
-          codesign --force --deep --sign - "$ARTEFACTS/AU/openEDMKick.component"
-          codesign --force --deep --sign - "$ARTEFACTS/Standalone/openEDMKick.app"
+          codesign --force --deep --sign - "$ARTEFACTS/VST3/openKicker.vst3"
+          codesign --force --deep --sign - "$ARTEFACTS/AU/openKicker.component"
+          codesign --force --deep --sign - "$ARTEFACTS/Standalone/openKicker.app"
 
       - name: Validate with pluginval
         run: |
           curl -sSL -o pluginval.zip https://github.com/Tracktion/pluginval/releases/download/v1.0.4/pluginval_macOS.zip
           unzip -q pluginval.zip
-          ./pluginval.app/Contents/MacOS/pluginval --strictness-level 5 --validate "$ARTEFACTS/VST3/openEDMKick.vst3"
+          ./pluginval.app/Contents/MacOS/pluginval --strictness-level 5 --validate "$ARTEFACTS/VST3/openKicker.vst3"
 
       - name: Package
         run: |
           mkdir -p dist
-          ditto "$ARTEFACTS/VST3/openEDMKick.vst3" "dist/openEDMKick.vst3"
-          ditto "$ARTEFACTS/AU/openEDMKick.component" "dist/openEDMKick.component"
-          ditto "$ARTEFACTS/LV2/openEDMKick.lv2" "dist/openEDMKick.lv2"
-          ditto "$ARTEFACTS/Standalone/openEDMKick.app" "dist/openEDMKick.app"
+          ditto "$ARTEFACTS/VST3/openKicker.vst3" "dist/openKicker.vst3"
+          ditto "$ARTEFACTS/AU/openKicker.component" "dist/openKicker.component"
+          ditto "$ARTEFACTS/LV2/openKicker.lv2" "dist/openKicker.lv2"
+          ditto "$ARTEFACTS/Standalone/openKicker.app" "dist/openKicker.app"
           python3 scripts/package_notices.py dist
-          ditto -c -k dist openEDMKick-macOS.zip
+          ditto -c -k dist openKicker-macOS.zip
+          cp openKicker-macOS.zip openEDMKick-macOS.zip
 
       - uses: actions/upload-artifact@v4
         with:
-          name: openEDMKick-macOS
-          path: openEDMKick-macOS.zip
+          name: openKicker-macOS
+          path: |
+            openKicker-macOS.zip
+            openEDMKick-macOS.zip
 
   windows:
     runs-on: windows-latest
@@ -77,23 +80,26 @@ jobs:
         run: |
           Invoke-WebRequest -Uri https://github.com/Tracktion/pluginval/releases/download/v1.0.4/pluginval_Windows.zip -OutFile pluginval.zip
           Expand-Archive pluginval.zip -DestinationPath pluginval
-          ./pluginval/pluginval.exe --strictness-level 5 --validate "$env:ARTEFACTS/VST3/openEDMKick.vst3"
+          ./pluginval/pluginval.exe --strictness-level 5 --validate "$env:ARTEFACTS/VST3/openKicker.vst3"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Package
         run: |
           New-Item -ItemType Directory -Path dist | Out-Null
-          Copy-Item -Recurse "$env:ARTEFACTS/VST3/openEDMKick.vst3" dist/
-          Copy-Item -Recurse "$env:ARTEFACTS/LV2/openEDMKick.lv2" dist/
-          Copy-Item "$env:ARTEFACTS/Standalone/openEDMKick.exe" dist/
+          Copy-Item -Recurse "$env:ARTEFACTS/VST3/openKicker.vst3" dist/
+          Copy-Item -Recurse "$env:ARTEFACTS/LV2/openKicker.lv2" dist/
+          Copy-Item "$env:ARTEFACTS/Standalone/openKicker.exe" dist/
           python scripts/package_notices.py dist
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          Compress-Archive -Path dist/* -DestinationPath openEDMKick-Windows.zip
+          Compress-Archive -Path dist/* -DestinationPath openKicker-Windows.zip
+          Copy-Item openKicker-Windows.zip openEDMKick-Windows.zip
 
       - uses: actions/upload-artifact@v4
         with:
-          name: openEDMKick-Windows
-          path: openEDMKick-Windows.zip
+          name: openKicker-Windows
+          path: |
+            openKicker-Windows.zip
+            openEDMKick-Windows.zip
 
   linux:
     runs-on: ubuntu-24.04
@@ -119,15 +125,18 @@ jobs:
       - name: Package
         run: |
           mkdir -p dist
-          cp -r "$ARTEFACTS/VST3/openEDMKick.vst3" "$ARTEFACTS/LV2/openEDMKick.lv2" dist/
-          cp "$ARTEFACTS/Standalone/openEDMKick" dist/
+          cp -r "$ARTEFACTS/VST3/openKicker.vst3" "$ARTEFACTS/LV2/openKicker.lv2" dist/
+          cp "$ARTEFACTS/Standalone/openKicker" dist/
           python3 scripts/package_notices.py dist
-          (cd dist && zip -qr ../openEDMKick-Linux.zip .)
+          (cd dist && zip -qr ../openKicker-Linux.zip .)
+          cp openKicker-Linux.zip openEDMKick-Linux.zip
 
       - uses: actions/upload-artifact@v4
         with:
-          name: openEDMKick-Linux
-          path: openEDMKick-Linux.zip
+          name: openKicker-Linux
+          path: |
+            openKicker-Linux.zip
+            openEDMKick-Linux.zip
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
@@ -142,5 +151,7 @@ jobs:
 
       - uses: softprops/action-gh-release@v2
         with:
-          files: openEDMKick-*.zip
+          files: |
+            openKicker-*.zip
+            openEDMKick-*.zip
           generate_release_notes: true
