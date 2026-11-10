@@ -65,8 +65,17 @@ OpenEdmKickEditor::OpenEdmKickEditor(OpenEdmKickProcessor& processorToEdit)
         syncPresetBox();
     };
 
+    viewToggleBtn_.setComponentID("viewToggle");
+    viewToggleBtn_.setButtonText(synthPanel_.isAdvancedMode() ? "ADVANCED" : "SIMPLE");
+    viewToggleBtn_.setColour(juce::TextButton::buttonColourId, theme::kKnobBody);
+    viewToggleBtn_.setColour(juce::TextButton::textColourOffId, theme::kAccentMint);
+    viewToggleBtn_.setTooltip("Toggle between clean Simple mode and deep Advanced tweak controls.");
+    viewToggleBtn_.onClick = [this] {
+        setAdvancedView(!synthPanel_.isAdvancedMode());
+    };
+
     std::ranges::for_each(std::initializer_list<juce::Component*>{
-        &prevPresetBtn_, &presetBox_, &nextPresetBtn_, &masterBypass_, &synthPanel_, &muleStage_, &autoPanel_, &effectsPanel_
+        &prevPresetBtn_, &presetBox_, &nextPresetBtn_, &viewToggleBtn_, &masterBypass_, &synthPanel_, &muleStage_, &autoPanel_, &effectsPanel_
     }, [this](juce::Component* c) { addAndMakeVisible(c); });
 
     presetBox_.setTooltip("Factory kicks. Auto Mode, Lock In, and the effect chain are stored with each preset.");
@@ -92,6 +101,18 @@ void OpenEdmKickEditor::audioProcessorChanged(juce::AudioProcessor*, const Chang
 }
 
 void OpenEdmKickEditor::audioProcessorParameterChanged(juce::AudioProcessor*, int, float) {
+}
+
+void OpenEdmKickEditor::setAdvancedView(bool advanced) {
+    syncPresetBox();
+    synthPanel_.setAdvancedMode(advanced);
+    autoPanel_.setAdvancedMode(advanced);
+    effectsPanel_.setAdvancedMode(advanced);
+    viewToggleBtn_.setButtonText(advanced ? "ADVANCED" : "SIMPLE");
+    viewToggleBtn_.setColour(juce::TextButton::textColourOffId,
+        advanced ? theme::kAccentGold : theme::kAccentMint);
+    resized();
+    repaint();
 }
 
 void OpenEdmKickEditor::syncPresetBox() {
@@ -128,6 +149,8 @@ void OpenEdmKickEditor::paint(juce::Graphics& g) {
 void OpenEdmKickEditor::resized() {
     auto bounds = getLocalBounds().reduced(kMargin);
     auto header = bounds.removeFromTop(kHeaderHeight);
+    viewToggleBtn_.setBounds(header.removeFromRight(86).withSizeKeepingCentre(86, 28));
+    header.removeFromRight(8);
     nextPresetBtn_.setBounds(header.removeFromRight(26).withSizeKeepingCentre(26, 28));
     header.removeFromRight(4);
     presetBox_.setBounds(header.removeFromRight(200).withSizeKeepingCentre(200, 28));

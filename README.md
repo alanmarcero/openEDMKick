@@ -2,7 +2,7 @@
 
 [Install with OpenVST Manager](https://github.com/alanmarcero/alan-m-OpenVSTManager/releases/latest)
 
-openKicker (formerly openEDMKick) is an EDM kick drum synth plugin with 12-note chromatic tuning, dedicated Key Tuning & Resonant Tail engine controls, "Push It" audition button, a Lock In WAV cache, host-synced reverse and effects, and A/B/C/D Auto Mode with a 1/64-note piano roll and Tail Shortener. Packages include VST3, LV2, and a standalone app on macOS, Windows, and Linux. macOS also includes AU.
+openKicker (formerly openEDMKick) is an EDM kick drum synth plugin with 12-note chromatic tuning, Simple and Advanced view modes, dedicated Key Tuning & Resonant Tail engine controls, "Push It" audition button, a Lock In WAV cache, host-synced reverse and effects, and A/B/C/D Auto Mode with a 1/64-note piano roll and Tail Shortener. Packages include VST3, LV2, and a standalone app on macOS, Windows, and Linux. macOS also includes AU.
 
 ## Screenshots
 
@@ -14,10 +14,11 @@ openKicker (formerly openEDMKick) is an EDM kick drum synth plugin with 12-note 
 
 ![openKicker native editor - Beat 4 Reverse Pickup Loop](assets/native-ui-reverse.png)
 
-*Captured from the native v1.9.0 editor. [Capture details and provenance](docs/SCREENSHOTS.md).*
+*Captured from the native v2.0.0 editor. [Capture details and provenance](docs/SCREENSHOTS.md).*
 
 ## Features
 
+- Simple and Advanced view modes: `SIMPLE` mode focuses on the 12-note keyboard, primary pitch and body controls (`Octave`, `Start Hz`, `Pitch Decay`, `Punch`, `Tail Len`, `Sub Drv`, `Click Lvl`), Auto Mode pattern selection with `Tail Shorten`, and macro FX mixes. Switching to `ADVANCED` reveals fine tuning, envelope curves, click frequency, the Snare/Clap/Hat layer stack, Auto Mode clock/ramp controls, and full FX division and bitcrush parameters.
 - Regular Mode (`IS_SYNTH`): Fixed trigger plays the panel tuning for every note. Note trigger pitches from that tuning. See MIDI below.
 - Snare, clap, and hat layers mix into that hit. Levels default to off. Each layer has its own decay. Snare decay is still 28–238 ms and hat decay is still 16–356 ms. Clap decay is new: the middle of the knob matches the previous clap, and spread still sets the flam. A long decay keeps ringing after a short Tail Length. Auto Mode Tail Shortener still cuts those layers on fast rolls, which is the Anti-Mud on 1/64 rolls behavior. Layers follow velocity, semitone offset, Lock In, and the waveform preview. Details are in [docs/AUDIO.md](docs/AUDIO.md).
 - Tuning runs C through B, octaves `0 Sub`, `1 Club`, and `2 Punch`, with fine tune from -50 to +50 cents. Pitch controls are `Start Hz`, `Pitch Decay`, and `Pitch Curve`. Body controls are `Tail Length`, `Tail Curve`, `Sub Drive`, and `Punch`. Click controls are `Click Level` and `Click Freq`. The gold trace is the pitch drop.

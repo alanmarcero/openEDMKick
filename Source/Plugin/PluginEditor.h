@@ -13,6 +13,8 @@ public:
 
     void paint(juce::Graphics& g) override;
     void resized() override;
+    void setAdvancedView(bool advanced);
+    [[nodiscard]] bool isAdvancedView() const noexcept { return synthPanel_.isAdvancedMode(); }
 
 private:
     void timerCallback() override;
@@ -26,6 +28,7 @@ private:
     juce::ComboBox presetBox_;
     juce::TextButton prevPresetBtn_{"<"};
     juce::TextButton nextPresetBtn_{">"};
+    juce::TextButton viewToggleBtn_{"SIMPLE"};
     openedmkick::ui::Toggle masterBypass_;
     openedmkick::ui::KickSynthPanel synthPanel_;
     openedmkick::ui::MuleStagePanel muleStage_;
