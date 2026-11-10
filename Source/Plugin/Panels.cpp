@@ -270,6 +270,27 @@ KickSynthPanel::KickSynthPanel(OpenEdmKickProcessor& processor)
     hatDecay_.setTooltip("Hat length. Short is a closed hat, long is an open ring that can outlast the kick tail.");
 
     noteWatcher_.sendInitialUpdate();
+    setAdvancedMode(false);
+}
+
+void KickSynthPanel::setAdvancedMode(bool advanced) {
+    advancedMode_ = advanced;
+    fineTune_.setVisible(advanced);
+    pitchCurve_.setVisible(advanced);
+    tailCurve_.setVisible(advanced);
+    clickFreq_.setVisible(advanced);
+    snareLevel_.setVisible(advanced);
+    snareTone_.setVisible(advanced);
+    snareDecay_.setVisible(advanced);
+    clapLevel_.setVisible(advanced);
+    clapSpread_.setVisible(advanced);
+    clapTone_.setVisible(advanced);
+    clapDecay_.setVisible(advanced);
+    hatLevel_.setVisible(advanced);
+    hatTone_.setVisible(advanced);
+    hatDecay_.setVisible(advanced);
+    resized();
+    repaint();
 }
 
 void KickSynthPanel::selectNote(int noteIndex) {
@@ -286,7 +307,10 @@ void KickSynthPanel::updateNoteButtons(int activeNote) {
 }
 
 void KickSynthPanel::paint(juce::Graphics& g) {
-    drawPanel(g, getLocalBounds(), "Kick Synth & Chromatic Tuning Engine", theme::kAccentMint);
+    const juce::String title = advancedMode_
+        ? "Kick Synth & Tuning (Advanced View)"
+        : "Kick Synth & Tuning (Simple Mode)";
+    drawPanel(g, getLocalBounds(), title, theme::kAccentMint);
     drawCaption(g, noteBarArea_, "Chromatic keyboard. Click a key to tune and audition.");
 
     // Prominent Tunable Tail & Harmonic Body Section
@@ -301,16 +325,18 @@ void KickSynthPanel::paint(juce::Graphics& g) {
         const auto badge = juce::Rectangle<float>(pitchBox.getX() + 6.0f, pitchBox.getY() + 2.0f, 240.0f, 12.0f);
         g.setFont(juce::FontOptions(9.5f, juce::Font::bold));
         g.setColour(theme::kAccentGold);
-        g.drawText("★ KEY TUNING & RESONANT TAIL", badge, juce::Justification::centredLeft);
+        g.drawText("KEY TUNING & RESONANT TAIL", badge, juce::Justification::centredLeft);
     }
 
-    g.setFont(juce::FontOptions(10.0f, juce::Font::bold));
-    g.setColour(theme::kAccentGold);
-    g.drawText("SNARE", snareArea_.withHeight(12), juce::Justification::centredLeft);
-    g.setColour(theme::kAccentReverse);
-    g.drawText("CLAP", clapArea_.withHeight(12), juce::Justification::centredLeft);
-    g.setColour(theme::kAccentMint);
-    g.drawText("HAT", hatArea_.withHeight(12), juce::Justification::centredLeft);
+    if (advancedMode_) {
+        g.setFont(juce::FontOptions(10.0f, juce::Font::bold));
+        g.setColour(theme::kAccentGold);
+        g.drawText("SNARE", snareArea_.withHeight(12), juce::Justification::centredLeft);
+        g.setColour(theme::kAccentReverse);
+        g.drawText("CLAP", clapArea_.withHeight(12), juce::Justification::centredLeft);
+        g.setColour(theme::kAccentMint);
+        g.drawText("HAT", hatArea_.withHeight(12), juce::Justification::centredLeft);
+    }
 }
 
 void KickSynthPanel::resized() {
@@ -353,8 +379,20 @@ void KickSynthPanel::resized() {
     });
 
     bounds.removeFromTop(6);
-    waveformView_.setBounds(bounds.removeFromTop(58));
+    waveformView_.setBounds(bounds.removeFromTop(advancedMode_ ? 58 : 78));
     bounds.removeFromTop(4);
+
+    if (!advancedMode_) {
+        snareArea_ = {};
+        clapArea_ = {};
+        hatArea_ = {};
+        pitchRowArea_ = bounds.removeFromLeft((bounds.getWidth() - kSectionGap) * 4 / 7);
+        bounds.removeFromLeft(kSectionGap);
+        bodyRowArea_ = bounds;
+        layoutRow(pitchRowArea_.withTrimmedTop(14), { &octave_, &startPitch_, &pitchDecay_, &punch_ });
+        layoutRow(bodyRowArea_.withTrimmedTop(14), { &tailLength_, &subDrive_, &clickLevel_ });
+        return;
+    }
 
     auto layers = bounds.removeFromBottom(92);
     bounds.removeFromBottom(4);
@@ -369,8 +407,8 @@ void KickSynthPanel::resized() {
     bounds.removeFromLeft(kSectionGap);
     bodyRowArea_ = bounds;
 
-    layoutRow(pitchRowArea_, { &octave_, &fineTune_, &startPitch_, &pitchDecay_, &pitchCurve_, &punch_ });
-    layoutRow(bodyRowArea_, { &tailLength_, &tailCurve_, &subDrive_, &clickLevel_, &clickFreq_ });
+    layoutRow(pitchRowArea_.withTrimmedTop(12), { &octave_, &fineTune_, &startPitch_, &pitchDecay_, &pitchCurve_, &punch_ });
+    layoutRow(bodyRowArea_.withTrimmedTop(12), { &tailLength_, &tailCurve_, &subDrive_, &clickLevel_, &clickFreq_ });
     layoutRow(snareArea_.withTrimmedTop(kCaptionHeight), { &snareLevel_, &snareTone_, &snareDecay_ });
     layoutRow(clapArea_.withTrimmedTop(kCaptionHeight), { &clapLevel_, &clapSpread_, &clapTone_, &clapDecay_ });
     layoutRow(hatArea_.withTrimmedTop(kCaptionHeight), { &hatLevel_, &hatTone_, &hatDecay_ });
@@ -729,6 +767,18 @@ AutoPianoRollPanel::AutoPianoRollPanel(OpenEdmKickProcessor& processor)
     enabled_.setTooltip("Play the selected A/B/C/D piano-roll pattern from the host clock.");
     bypassWatcher_.sendInitialUpdate();
     slotWatcher_.sendInitialUpdate();
+    setAdvancedMode(false);
+}
+
+void AutoPianoRollPanel::setAdvancedMode(bool advanced) {
+    advancedMode_ = advanced;
+    timeSig_.setVisible(advanced);
+    grid_.setVisible(advanced);
+    tempo_.setVisible(advanced);
+    pitchRise_.setVisible(advanced);
+    crushSweep_.setVisible(advanced);
+    resized();
+    repaint();
 }
 
 void AutoPianoRollPanel::selectSlot(int slot) {
@@ -749,8 +799,13 @@ void AutoPianoRollPanel::selectSlot(int slot) {
 }
 
 void AutoPianoRollPanel::paint(juce::Graphics& g) {
-    drawPanel(g, getLocalBounds(), "Auto Mode & 1/64 Piano Roll", theme::kAccentMint);
-    drawCaption(g, leftControlsArea_, "Clock & Auto Tail Shortener (Auto-Only)");
+    const juce::String title = advancedMode_
+        ? "Auto Mode & Piano Roll (Advanced)"
+        : "Auto Mode & Piano Roll (Simple)";
+    drawPanel(g, getLocalBounds(), title, theme::kAccentMint);
+    drawCaption(g, leftControlsArea_, advancedMode_
+        ? "Clock & Auto Tail Shortener (Auto-Only)"
+        : "Auto Tail Gate");
     drawCaption(g, pianoRollArea_, "Interactive Piano Roll (Click Grid to Toggle 1/4 .. 1/64 Kick Notes)");
 
     g.setColour(theme::kTextDim);
@@ -773,12 +828,16 @@ void AutoPianoRollPanel::resized() {
     header.removeFromRight(5);
     fillPreset_.setBounds(header.removeFromRight(175));
     header.removeFromRight(5);
-    grid_.setBounds(header.removeFromRight(68));
-    header.removeFromRight(5);
+    if (advancedMode_) {
+        grid_.setBounds(header.removeFromRight(68));
+        header.removeFromRight(5);
+    }
     bars_.setBounds(header.removeFromRight(78));
     header.removeFromRight(5);
-    timeSig_.setBounds(header.removeFromRight(58));
-    header.removeFromRight(5);
+    if (advancedMode_) {
+        timeSig_.setBounds(header.removeFromRight(58));
+        header.removeFromRight(5);
+    }
     clockSync_.setBounds(header.removeFromRight(80));
     header.removeFromRight(5);
     enabled_.setBounds(header.removeFromRight(86));
@@ -793,11 +852,14 @@ void AutoPianoRollPanel::resized() {
     });
 
     bounds.removeFromTop(4);
-    leftControlsArea_ = bounds.removeFromLeft(280);
+    leftControlsArea_ = bounds.removeFromLeft(advancedMode_ ? 280 : 96);
     bounds.removeFromLeft(kSectionGap);
     pianoRollArea_ = bounds;
 
-    layoutRow(leftControlsArea_.withTrimmedTop(kCaptionHeight), { &tempo_, &tailShorten_, &pitchRise_, &crushSweep_ });
+    layoutRow(leftControlsArea_.withTrimmedTop(kCaptionHeight),
+        advancedMode_
+            ? std::initializer_list<juce::Component*>{ &tempo_, &tailShorten_, &pitchRise_, &crushSweep_ }
+            : std::initializer_list<juce::Component*>{ &tailShorten_ });
     pianoRoll_.setBounds(pianoRollArea_.withTrimmedTop(kCaptionHeight));
 }
 
@@ -867,6 +929,19 @@ EffectsPanel::EffectsPanel(OpenEdmKickProcessor& processor)
     limiter_.setTooltip("Zero-latency ceiling. Transients stay on the grid and are caught on the sample that crosses the ceiling.");
     highPass_.setTooltip("High-pass cutoff. Minimum is off. No resonance.");
     lowPass_.setTooltip("Low-pass cutoff. Maximum is off. No resonance.");
+    setAdvancedMode(false);
+}
+
+void EffectsPanel::setAdvancedMode(bool advanced) {
+    advancedMode_ = advanced;
+    crushRate_.setVisible(advanced);
+    crushBits_.setVisible(advanced);
+    stutterRate_.setVisible(advanced);
+    gateRate_.setVisible(advanced);
+    pumpRate_.setVisible(advanced);
+    ceiling_.setVisible(advanced);
+    resized();
+    repaint();
 }
 
 void EffectsPanel::paint(juce::Graphics& g) {
@@ -879,6 +954,13 @@ void EffectsPanel::paint(juce::Graphics& g) {
 }
 
 void EffectsPanel::resized() {
+    sections_[0].units = 2;
+    sections_[1].units = advancedMode_ ? 3 : 2;
+    sections_[2].units = 2;
+    sections_[3].units = advancedMode_ ? 4 : 2;
+    sections_[4].units = 2;
+    sections_[5].units = advancedMode_ ? 4 : 3;
+
     auto bounds = getLocalBounds();
     const int totalUnits = std::accumulate(sections_.begin(), sections_.end(), 0,
         [](int sum, const Section& s) { return sum + s.units; });
@@ -895,14 +977,26 @@ void EffectsPanel::resized() {
         return sections_[idx].area.reduced(10, 0).withTrimmedTop(32).withTrimmedBottom(6);
     };
     layoutRow(content(0), { &reverseMode_, &reverseMix_ });
-    layoutRow(content(1), { &crushRate_, &crushBits_, &crushMix_ });
-    layoutRow(content(2), { &stutterRate_, &stutterMix_ });
-    layoutRow(content(3), { &gateRate_, &gateMix_, &pumpRate_, &pumpMix_ });
+    layoutRow(content(1),
+        advancedMode_
+            ? std::initializer_list<juce::Component*>{ &crushRate_, &crushBits_, &crushMix_ }
+            : std::initializer_list<juce::Component*>{ &crushMix_ });
+    layoutRow(content(2),
+        advancedMode_
+            ? std::initializer_list<juce::Component*>{ &stutterRate_, &stutterMix_ }
+            : std::initializer_list<juce::Component*>{ &stutterMix_ });
+    layoutRow(content(3),
+        advancedMode_
+            ? std::initializer_list<juce::Component*>{ &gateRate_, &gateMix_, &pumpRate_, &pumpMix_ }
+            : std::initializer_list<juce::Component*>{ &gateMix_, &pumpMix_ });
     layoutRow(content(4), { &highPass_, &lowPass_ });
     auto outputRow = content(5);
     meter_.setBounds(outputRow.removeFromRight(18).reduced(1, 6));
     outputRow.removeFromRight(4);
-    layoutRow(outputRow, { &drive_, &output_, &ceiling_, &limiter_ });
+    layoutRow(outputRow,
+        advancedMode_
+            ? std::initializer_list<juce::Component*>{ &drive_, &output_, &ceiling_, &limiter_ }
+            : std::initializer_list<juce::Component*>{ &drive_, &output_, &limiter_ });
 }
 
 } // namespace openedmkick::ui

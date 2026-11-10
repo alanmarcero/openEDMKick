@@ -186,6 +186,14 @@ TEST_CASE("Editor renders 12-note tuner, kicking mule stage, 1/64 piano roll, an
     REQUIRE(editor->getWidth() == 1100);
     REQUIRE(editor->getHeight() == 972);
 
+    auto* kickEditor = dynamic_cast<OpenEdmKickEditor*>(editor.get());
+    REQUIRE(kickEditor != nullptr);
+    REQUIRE_FALSE(kickEditor->isAdvancedView());
+    kickEditor->setAdvancedView(true);
+    REQUIRE(kickEditor->isAdvancedView());
+    kickEditor->setAdvancedView(false);
+    REQUIRE_FALSE(kickEditor->isAdvancedView());
+
     setParam(processor, "auto_slot", 2.0f);
     REQUIRE(processor.currentAutoSlot() == 2);
 
@@ -228,6 +236,7 @@ TEST_CASE("Editor renders 12-note tuner, kicking mule stage, 1/64 piano roll, an
         REQUIRE(juce::PNGImageFormat().writeImageToStream(snapshot, stream));
     }
     if (const char* captureLayers = std::getenv("OEK_CAPTURE_LAYERS")) {
+        kickEditor->setAdvancedView(true);
         const auto& programs = openedmkick::presets::factoryPresets();
         int stackIndex = 0;
         for (int i = 0; i < static_cast<int>(programs.size()); ++i) {

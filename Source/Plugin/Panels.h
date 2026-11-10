@@ -29,12 +29,15 @@ public:
     explicit KickSynthPanel(OpenEdmKickProcessor& processor);
     void paint(juce::Graphics& g) override;
     void resized() override;
+    void setAdvancedMode(bool advanced);
+    [[nodiscard]] bool isAdvancedMode() const noexcept { return advancedMode_; }
 
 private:
     void selectNote(int noteIndex);
     void updateNoteButtons(int activeNote);
 
     OpenEdmKickProcessor& processor_;
+    bool advancedMode_ = false;
     std::array<juce::TextButton, openedmkick::core::kNumNotes> noteButtons_;
     juce::TextButton auditionButton_;
     Choice triggerMode_;
@@ -103,9 +106,12 @@ public:
     void paint(juce::Graphics& g) override;
     void resized() override;
     void selectSlot(int slot);
+    void setAdvancedMode(bool advanced);
+    [[nodiscard]] bool isAdvancedMode() const noexcept { return advancedMode_; }
 
 private:
     OpenEdmKickProcessor& processor_;
+    bool advancedMode_ = false;
     Toggle bypass_;
     Toggle enabled_;
     Toggle clockSync_;
@@ -142,6 +148,8 @@ public:
     explicit EffectsPanel(OpenEdmKickProcessor& processor);
     void paint(juce::Graphics& g) override;
     void resized() override;
+    void setAdvancedMode(bool advanced);
+    [[nodiscard]] bool isAdvancedMode() const noexcept { return advancedMode_; }
 
 private:
     struct Section {
@@ -150,6 +158,8 @@ private:
         int units;
         juce::Rectangle<int> area;
     };
+
+    bool advancedMode_ = false;
 
     Choice reverseMode_;
     Knob reverseMix_;
