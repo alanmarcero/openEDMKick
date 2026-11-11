@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(OpenKicker VERSION 2.0.0 LANGUAGES C CXX)
+project(OpenKicker VERSION 2.1.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -32,7 +32,8 @@ if(OEK_BUILD_PLUGIN)
 
     juce_add_binary_data(KickAssets SOURCES
         assets/kicking-mule.png
-        assets/analog-cyber-faceplate.png)
+        assets/analog-cyber-faceplate.png
+        assets/cyber-kick-mascot.png)
     set_target_properties(KickAssets PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
     juce_add_plugin(OpenEDMKick
