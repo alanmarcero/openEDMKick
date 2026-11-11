@@ -42,9 +42,9 @@ inline constexpr std::array<std::string_view, kNumFillPresets> kFillPresetNames 
     "Vocal Trance Breakdown Drop",
     "Anthem Trance 32-Bar Odyssey",
     "Tech-Trance Slog Snare-Kick",
-    "Classic Tiësto 1999 Build",
-    "Gouryella Double-Time Roll",
-    "Anjunabeats Progressive Groove",
+    "Classic Trance 1999 Build",
+    "Celestial Double-Time Roll",
+    "Progressive Trance Groove",
     "Hands-Up 16th Staccato"
 };
 

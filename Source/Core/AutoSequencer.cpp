@@ -317,7 +317,7 @@ std::vector<PianoRollNote> buildPresetPattern(int presetIndex, int bars) {
             });
             break;
         }
-        case 24: { // 24: Classic Tiësto 1999 Build
+        case 24: { // 24: Classic Trance 1999 Build
             const int half = totalSteps / 2;
             const int threeQuarters = (totalSteps * 3) / 4;
             appendSteppedRange(notes, 0, half, 16, 0, 0, 0.92f, 1.0f);
@@ -325,7 +325,7 @@ std::vector<PianoRollNote> buildPresetPattern(int presetIndex, int bars) {
             appendSteppedRange(notes, threeQuarters, totalSteps, 4, 3, 7, 0.88f, 1.0f);
             break;
         }
-        case 25: { // 25: Gouryella Double-Time Roll
+        case 25: { // 25: Celestial Double-Time Roll
             std::ranges::for_each(std::views::iota(0, safeBars), [&](int bar) {
                 const int base = bar * kStepsPerBar64;
                 addNote(notes, base + 0, 16, 0, 1.0f);
@@ -339,7 +339,7 @@ std::vector<PianoRollNote> buildPresetPattern(int presetIndex, int bars) {
             });
             break;
         }
-        case 26: { // 26: Anjunabeats Progressive Groove
+        case 26: { // 26: Progressive Trance Groove
             std::ranges::for_each(std::views::iota(0, safeBars), [&](int bar) {
                 const int base = bar * kStepsPerBar64;
                 addNote(notes, base + 0, 10, 0, 1.0f);

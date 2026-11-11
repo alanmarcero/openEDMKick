@@ -172,7 +172,7 @@ const std::vector<FactoryPreset>& factoryPresets() {
             { params::kNote, 7.0f }, { params::kStartPitch, 520.0f }, { params::kPitchDecay, 32.0f },
             { params::kTailLength, 360.0f }, { params::kPunch, 0.72f }, { params::kSubDrive, 0.38f },
             { params::kClickLevel, 0.48f }, { params::kClickFreq, 3600.0f }, { params::kDrive, 0.22f } } },
-        { "ASOT Anthem Driver (A1)", {
+        { "Trance Anthem Driver (A1)", {
             { params::kNote, 9.0f }, { params::kStartPitch, 460.0f }, { params::kPitchDecay, 35.0f },
             { params::kTailLength, 340.0f }, { params::kPunch, 0.75f }, { params::kSubDrive, 0.32f },
             { params::kClickLevel, 0.42f }, { params::kClickFreq, 4000.0f }, { params::kDrive, 0.18f } } },
@@ -208,11 +208,11 @@ const std::vector<FactoryPreset>& factoryPresets() {
             { params::kTailLength, 390.0f }, { params::kTailCurve, 0.10f }, { params::kPunch, 0.58f },
             { params::kSubDrive, 0.26f }, { params::kClickLevel, 0.36f }, { params::kClickFreq, 2800.0f },
             { params::kDrive, 0.16f } } },
-        { "Paul van Dyk Gate Runner (G1)", {
+        { "Berlin Gate Runner (G1)", {
             { params::kNote, 7.0f }, { params::kTailLength, 400.0f }, { params::kGateRate, 2.0f },
             { params::kGateMix, 0.68f }, { params::kPunch, 0.65f }, { params::kSubDrive, 0.32f },
             { params::kDrive, 0.24f } } },
-        { "Armin ASOT 138 Stutter Drop (A1)", {
+        { "Euphoric 138 Stutter Drop (A1)", {
             { params::kNote, 9.0f }, { params::kTailLength, 380.0f }, { params::kStutterRate, 2.0f },
             { params::kStutterMix, 0.65f }, { params::kPunch, 0.70f }, { params::kDrive, 0.26f } } },
         { "Hard Trance Reverse Bass Tok (D#1)", {
@@ -223,7 +223,7 @@ const std::vector<FactoryPreset>& factoryPresets() {
             { params::kNote, 1.0f }, { params::kTailLength, 430.0f }, { params::kReverseMode, 1.0f },
             { params::kReverseMix, 1.0f }, { params::kPunch, 0.74f }, { params::kSubDrive, 0.44f },
             { params::kDrive, 0.32f } } },
-        { "Ferry Gouryella Euphoric Sub (B1)", {
+        { "Celestial Euphoric Sub (B1)", {
             { params::kNote, 11.0f }, { params::kStartPitch, 460.0f }, { params::kPitchDecay, 36.0f },
             { params::kTailLength, 370.0f }, { params::kPunch, 0.66f }, { params::kSubDrive, 0.30f },
             { params::kClickLevel, 0.44f }, { params::kClickFreq, 3600.0f }, { params::kDrive, 0.20f } } },

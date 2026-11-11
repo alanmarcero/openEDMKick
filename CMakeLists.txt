@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(OpenKicker VERSION 2.1.0 LANGUAGES C CXX)
+project(OpenKicker VERSION 2.1.1 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -37,6 +37,7 @@ if(OEK_BUILD_PLUGIN)
     set_target_properties(KickAssets PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
     juce_add_plugin(OpenEDMKick
+        VERSION "${PROJECT_VERSION}"
         COMPANY_NAME "Alan Marcero"
         BUNDLE_ID "com.alanmarcero.openedmkick"
         PRODUCT_NAME "openKicker"
