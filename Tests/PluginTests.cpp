@@ -476,7 +476,7 @@ TEST_CASE("All 68 factory kick presets load and report valid program names", "[p
     const std::array<const char*, 5> tranceKicks{{
         "138 Uplifting Euphoria (F1)",
         "138 Pure Trance Slammer (G1)",
-        "ASOT Anthem Driver (A1)",
+        "Trance Anthem Driver (A1)",
         "Psytrance Woody Tok (F#1)",
         "Trance Uplifting Odyssey (16 Bar)"
     }};
