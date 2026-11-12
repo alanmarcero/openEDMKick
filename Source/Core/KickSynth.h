@@ -39,6 +39,11 @@ struct KickSynthSettings {
     float hatLevel = 0.0f;     // 0..1
     float hatTone = 0.7f;      // 0 chunky .. 1 thin
     float hatDecay = 0.25f;    // 0 closed .. 1 open
+    float bodyTone = 0.65f;    // 0 round fundamental .. 1 bright harmonics
+    float attackMs = 0.35f;
+    float decayMs = 72.0f;
+    float sustainLevel = 0.7f;
+    float releaseMs = 180.0f;
 
     bool operator==(const KickSynthSettings&) const noexcept = default;
 };

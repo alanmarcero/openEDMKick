@@ -39,6 +39,10 @@ public:
     [[nodiscard]] openedmkick::core::AutoSlotSettings autoSlotSettings(int slot) const noexcept;
     [[nodiscard]] int currentAutoSlot() const noexcept;
     [[nodiscard]] bool isKickLockedIn() const noexcept { return displayLockedIn.load(); }
+    [[nodiscard]] bool isSectionLocked(int section) const noexcept;
+    void setSectionLocked(int section, bool locked) noexcept;
+    [[nodiscard]] uint16_t sectionLockMask() const noexcept { return sectionLockMask_.load(); }
+    [[nodiscard]] bool hasRestoredCustomState() const noexcept { return restoredCustomState_.load(); }
     [[nodiscard]] std::vector<float> previewKickWaveform() const;
     [[nodiscard]] std::vector<openedmkick::core::PianoRollNote> currentPianoRollNotes() const;
     void togglePianoRollNote(int step64, int length64, int semitoneOffset);
@@ -90,6 +94,11 @@ private:
         std::atomic<float>* hatLevel;
         std::atomic<float>* hatTone;
         std::atomic<float>* hatDecay;
+        std::atomic<float>* bodyTone;
+        std::atomic<float>* ampAttack;
+        std::atomic<float>* ampDecay;
+        std::atomic<float>* ampSustain;
+        std::atomic<float>* ampRelease;
         std::atomic<float>* lockIn;
         std::atomic<float>* clockSync;
         std::atomic<float>* tempoBpm;
@@ -125,6 +134,8 @@ private:
     std::array<int, openedmkick::core::kNumAutoSlots> lastSlotPreset_{ -1, -1, -1, -1 };
     std::array<int, openedmkick::core::kNumAutoSlots> lastSlotBars_{ 0, 0, 0, 0 };
     std::atomic<bool> auditionPending_{ false };
+    std::atomic<uint16_t> sectionLockMask_{ 0 };
+    std::atomic<bool> restoredCustomState_{ false };
     std::vector<openedmkick::core::MidiTrigger> midiScratch_;
     std::vector<openedmkick::core::MidiCcEvent> midiCcScratch_;
     int currentProgram_ = 0;

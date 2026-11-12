@@ -1,148 +1,118 @@
 #include "EdmLookAndFeel.h"
 #include "Theme.h"
 
+#include <algorithm>
+
 namespace openedmkick::ui {
-
 namespace {
-
-constexpr float kArcThickness = 3.5f;
-constexpr float kCornerRadius = 4.5f;
-constexpr float kControlFontSize = 12.0f;
-
-} // namespace
+constexpr float kCorner = 7.0f;
+constexpr float kControlFont = 11.5f;
+}
 
 EdmLookAndFeel::EdmLookAndFeel() {
-    setColour(juce::ResizableWindow::backgroundColourId, theme::kBackground);
+    setColour(juce::ResizableWindow::backgroundColourId, theme::kInk);
     setColour(juce::Label::textColourId, theme::kText);
-    setColour(juce::Slider::textBoxTextColourId, theme::kTextDim);
+    setColour(juce::Slider::textBoxTextColourId, theme::kText);
+    setColour(juce::Slider::textBoxHighlightColourId, theme::kCyan.withAlpha(0.3f));
     setColour(juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
-    setColour(juce::Slider::textBoxBackgroundColourId, juce::Colours::transparentBlack);
-    setColour(juce::Slider::textBoxHighlightColourId, theme::kTrack);
-    setColour(juce::ComboBox::backgroundColourId, theme::kKnobBody);
+    setColour(juce::Slider::textBoxBackgroundColourId, theme::kInk.brighter(0.04f));
+    setColour(juce::ComboBox::backgroundColourId, theme::kSteel);
     setColour(juce::ComboBox::textColourId, theme::kText);
-    setColour(juce::ComboBox::arrowColourId, theme::kTextDim);
-    setColour(juce::PopupMenu::backgroundColourId, theme::kPanel);
+    setColour(juce::ComboBox::arrowColourId, theme::kCyan);
+    setColour(juce::PopupMenu::backgroundColourId, theme::kSteel);
     setColour(juce::PopupMenu::textColourId, theme::kText);
-    setColour(juce::PopupMenu::highlightedBackgroundColourId, theme::kTrack);
-    setColour(juce::PopupMenu::highlightedTextColourId, theme::kText);
-    setColour(juce::TextButton::buttonColourId, theme::kKnobBody);
+    setColour(juce::PopupMenu::highlightedBackgroundColourId, theme::kCyan);
+    setColour(juce::PopupMenu::highlightedTextColourId, theme::kInk);
+    setColour(juce::TextButton::buttonColourId, theme::kSteel);
     setColour(juce::TextButton::textColourOffId, theme::kTextDim);
-    setColour(juce::TextButton::textColourOnId, theme::kBackground);
+    setColour(juce::TextButton::textColourOnId, theme::kInk);
+    setColour(juce::TooltipWindow::backgroundColourId, theme::kSteel.brighter(0.1f));
+    setColour(juce::TooltipWindow::textColourId, theme::kText);
 }
 
-void EdmLookAndFeel::drawRotarySlider(
-    juce::Graphics& g,
-    int x,
-    int y,
-    int width,
-    int height,
-    float sliderPos,
-    float startAngle,
-    float endAngle,
-    juce::Slider& slider) {
-    const auto accent = slider.findColour(juce::Slider::rotarySliderFillColourId);
-    const auto bounds = juce::Rectangle<int>(x, y, width, height).toFloat().reduced(3.5f);
-    const float radius = juce::jmin(bounds.getWidth(), bounds.getHeight()) / 2.0f;
-    const auto centre = bounds.getCentre();
-    const float arcRadius = radius - kArcThickness;
-    const float valueAngle = startAngle + sliderPos * (endAngle - startAngle);
-    const bool isBipolar = juce::approximatelyEqual(slider.getMinimum(), -slider.getMaximum());
-    const float originAngle = isBipolar ? (startAngle + endAngle) / 2.0f : startAngle;
-    const auto stroke = juce::PathStrokeType(kArcThickness, juce::PathStrokeType::curved, juce::PathStrokeType::rounded);
+void EdmLookAndFeel::drawRotarySlider(juce::Graphics& g, int x, int y, int width, int height, float position,
+                                      float startAngle, float endAngle, juce::Slider& slider) {
+    const auto area = juce::Rectangle<int>(x, y, width, height).toFloat().reduced(4.0f);
+    const float radius = std::min(area.getWidth(), area.getHeight()) * 0.5f;
+    const auto centre = area.getCentre();
+    const float arcRadius = std::max(4.0f, radius - 4.0f);
+    const float angle = startAngle + position * (endAngle - startAngle);
+    const float zeroAngle = (startAngle + endAngle) * 0.5f;
+    const bool bipolar = slider.getMinimum() < 0.0 && slider.getMaximum() > 0.0;
+    const float origin = bipolar ? zeroAngle : startAngle;
+    const auto stroke = juce::PathStrokeType(3.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded);
 
-    juce::Path track;
-    track.addCentredArc(centre.x, centre.y, arcRadius, arcRadius, 0.0f, startAngle, endAngle, true);
+    juce::Path base;
+    base.addCentredArc(centre.x, centre.y, arcRadius, arcRadius, 0.0f, startAngle, endAngle, true);
     g.setColour(theme::kTrack);
-    g.strokePath(track, stroke);
+    g.strokePath(base, stroke);
 
     juce::Path value;
-    value.addCentredArc(centre.x, centre.y, arcRadius, arcRadius, 0.0f, originAngle, valueAngle, true);
-    g.setColour(accent);
+    value.addCentredArc(centre.x, centre.y, arcRadius, arcRadius, 0.0f, origin, angle, true);
+    g.setColour(slider.findColour(juce::Slider::rotarySliderFillColourId));
     g.strokePath(value, stroke);
 
-    const float bodyRadius = arcRadius - kArcThickness - 1.5f;
+    const float bodyRadius = std::max(2.0f, arcRadius - 5.5f);
     const auto body = juce::Rectangle<float>(bodyRadius * 2.0f, bodyRadius * 2.0f).withCentre(centre);
-    g.setColour(juce::Colours::black.withAlpha(0.5f));
+    g.setColour(juce::Colours::black.withAlpha(0.28f));
     g.fillEllipse(body.translated(0.0f, 2.0f));
-    g.setGradientFill(juce::ColourGradient(
-        theme::kKnobBody.brighter(0.65f), centre.x, body.getY(),
-        theme::kKnobBody.darker(0.4f), centre.x, body.getBottom(), false));
+    g.setGradientFill(juce::ColourGradient(theme::kSteel.brighter(0.2f), body.getX(), body.getY(),
+                                           theme::kInk, body.getRight(), body.getBottom(), false));
     g.fillEllipse(body);
-    g.setColour(theme::kTextDim.withAlpha(0.6f));
+    g.setColour(theme::kEdge);
     g.drawEllipse(body, 1.0f);
-
-    const auto tip = centre.getPointOnCircumference(bodyRadius - 2.5f, valueAngle);
-    const auto tail = centre.getPointOnCircumference(bodyRadius * 0.35f, valueAngle);
+    const auto tip = centre.getPointOnCircumference(bodyRadius * 0.78f, angle);
+    const auto root = centre.getPointOnCircumference(bodyRadius * 0.15f, angle);
     g.setColour(theme::kText);
-    g.drawLine({ tail, tip }, 2.0f);
+    g.drawLine({root, tip}, 1.7f);
 }
 
-void EdmLookAndFeel::drawComboBox(
-    juce::Graphics& g,
-    int width,
-    int height,
-    bool,
-    int,
-    int,
-    int,
-    int,
-    juce::ComboBox& box) {
-    const auto bounds = juce::Rectangle<int>(width, height).toFloat().reduced(0.5f);
+void EdmLookAndFeel::drawComboBox(juce::Graphics& g, int width, int height, bool, int, int, int, int, juce::ComboBox& box) {
+    const auto bounds = juce::Rectangle<float>(0.5f, 0.5f, static_cast<float>(width) - 1.0f,
+                                               static_cast<float>(height) - 1.0f);
     g.setColour(box.findColour(juce::ComboBox::backgroundColourId));
-    g.fillRoundedRectangle(bounds, kCornerRadius);
-    g.setColour(box.findColour(juce::ComboBox::outlineColourId).withAlpha(box.isMouseOver(true) ? 0.9f : 0.45f));
-    g.drawRoundedRectangle(bounds, kCornerRadius, 1.0f);
-
-    const auto arrowArea = bounds.withLeft(bounds.getRight() - 18.0f).reduced(5.0f, bounds.getHeight() * 0.38f);
-    juce::Path arrow;
-    arrow.addTriangle(arrowArea.getX(), arrowArea.getY(), arrowArea.getRight(), arrowArea.getY(),
-                      arrowArea.getCentreX(), arrowArea.getBottom());
+    g.fillRoundedRectangle(bounds, kCorner);
+    g.setColour(box.findColour(juce::ComboBox::outlineColourId).withAlpha(box.isMouseOver(true) ? 0.9f : 0.55f));
+    g.drawRoundedRectangle(bounds, kCorner, 1.0f);
+    const auto arrow = bounds.withLeft(bounds.getRight() - 19.0f).reduced(5.0f, height * 0.36f);
+    juce::Path triangle;
+    triangle.addTriangle(arrow.getX(), arrow.getY(), arrow.getRight(), arrow.getY(), arrow.getCentreX(), arrow.getBottom());
     g.setColour(box.findColour(juce::ComboBox::arrowColourId));
-    g.fillPath(arrow);
+    g.fillPath(triangle);
 }
 
 void EdmLookAndFeel::positionComboBoxText(juce::ComboBox& box, juce::Label& label) {
-    label.setBounds(6, 0, box.getWidth() - 22, box.getHeight());
+    label.setBounds(8, 0, box.getWidth() - 25, box.getHeight());
     label.setFont(getComboBoxFont(box));
 }
 
-void EdmLookAndFeel::drawButtonBackground(
-    juce::Graphics& g,
-    juce::Button& button,
-    const juce::Colour&,
-    bool isHighlighted,
-    bool) {
+void EdmLookAndFeel::drawButtonBackground(juce::Graphics& g, juce::Button& button,
+                                          const juce::Colour&, bool highlighted, bool down) {
     const auto bounds = button.getLocalBounds().toFloat().reduced(0.5f);
     const auto accent = button.findColour(juce::TextButton::buttonOnColourId);
-    const bool isOn = button.getToggleState();
-    g.setColour(isOn ? accent : theme::kKnobBody);
-    g.fillRoundedRectangle(bounds, kCornerRadius);
-    g.setColour(accent.withAlpha(isHighlighted || isOn ? 0.9f : 0.45f));
-    g.drawRoundedRectangle(bounds, kCornerRadius, 1.0f);
+    const bool active = button.getToggleState();
+    const auto fill = active ? accent : theme::kSteel;
+    g.setColour(down ? fill.brighter(0.12f) : (highlighted ? fill.brighter(0.07f) : fill));
+    g.fillRoundedRectangle(bounds, kCorner);
+    g.setColour(accent.withAlpha(active ? 0.95f : (highlighted ? 0.85f : 0.45f)));
+    g.drawRoundedRectangle(bounds, kCorner, 1.0f);
 }
 
 void EdmLookAndFeel::drawButtonText(juce::Graphics& g, juce::TextButton& button, bool, bool) {
-    const bool isOn = button.getToggleState();
-    g.setColour(button.findColour(isOn ? juce::TextButton::textColourOnId : juce::TextButton::textColourOffId));
-    float fontSize = kControlFontSize;
-    if (button.getHeight() > 0 && button.getHeight() < 22) {
-        fontSize = juce::jmax(8.0f, static_cast<float>(button.getHeight()) * 0.46f);
-    }
-    g.setFont(juce::FontOptions(fontSize, juce::Font::bold));
-    g.drawText(button.getButtonText(), button.getLocalBounds().reduced(1, 0), juce::Justification::centred);
+    const bool active = button.getToggleState();
+    g.setColour(button.findColour(active ? juce::TextButton::textColourOnId : juce::TextButton::textColourOffId));
+    const float size = button.getHeight() < 23 ? 9.0f : kControlFont;
+    g.setFont(juce::FontOptions(size, juce::Font::bold));
+    g.drawFittedText(button.getButtonText(), button.getLocalBounds().reduced(4, 0), juce::Justification::centred, 1);
 }
 
-juce::Font EdmLookAndFeel::getComboBoxFont(juce::ComboBox&) {
-    return juce::FontOptions(kControlFontSize);
-}
-
-juce::Font EdmLookAndFeel::getPopupMenuFont() {
-    return juce::FontOptions(13.5f);
-}
+juce::Font EdmLookAndFeel::getComboBoxFont(juce::ComboBox&) { return juce::FontOptions(kControlFont); }
+juce::Font EdmLookAndFeel::getPopupMenuFont() { return juce::FontOptions(13.0f); }
 
 juce::Label* EdmLookAndFeel::createSliderTextBox(juce::Slider& slider) {
     auto* label = LookAndFeel_V4::createSliderTextBox(slider);
-    label->setFont(juce::FontOptions(11.0f));
+    label->setFont(juce::FontOptions(9.5f, juce::Font::bold));
+    label->setJustificationType(juce::Justification::centred);
     return label;
 }
 

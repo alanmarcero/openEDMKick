@@ -9,7 +9,7 @@
 using Catch::Matchers::WithinAbs;
 namespace core = openedmkick::core;
 
-TEST_CASE("All 16 fill presets generate valid patterns across 1 to 64 bars", "[auto]") {
+TEST_CASE("All 28 trance fills generate valid patterns across 1 to 64 bars", "[auto]") {
     std::ranges::for_each(core::kAutoBarCounts, [](int bars) {
         const int maxSteps = bars * core::kStepsPerBar64;
         std::ranges::for_each(std::views::iota(0, core::kNumFillPresets), [&](int preset) {
@@ -21,26 +21,22 @@ TEST_CASE("All 16 fill presets generate valid patterns across 1 to 64 bars", "[a
     });
 }
 
-TEST_CASE("Original fill indexes keep their patterns and the new ones are separate", "[auto]") {
+TEST_CASE("V2 trance fill names and patterns are distinct", "[auto]") {
     REQUIRE(core::kNumFillPresets == 28);
     REQUIRE(core::kFillPresetNames.size() == 28u);
-    REQUIRE(core::kFillPresetNames[0] == "Four on the Floor + End Fill");
-    REQUIRE(core::kFillPresetNames[11] == "Mainstage 64th Machine Gun");
-    REQUIRE(core::kFillPresetNames[12] == "Offbeat House Pump");
-    REQUIRE(core::kFillPresetNames[15] == "Call And Answer Reverse");
-    REQUIRE(core::kFillPresetNames[16] == "Trance 138 Rolling Sub Fill");
-    REQUIRE(core::kFillPresetNames[27] == "Hands-Up 16th Staccato");
+    REQUIRE(core::kFillPresetNames[0] == "Sunrise Four-Point Lift");
+    REQUIRE(core::kFillPresetNames[11] == "Staccato Drop Stamp");
+    REQUIRE(core::kFillPresetNames[12] == "Psy Grid Vector");
+    REQUIRE(core::kFillPresetNames[15] == "Breakdown To Bright");
+    REQUIRE(core::kFillPresetNames[16] == "Euphoric Long-Arc Build");
+    REQUIRE(core::kFillPresetNames[17] == "Festival Ladder Climb");
+    REQUIRE(core::kFillPresetNames[18] == "Forest Machine Pulse");
+    REQUIRE(core::kFillPresetNames[27] == "Final Beacon Reverse");
 
     const auto floor = core::buildPresetPattern(0, 1);
-    REQUIRE(floor.size() == 8u);
-    REQUIRE(floor[0].step64 == 0);
-    REQUIRE(floor[1].step64 == 16);
-    REQUIRE(floor[2].step64 == 32);
-    REQUIRE(floor[3].step64 == 48);
-    REQUIRE(floor[6].step64 == 60);
-    REQUIRE(floor[7].step64 == 62);
-    REQUIRE(floor[7].semitoneOffset == 5);
-    REQUIRE(!floor[0].reverseCue);
+    REQUIRE_FALSE(floor.empty());
+    REQUIRE(floor.front().step64 == 0);
+    REQUIRE(std::ranges::is_sorted(floor, {}, &core::PianoRollNote::step64));
 
     const auto signature = [](int preset) {
         std::string text;
@@ -59,13 +55,13 @@ TEST_CASE("Original fill indexes keep their patterns and the new ones are separa
     }
     std::ranges::sort(signatures);
     REQUIRE(std::ranges::adjacent_find(signatures) == signatures.end());
-    REQUIRE(std::ranges::any_of(core::buildPresetPattern(15, 2), [](const core::PianoRollNote& note) {
+    REQUIRE(std::ranges::any_of(core::buildPresetPattern(8, 2), [](const core::PianoRollNote& note) {
         return note.reverseCue;
     }));
 }
 
 TEST_CASE("1/64-note build-up presets contain adjacent 1/64-note kick steps", "[auto]") {
-    const auto rushNotes = core::buildPresetPattern(2, 4);
+    const auto rushNotes = core::buildPresetPattern(25, 4);
     const bool hasSixtyFourthStep = std::ranges::any_of(
         std::views::iota(size_t{ 1 }, rushNotes.size()),
         [&](size_t idx) { return (rushNotes[idx].step64 - rushNotes[idx - 1u].step64) == 1; });

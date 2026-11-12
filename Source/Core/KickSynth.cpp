@@ -11,14 +11,33 @@ namespace {
 
 constexpr float kMinTailMs = 15.0f;
 constexpr float kMaxTailMs = 2000.0f;
-constexpr float kAttackRampMs = 1.2f;
 constexpr float kClickAttackMs = 0.18f;
 constexpr float kAntiClickReleaseMs = 3.5f;
-constexpr float kClickDecayMs = 6.5f;
-constexpr float kNoiseDecayMs = 2.4f;
-constexpr float kPunchDecayMs = 24.0f;
 constexpr float kCurveOctaveScale = 2.5f;
 constexpr double kDcBlockHz = 30.0;
+
+[[nodiscard]] float oneShotEnvelopeGain(
+    float timeMs,
+    float tailMs,
+    const KickSynthSettings& settings) noexcept {
+    const float safeTail = std::clamp(tailMs, kMinTailMs, kMaxTailMs);
+    const float attackMs = std::clamp(settings.attackMs, 0.05f, std::min(20.0f, safeTail * 0.35f));
+    const float releaseMs = std::clamp(settings.releaseMs, 5.0f, std::min(800.0f, safeTail - attackMs));
+    const float releaseStart = std::max(attackMs, safeTail - releaseMs);
+    const float decayMs = std::clamp(settings.decayMs, 1.0f, 600.0f);
+    const float sustain = std::clamp(settings.sustainLevel, 0.0f, 1.0f);
+    const float releaseLevel = 1.0f + (sustain - 1.0f)
+        * std::clamp((releaseStart - attackMs) / decayMs, 0.0f, 1.0f);
+    if (timeMs < attackMs) {
+        return std::clamp(timeMs / attackMs, 0.0f, 1.0f);
+    }
+    if (timeMs < releaseStart) {
+        const float decayProgress = std::clamp((timeMs - attackMs) / decayMs, 0.0f, 1.0f);
+        return 1.0f + (sustain - 1.0f) * decayProgress;
+    }
+    const float releaseProgress = std::clamp((timeMs - releaseStart) / std::max(1.0f, safeTail - releaseStart), 0.0f, 1.0f);
+    return releaseLevel * std::pow(1.0f - releaseProgress, 1.15f);
+}
 
 void appendU32(std::vector<uint8_t>& out, uint32_t value) {
     out.push_back(static_cast<uint8_t>(value & 0xffu));
@@ -245,8 +264,8 @@ void appendTag(std::vector<uint8_t>& out, const char (&tag)[5]) {
         0.0f,
         1.0f);
     const float ampDecay = tailEnvelopeGain(tailProgress, settings.tailCurve);
-    const float attackSamples = std::max(4.0f, static_cast<float>(safeRate * kAttackRampMs * 0.001));
-    const float attackEnv = std::min(1.0f, static_cast<float>(sampleIndex + 1) / attackSamples);
+    const float activeTailMs = static_cast<float>(bodySamples * 1000.0 / safeRate);
+    const float ampEnvelope = oneShotEnvelopeGain(static_cast<float>(timeMs), activeTailMs, settings);
     const float clickAttackSamples = std::max(2.0f, static_cast<float>(safeRate * kClickAttackMs * 0.001));
     const float clickAttack = std::min(1.0f, static_cast<float>(sampleIndex + 1) / clickAttackSamples);
     const float releaseSamples = std::max(8.0f, static_cast<float>(safeRate * kAntiClickReleaseMs * 0.001));
@@ -256,19 +275,22 @@ void appendTag(std::vector<uint8_t>& out, const char (&tag)[5]) {
     const float layerRelease = std::min(1.0f, layerRemaining / releaseSamples);
 
     const float punchAmount = std::clamp(settings.punch, 0.0f, 1.0f);
-    const float punchEnv = std::exp(-static_cast<float>(timeMs) / kPunchDecayMs);
+    const float punchEnv = std::exp(-static_cast<float>(timeMs) / (16.0f + 30.0f * punchAmount));
     const float bodyGain = sampleIndex >= bodySamples
         ? 0.0f
-        : attackEnv * ampDecay * bodyRelease * (1.0f + 0.55f * punchAmount * punchEnv);
+        : ampEnvelope * ampDecay * bodyRelease * (1.0f + 0.72f * punchAmount * punchEnv);
 
     const float twoPi = 2.0f * std::numbers::pi_v<float>;
     const float bodyAngle = static_cast<float>(osc.bodyPhase) * twoPi;
+    const float bodyTone = std::clamp(settings.bodyTone, 0.0f, 1.0f);
+    const float harmonicEnv = std::exp(-static_cast<float>(timeMs) / (30.0f + 38.0f * bodyTone));
     const float fundamental = std::sin(bodyAngle);
-    // Octave helps the kick translate; the third adds beater knock. Both die
-    // with the punch envelope so the sustain stays a tuned sine.
-    const float octave = std::sin(bodyAngle * 2.0f) * (0.16f * punchAmount * punchEnv);
-    const float thirdHarmonic = std::sin(bodyAngle * 3.0f) * (0.12f * punchAmount * punchEnv);
-    const float rawBody = fundamental + octave + thirdHarmonic;
+    const float toneMix = bodyTone * (0.35f + 0.65f * punchAmount);
+    const float second = std::sin(bodyAngle * 2.0f) * (0.42f * toneMix * harmonicEnv);
+    const float third = std::sin(bodyAngle * 3.0f) * (0.28f * toneMix * harmonicEnv);
+    const float fourth = std::sin(bodyAngle * 4.0f) * (0.15f * toneMix * harmonicEnv);
+    const float fifth = std::sin(bodyAngle * 5.0f) * (0.09f * toneMix * harmonicEnv);
+    const float rawBody = fundamental + second + third + fourth + fifth;
 
     const float driveAmount = std::clamp(settings.subDrive, 0.0f, 1.0f);
     const float driveGain = 1.0f + 4.5f * driveAmount;
@@ -276,15 +298,16 @@ void appendTag(std::vector<uint8_t>& out, const char (&tag)[5]) {
     const float drivenBody = drivenNorm > 1.0e-6f ? std::tanh(rawBody * driveGain) / drivenNorm : rawBody;
     const float blendedBody = rawBody + driveAmount * (drivenBody - rawBody);
 
-    const float clickEnv = std::exp(-static_cast<float>(timeMs) / kClickDecayMs);
+    const float clickEnv = std::exp(-static_cast<float>(timeMs) / (4.0f + 5.5f * punchAmount));
     const float clickChirpHz = std::clamp(settings.clickFreqHz * pitchMultiplier, 200.0f, 16000.0f)
         * (0.5f + 0.5f * clickEnv);
     const float noise = nextDeterministicNoise(osc.noise);
-    const float noiseEnv = std::exp(-static_cast<float>(timeMs) / kNoiseDecayMs);
-    const float fastCrack = std::exp(-static_cast<float>(timeMs) / (kClickDecayMs * 0.35f));
-    const float clickBurst = 0.65f * std::sin(static_cast<float>(osc.clickPhase) * twoPi)
-                           + 0.20f * std::sin(static_cast<float>(osc.clickPhase) * 2.7f * twoPi) * fastCrack
-                           + 0.15f * noise * noiseEnv;
+    const float noiseEnv = std::exp(-static_cast<float>(timeMs) / (1.8f + 2.0f * punchAmount));
+    const float fastCrack = std::exp(-static_cast<float>(timeMs) / 2.0f);
+    const float clickBurst = 0.45f * std::sin(static_cast<float>(osc.clickPhase) * twoPi)
+                           + 0.17f * std::sin(static_cast<float>(osc.clickPhase) * 2.7f * twoPi) * fastCrack
+                           + 0.12f * std::sin(static_cast<float>(osc.clickPhase) * 4.2f * twoPi) * fastCrack
+                           + 0.26f * noise * noiseEnv;
     const float clickSignal = sampleIndex >= bodySamples
         ? 0.0f
         : std::clamp(settings.clickLevel, 0.0f, 1.0f) * clickEnv * clickAttack * clickBurst * 0.55f * bodyRelease;

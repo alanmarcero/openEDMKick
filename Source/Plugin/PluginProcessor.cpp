@@ -33,6 +33,8 @@ OpenEdmKickProcessor::OpenEdmKickProcessor()
               raw(params::kSnareLevel), raw(params::kSnareTone), raw(params::kSnareDecay),
               raw(params::kClapLevel), raw(params::kClapSpread), raw(params::kClapTone), raw(params::kClapDecay),
               raw(params::kHatLevel), raw(params::kHatTone), raw(params::kHatDecay),
+              raw(params::kBodyTone), raw(params::kAmpAttack), raw(params::kAmpDecay),
+              raw(params::kAmpSustain), raw(params::kAmpRelease),
               raw(params::kLockIn), raw(params::kClockSync), raw(params::kTempoBpm),
               raw(params::kTimeSignature), raw(params::kAutoEnabled), raw(params::kAutoBypass),
               raw(params::kAutoSlot),
@@ -49,6 +51,7 @@ OpenEdmKickProcessor::OpenEdmKickProcessor()
       }()) {
     setLatencySamples(core::KickEngine::kLatencySamples);
     engine_.prepare(48000.0);
+    openedmkick::presets::apply(openedmkick::presets::factoryPresets().front(), parameters, 0);
 }
 
 void OpenEdmKickProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
@@ -71,6 +74,25 @@ bool OpenEdmKickProcessor::isBusesLayoutSupported(const BusesLayout& layouts) co
 
 int OpenEdmKickProcessor::currentAutoSlot() const noexcept {
     return std::clamp(static_cast<int>(values_.autoSlot->load()), 0, core::kNumAutoSlots - 1);
+}
+
+bool OpenEdmKickProcessor::isSectionLocked(int section) const noexcept {
+    if (section < 0 || section >= params::kSectionCount) {
+        return false;
+    }
+    return (sectionLockMask_.load() & static_cast<uint16_t>(1u << section)) != 0;
+}
+
+void OpenEdmKickProcessor::setSectionLocked(int section, bool locked) noexcept {
+    if (section < 0 || section >= params::kSectionCount) {
+        return;
+    }
+    const auto bit = static_cast<uint16_t>(1u << section);
+    if (locked) {
+        sectionLockMask_.fetch_or(bit);
+        return;
+    }
+    sectionLockMask_.fetch_and(static_cast<uint16_t>(~bit));
 }
 
 core::KickSynthSettings OpenEdmKickProcessor::currentSynthSettings() const noexcept {
@@ -97,7 +119,12 @@ core::KickSynthSettings OpenEdmKickProcessor::currentSynthSettings() const noexc
         values_.clapDecay->load(),
         values_.hatLevel->load(),
         values_.hatTone->load(),
-        values_.hatDecay->load()
+        values_.hatDecay->load(),
+        values_.bodyTone->load(),
+        values_.ampAttack->load(),
+        values_.ampDecay->load(),
+        values_.ampSustain->load(),
+        values_.ampRelease->load()
     };
 }
 
@@ -307,8 +334,13 @@ void OpenEdmKickProcessor::setCurrentProgram(int index) {
     if (index < 0 || index >= static_cast<int>(presets.size())) {
         return;
     }
-    currentProgram_ = index;
-    openedmkick::presets::apply(presets[static_cast<size_t>(index)], parameters);
+    {
+        const std::scoped_lock lock(stateMutex_);
+        currentProgram_ = index;
+        openedmkick::presets::apply(
+            presets[static_cast<size_t>(index)], parameters, sectionLockMask_.load());
+        restoredCustomState_.store(false);
+    }
     juce::AudioProcessorListener::ChangeDetails details;
     details.programChanged = true;
     updateHostDisplay(details);
@@ -326,6 +358,9 @@ void OpenEdmKickProcessor::getStateInformation(juce::MemoryBlock& destData) {
     const std::scoped_lock lock(stateMutex_);
     auto state = parameters.copyState();
     state.setProperty("program", currentProgram_, nullptr);
+    state.setProperty("presetCatalogVersion", 2, nullptr);
+    state.setProperty("programCustom", restoredCustomState_.load(), nullptr);
+    state.setProperty("sectionLockMask", static_cast<int>(sectionLockMask_.load()), nullptr);
     if (engine_.isKickLocked() && !engine_.wavCache().wavBytes().empty()) {
         const auto& bytes = engine_.wavCache().wavBytes();
         const auto b64 = juce::Base64::toBase64(bytes.data(), bytes.size());
@@ -350,7 +385,16 @@ void OpenEdmKickProcessor::setStateInformation(const void* data, int sizeInBytes
             state.appendChild(value, nullptr);
         }
     });
-    currentProgram_ = state.getProperty("program", 0);
+    const bool hasV2Catalog = static_cast<int>(state.getProperty("presetCatalogVersion", 0)) == 2;
+    currentProgram_ = hasV2Catalog
+        ? std::clamp(static_cast<int>(state.getProperty("program", 0)), 0,
+                     static_cast<int>(openedmkick::presets::factoryPresets().size()) - 1)
+        : 0;
+    restoredCustomState_.store(
+        !hasV2Catalog || static_cast<bool>(state.getProperty("programCustom", false)));
+    sectionLockMask_.store(static_cast<uint16_t>(
+        std::clamp(static_cast<int>(state.getProperty("sectionLockMask", 0)), 0,
+                   (1 << params::kSectionCount) - 1)));
     parameters.replaceState(state);
 
     const std::scoped_lock lock(stateMutex_);

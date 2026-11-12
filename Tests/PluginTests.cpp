@@ -172,7 +172,7 @@ TEST_CASE("Editor renders 12-note tuner, kicking mule stage, 1/64 piano roll, an
     juce::ScopedJuceInitialiser_GUI gui;
     OpenEdmKickProcessor processor;
     processor.prepareToPlay(48000.0, 512);
-    processor.setCurrentProgram(12); // Festival 1/64 Drop Rush (8 Bar)
+    processor.setCurrentProgram(12); // New trance factory program
     setParam(processor, "lock_in", 1.0f);
     setParam(processor, "reverse_mode", 2.0f); // Beat 4 Auto
 
@@ -200,7 +200,7 @@ TEST_CASE("Editor renders 12-note tuner, kicking mule stage, 1/64 piano roll, an
     if (const char* capture = std::getenv("OEK_CAPTURE")) {
         setParam(processor, "auto_slot", 0.0f);
         setParam(processor, "auto_bars", 0.0f); // 1 Bar view so 1/8, 1/16, 1/32, and 1/64 steps are crystal clear
-        setParam(processor, "auto_fill", 2.0f); // Festival 1/64 Drop Rush
+        setParam(processor, "auto_fill", 2.0f); // Uplift Sixteenth Surge
         setParam(processor, "crush_mix", 0.45f);
         setParam(processor, "stutter_mix", 0.35f);
         juce::AudioBuffer<float> renderBuf(2, 64);
@@ -215,11 +215,11 @@ TEST_CASE("Editor renders 12-note tuner, kicking mule stage, 1/64 piano roll, an
         REQUIRE(juce::PNGImageFormat().writeImageToStream(snapshot, stream));
     }
     if (const char* captureRev = std::getenv("OEK_CAPTURE_REVERSE")) {
-        processor.setCurrentProgram(4); // Beat 4 Reverse Pickup (E1)
+        processor.setCurrentProgram(4); // Rise Through Light
         setParam(processor, "auto_on", 1.0f);
         setParam(processor, "auto_slot", 1.0f);
         setParam(processor, "auto_b_bars", 1.0f); // 2 Bars
-        setParam(processor, "auto_b_fill", 8.0f); // Beat 4 Reverse Pickup Loop
+        setParam(processor, "auto_b_fill", 8.0f); // Last-Light Reverse Pickup
         setParam(processor, "reverse_mode", 2.0f);
         setParam(processor, "crush_mix", 0.38f);
         setParam(processor, "gate_mix", 0.42f);
@@ -240,13 +240,16 @@ TEST_CASE("Editor renders 12-note tuner, kicking mule stage, 1/64 piano roll, an
         const auto& programs = openedmkick::presets::factoryPresets();
         int stackIndex = 0;
         for (int i = 0; i < static_cast<int>(programs.size()); ++i) {
-            if (std::string(programs[static_cast<size_t>(i)].name) == "Full Layer Stack (A#1)") {
+            if (std::string(programs[static_cast<size_t>(i)].name) == "Steel Anthem 142") {
                 stackIndex = i;
             }
         }
         processor.setCurrentProgram(stackIndex);
         setParam(processor, "auto_on", 1.0f);
         setParam(processor, "lock_in", 0.0f);
+        setParam(processor, "snare_level", 0.55f);
+        setParam(processor, "clap_level", 0.42f);
+        setParam(processor, "hat_level", 0.38f);
         juce::AudioBuffer<float> renderBuf(2, 64);
         processor.processBlock(renderBuf, midi);
         processor.displayPeak.store(0.72f);
@@ -375,40 +378,16 @@ TEST_CASE("Mule artwork kicks when a trigger arrives", "[plugin][ui][mule]") {
     }
 }
 
-TEST_CASE("Factory kick programs and Auto Mode patterns keep old indexes", "[plugin][presets]") {
+TEST_CASE("V2 factory banks use newly authored trance names", "[plugin][presets]") {
     const auto& programs = openedmkick::presets::factoryPresets();
     const auto& patterns = openedmkick::presets::fillBuildPresets();
-    REQUIRE(programs.size() >= 32u);
+    REQUIRE(programs.size() == 48u);
     REQUIRE(patterns.size() == 28u);
-    const std::array<const char*, 19> kOriginal{ {
-        "Init Club Kick (F1)",
-        "Big Room Sub Cannon (G1)",
-        "Tech House Tight Punch (A1)",
-        "Locked-In Studio Master (F#1)",
-        "Beat 4 Reverse Pickup (E1)",
-        "Full Beat Synced Reverse (D#1)",
-        "Bitcrushed Industrial Stomp (C1)",
-        "Hardstyle Tok & Crunch (G#1)",
-        "Future Rave Chest Thump (C#1)",
-        "Synced 1/16 Beat Stutter Kick (D1)",
-        "Trance Gate Chopper (A#1)",
-        "Deep Minimal Sub (B1)",
-        "Festival 1/64 Drop Rush (8 Bar)",
-        "Mainstage Build Up (16 Bar)",
-        "Arena 32-Bar Riser (32 Bar)",
-        "Marathon 64-Bar Odyssey (64 Bar)",
-        "Quick 2-Bar Turnaround Fill (2 Bar)",
-        "1-Bar Machine Gun Fill (1 Bar)",
-        "Stacked Snare Clap Hat (F1)"
-    } };
-    for (size_t i = 0; i < kOriginal.size(); ++i) {
-        REQUIRE(std::string(programs[i].name) == kOriginal[i]);
-    }
-    REQUIRE(std::string(patterns[0].name) == "Four on the Floor + End Fill");
-    REQUIRE(std::string(patterns[11].name) == "Mainstage 64th Machine Gun");
-    REQUIRE(std::string(patterns[15].name) == "Call And Answer Reverse");
-    REQUIRE(std::string(patterns[16].name) == "Trance 138 Rolling Sub Fill");
-    REQUIRE(std::string(patterns[27].name) == "Hands-Up 16th Staccato");
+    REQUIRE(std::string(programs.front().name) == "Northstar 138");
+    REQUIRE(std::string(programs[31].name) == "Psy Meridian 148");
+    REQUIRE(std::string(programs.back().name) == "Final Beacon");
+    REQUIRE(std::string(patterns[0].name) == "Sunrise Four-Point Lift");
+    REQUIRE(std::string(patterns[27].name) == "Final Beacon Reverse");
 
     OpenEdmKickProcessor processor;
     REQUIRE(processor.getNumPrograms() == static_cast<int>(programs.size()));
@@ -425,14 +404,9 @@ TEST_CASE("Factory kick programs and Auto Mode patterns keep old indexes", "[plu
     std::ranges::sort(sorted);
     REQUIRE(std::ranges::adjacent_find(sorted) == sorted.end());
 
-    processor.setCurrentProgram(18);
-    REQUIRE_THAT(processor.currentSynthSettings().snareLevel, WithinAbs(0.58f, 0.02f));
-    REQUIRE_THAT(processor.currentSynthSettings().clapDecay, WithinAbs(0.35f, 0.02f));
-    processor.setCurrentProgram(22);
-    REQUIRE(processor.currentSynthSettings().tailLengthMs < 120.0f);
-    REQUIRE_THAT(processor.currentSynthSettings().hatDecay, WithinAbs(1.0f, 0.02f));
-    processor.setCurrentProgram(23);
-    REQUIRE_THAT(processor.currentSynthSettings().clapDecay, WithinAbs(1.0f, 0.02f));
+    processor.setCurrentProgram(0);
+    REQUIRE_THAT(processor.currentSynthSettings().bodyTone, WithinAbs(0.78f, 0.02f));
+    REQUIRE_THAT(processor.currentSynthSettings().attackMs, WithinAbs(0.18f, 0.02f));
 
     setParam(processor, "snare_decay", 0.22f);
     setParam(processor, "hat_decay", 0.81f);
@@ -460,41 +434,28 @@ TEST_CASE("Factory kick programs and Auto Mode patterns keep old indexes", "[plu
     REQUIRE_THAT(restored.currentSynthSettings().clapDecay, WithinAbs(0.9f, 0.002f));
 }
 
-TEST_CASE("All 68 factory kick presets load and report valid program names", "[plugin][presets]") {
+TEST_CASE("All 48 trance kick presets load and report valid program names", "[plugin][presets]") {
     OpenEdmKickProcessor processor;
     const auto& presets = openedmkick::presets::factoryPresets();
-    REQUIRE(presets.size() == 68);
-    REQUIRE(processor.getNumPrograms() == 68);
+    REQUIRE(presets.size() == 48);
+    REQUIRE(processor.getNumPrograms() == 48);
 
-    for (int i = 0; i < 68; ++i) {
+    for (int i = 0; i < 48; ++i) {
         REQUIRE(processor.getProgramName(i).isNotEmpty());
         processor.setCurrentProgram(i);
         REQUIRE(processor.getCurrentProgram() == i);
     }
 
-    // Spot-check key trance kicks
     const std::array<const char*, 5> tranceKicks{{
-        "138 Uplifting Euphoria (F1)",
-        "138 Pure Trance Slammer (G1)",
-        "Trance Anthem Driver (A1)",
-        "Psytrance Woody Tok (F#1)",
-        "Trance Uplifting Odyssey (16 Bar)"
+        "Northstar 138",
+        "Violet Horizon",
+        "Psy Meridian 148",
+        "Hard Circuit 145",
+        "Final Beacon"
     }};
     for (const auto* name : tranceKicks) {
         const auto it = std::ranges::find_if(presets, [&](const auto& p) { return std::string(p.name) == name; });
         REQUIRE(it != presets.end());
     }
 
-    // Spot-check key EDM kicks
-    const std::array<const char*, 5> edmKicks{{
-        "Festival Mainstage Drop (G1)",
-        "Melodic Techno Low End (F1)",
-        "Future Bass Air Cannon (D#1)",
-        "Hardstyle Screamer Tok (A1)",
-        "DnB Rolling Sub 174 (C#1)"
-    }};
-    for (const auto* name : edmKicks) {
-        const auto it = std::ranges::find_if(presets, [&](const auto& p) { return std::string(p.name) == name; });
-        REQUIRE(it != presets.end());
-    }
 }

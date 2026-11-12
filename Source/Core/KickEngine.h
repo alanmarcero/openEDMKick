@@ -132,6 +132,7 @@ private:
     double reverseStartPpq_ = 0.0;
     double reverseEndPpq_ = 0.0;
     double lastSamplePpq_ = 0.0;
+    double lastPpqStep_ = 0.0;
     bool hasLastPpq_ = false;
 };
 
