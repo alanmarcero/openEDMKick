@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Parameters.h"
+#include <functional>
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 
@@ -19,9 +21,6 @@ private:
     juce::Slider slider_;
     juce::Label title_;
     std::unique_ptr<Apvts::SliderAttachment> attachment_;
-    bool dragging_ = false;
-    Apvts* pendingState_ = nullptr;
-    juce::String pendingId_;
 };
 
 class Choice : public juce::Component {
@@ -50,8 +49,25 @@ private:
     Apvts::ButtonAttachment attachment_;
 };
 
-void layoutRow(juce::Rectangle<int> area, std::initializer_list<juce::Component*> components);
-void drawPanel(juce::Graphics& g, juce::Rectangle<int> area, const juce::String& title, juce::Colour accent);
-void drawCaption(juce::Graphics& g, juce::Rectangle<int> area, const juce::String& text);
+class SectionLock : public juce::Component, private juce::Timer {
+public:
+    SectionLock(const juce::String& title, juce::Colour accent,
+                std::function<bool()> readState, std::function<void(bool)> writeState);
+    void resized() override;
+
+private:
+    void timerCallback() override;
+    void sync();
+    juce::TextButton button_;
+    juce::String title_;
+    juce::Colour accent_;
+    std::function<bool()> readState_;
+    std::function<void(bool)> writeState_;
+};
+
+void layoutRow(juce::Rectangle<int> area, std::initializer_list<juce::Component*> components, int gap = 5);
+void drawCard(juce::Graphics& g, juce::Rectangle<int> area, const juce::String& title,
+              juce::Colour accent, bool inset = false);
+void drawSmallLabel(juce::Graphics& g, juce::Rectangle<int> area, const juce::String& text, juce::Colour colour);
 
 } // namespace openedmkick::ui

@@ -169,6 +169,11 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout() {
     addFloat(layout, kHatLevel, "Hat Level", { 0.0f, 1.0f }, 0.0f, kFormatPercent);
     addFloat(layout, kHatTone, "Hat Tone", { 0.0f, 1.0f }, 0.7f, kFormatPercent);
     addFloat(layout, kHatDecay, "Hat Decay", { 0.0f, 1.0f }, 0.25f, kFormatHatDecay);
+    addFloat(layout, kBodyTone, "Body Tone", { 0.0f, 1.0f }, 0.65f, kFormatPercent);
+    addFloat(layout, kAmpAttack, "Envelope Attack", { 0.05f, 20.0f }, 0.35f, kFormatMs);
+    addFloat(layout, kAmpDecay, "Envelope Decay", { 1.0f, 600.0f }, 72.0f, kFormatMs);
+    addFloat(layout, kAmpSustain, "Envelope Sustain", { 0.0f, 1.0f }, 0.7f, kFormatPercent);
+    addFloat(layout, kAmpRelease, "Envelope Release", { 5.0f, 800.0f }, 180.0f, kFormatMs);
     addBool(layout, kLockIn, "Lock In (Cached WAV)", false);
 
     // Transport & Clock Sync

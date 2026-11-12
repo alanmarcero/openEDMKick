@@ -52,7 +52,7 @@ TEST_CASE("Auto mode tail shortener reduces tail energy on rapid 1/64 rolls", "[
     unshortenedEngine.prepare(48000.0);
     shortenedEngine.prepare(48000.0);
 
-    unshortenedEngine.sequencer().loadPresetIntoSlot(0, 11, 1); // Mainstage 64th Machine Gun
+    unshortenedEngine.sequencer().loadPresetIntoSlot(0, 11, 1); // Staccato Drop Stamp
     shortenedEngine.sequencer().loadPresetIntoSlot(0, 11, 1);
 
     core::EngineSettings unshortened{};

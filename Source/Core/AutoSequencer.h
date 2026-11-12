@@ -18,34 +18,34 @@ inline constexpr std::array<int, 7> kAutoBarCounts = { 1, 2, 4, 8, 16, 32, 64 };
 inline constexpr std::array<int, 5> kGridStepSizes64 = { 16, 8, 4, 2, 1 };
 
 inline constexpr std::array<std::string_view, kNumFillPresets> kFillPresetNames = {
-    "Four on the Floor + End Fill",
-    "Classic EDM Build (1/4 -> 1/32)",
-    "Festival 1/64 Drop Rush",
-    "Tech House Groove & Turnaround",
-    "Big Room Drop Countdown",
-    "Hardstyle Pitch-Up Build",
-    "Future Rave Syncopated Fill",
-    "Halftime to 1/32 Blaster",
-    "Beat 4 Reverse Pickup Loop",
-    "Accelerating Exponential Roll",
-    "Offbeat Stomp & 1/64 Finale",
-    "Mainstage 64th Machine Gun",
-    "Offbeat House Pump",
-    "Dotted Gallop Push",
-    "Downbeat And 1/32 Tail",
-    "Call And Answer Reverse",
-    "Trance 138 Rolling Sub Fill",
-    "Psytrance Triplet Rush",
-    "Uplifting 16-Bar Riser",
-    "Eurodance Offbeat Stutter",
-    "Hard Trance Reverse Kick Rush",
-    "Vocal Trance Breakdown Drop",
-    "Anthem Trance 32-Bar Odyssey",
-    "Tech-Trance Slog Snare-Kick",
-    "Classic Trance 1999 Build",
-    "Celestial Double-Time Roll",
-    "Progressive Trance Groove",
-    "Hands-Up 16th Staccato"
+    "Sunrise Four-Point Lift",
+    "Halo Step Ascent",
+    "Uplift Sixteenth Surge",
+    "Mainstage 138 Switchback",
+    "Peak-Time Thirty-Second Finale",
+    "Psy Triplet Carousel",
+    "Strobe Floor Climb",
+    "Skyline Offbeat Push",
+    "Last-Light Reverse Pickup",
+    "Progressive Meridian Rise",
+    "Hard Trance Double-Time",
+    "Staccato Drop Stamp",
+    "Psy Grid Vector",
+    "Afterhours Rolling Accent",
+    "144 Gate Step Sequence",
+    "Breakdown To Bright",
+    "Euphoric Long-Arc Build",
+    "Festival Ladder Climb",
+    "Forest Machine Pulse",
+    "Euro Anthem Bounce",
+    "Hard Circuit Sprint",
+    "Euphoria Call And Response",
+    "Trance Gate Matrix",
+    "Vintage Uplift Motion",
+    "Full Moon Progressive",
+    "Afterburn 64th Cyclone",
+    "Infinite Drop Roll",
+    "Final Beacon Reverse"
 };
 
 struct PianoRollNote {
@@ -60,7 +60,7 @@ struct PianoRollNote {
 
 struct AutoSlotSettings {
     int bars = 4;              // 1, 2, 4, 8, 16, 32, 64
-    int fillPreset = 0;        // 0..15. Indexes 0..11 keep the original patterns.
+    int fillPreset = 0;        // Index into the current 28-fill trance bank.
     int gridResolution = 4;    // index into kGridStepSizes64 (default 4 = 1/64 note)
     float tailShorten = 0.65f; // 0..1 (specific to Auto Mode; never affects Regular Mode)
     float pitchRise = 0.0f;    // 0..12 semitones progressive pitch rise across the bar window

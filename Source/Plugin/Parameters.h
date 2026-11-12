@@ -7,6 +7,22 @@
 
 namespace openedmkick::params {
 
+enum class Section : int {
+    tuning,
+    pitch,
+    bodyEnvelope,
+    transient,
+    layers,
+    autoMode,
+    reverse,
+    texture,
+    rhythm,
+    toneOutput,
+    count
+};
+
+inline constexpr int kSectionCount = static_cast<int>(Section::count);
+
 // Kick drum synthesis & 12-note tuning parameters
 inline constexpr const char* kNote = "note";
 inline constexpr const char* kMidiMode = "midi_mode";
@@ -31,6 +47,11 @@ inline constexpr const char* kClapDecay = "clap_decay";
 inline constexpr const char* kHatLevel = "hat_level";
 inline constexpr const char* kHatTone = "hat_tone";
 inline constexpr const char* kHatDecay = "hat_decay";
+inline constexpr const char* kBodyTone = "body_tone";
+inline constexpr const char* kAmpAttack = "amp_attack";
+inline constexpr const char* kAmpDecay = "amp_decay";
+inline constexpr const char* kAmpSustain = "amp_sustain";
+inline constexpr const char* kAmpRelease = "amp_release";
 inline constexpr const char* kLockIn = "lock_in";
 
 // Clock sync & transport parameters
