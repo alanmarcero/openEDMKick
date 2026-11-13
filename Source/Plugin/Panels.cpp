@@ -267,7 +267,7 @@ void KickSynthPanel::resized() {
 
     auto layers = layersArea_;
     layersLock_.setBounds(layers.removeFromRight(64).withY(layers.getY() + 6).withHeight(22));
-    const int innerY = layers.getY() + (advancedMode_ ? 40 : 30);
+    const int innerY = layers.getY() + (advancedMode_ ? 40 : 44);
     if (advancedMode_) {
         auto row = juce::Rectangle<int>(layers.getX() + 12, innerY, layers.getWidth() - 24, 76);
         auto snare = row.removeFromLeft(row.getWidth() * 3 / 10);
@@ -369,6 +369,13 @@ void PianoRollView::paint(juce::Graphics& g) {
     drawSmallLabel(g, getLocalBounds().reduced(12).removeFromTop(16), "PIANO ROLL · 1/64 GRID", theme::kCyan);
     const auto grid = gridArea();
     const auto settings = processor_.currentAutoSlotSettings();
+    const bool enabled = processor_.parameters.getRawParameterValue(params::kAutoEnabled)->load() > 0.5f;
+    if (!enabled) {
+        auto status = getLocalBounds().reduced(12).removeFromTop(16).withTrimmedLeft(190);
+        g.setColour(theme::kAmber);
+        g.setFont(juce::FontOptions(9.5f, juce::Font::bold));
+        g.drawText("AUTO OFF · EDIT THE ROLL, THEN ENABLE PLAYBACK", status, juce::Justification::centredRight);
+    }
     const int bars = std::clamp(settings.bars, 1, 64);
     const int totalSteps = bars * core::kStepsPerBar64;
     const float rowHeight = grid.getHeight() / static_cast<float>(kPitchRows.size());
@@ -410,13 +417,6 @@ void PianoRollView::paint(juce::Graphics& g) {
     const float phase = std::clamp(processor_.displayAutoPhase.load(), 0.0f, 0.9999f);
     const float head = grid.getX() + phase * grid.getWidth();
     g.setColour(theme::kAmber); g.drawVerticalLine(juce::roundToInt(head), juce::roundToInt(grid.getY() - 2), juce::roundToInt(grid.getBottom() + 2));
-    const bool enabled = processor_.parameters.getRawParameterValue(params::kAutoEnabled)->load() > 0.5f;
-    if (!enabled) {
-        g.setColour(theme::kInk.withAlpha(0.82f)); g.fillRoundedRectangle(grid.getX(), grid.getBottom() - 20.0f, grid.getWidth(), 18.0f, 4.0f);
-        g.setColour(theme::kAmber); g.setFont(juce::FontOptions(9.5f, juce::Font::bold));
-        g.drawText("AUTO MODE IS OFF · EDIT THE ROLL, THEN ENABLE PLAYBACK", juce::Rectangle<float>(grid.getX() + 8.0f,
-                   grid.getBottom() - 20.0f, grid.getWidth() - 16.0f, 18.0f), juce::Justification::centredLeft);
-    }
 }
 
 AutoPianoRollPanel::AutoPianoRollPanel(OpenEdmKickProcessor& processor)
