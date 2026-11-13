@@ -147,6 +147,10 @@ void SyncFilterPump::reset() noexcept {
 }
 
 float SyncFilterPump::process(float input, double ppqPosition, double divisionBeats, float depth, double sampleRate) noexcept {
+    if (!std::isfinite(input)) {
+        reset();
+        return 0.0f;
+    }
     const float dry = finiteOr(input);
     const float amount = std::clamp(finiteOr(depth), 0.0f, 1.0f);
     if (amount < 1.0e-5f) { reset(); return dry; }
