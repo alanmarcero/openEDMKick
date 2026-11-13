@@ -82,6 +82,7 @@ public:
     void paint(juce::Graphics& g) override;
 
 private:
+    void syncKickAnimation();
     void timerCallback() override;
     OpenEdmKickProcessor& processor_;
     juce::Image mascot_;

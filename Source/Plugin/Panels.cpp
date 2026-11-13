@@ -289,15 +289,20 @@ MuleStagePanel::MuleStagePanel(OpenEdmKickProcessor& processor) : processor_(pro
 }
 
 void MuleStagePanel::timerCallback() {
+    syncKickAnimation();
+    repaint();
+}
+
+void MuleStagePanel::syncKickAnimation() {
     const auto triggerCount = processor_.displayTriggerCount.load();
     if (triggerCount != seenTriggers_) {
         seenTriggers_ = triggerCount;
         kickStartedMs_ = juce::Time::getMillisecondCounterHiRes();
     }
-    repaint();
 }
 
 void MuleStagePanel::paint(juce::Graphics& g) {
+    syncKickAnimation();
     const auto bounds = getLocalBounds().toFloat();
     g.setColour(theme::kSteel); g.fillRoundedRectangle(bounds, 13.0f);
     g.setColour(theme::kEdge); g.drawRoundedRectangle(bounds.reduced(0.5f), 13.0f, 1.0f);
