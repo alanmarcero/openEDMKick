@@ -1,6 +1,6 @@
 # V2 native editor screenshots
 
-The screenshots below are captured from the built macOS Standalone app at its default 1100 × 972 size.
+The screenshots below are captured from the native JUCE editor at its default 1100 × 972 size.
 
 ## Kick page
 
