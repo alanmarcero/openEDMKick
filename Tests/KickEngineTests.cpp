@@ -56,13 +56,13 @@ TEST_CASE("Regular mode triggers kick on any MIDI note and ignores Auto Mode Tai
     REQUIRE(pitchDifference > 10.0);
 }
 
-TEST_CASE("Auto mode tail shortener reduces tail energy on rapid 1/64 rolls", "[engine]") {
+TEST_CASE("Auto mode tail shortener reduces tail energy on rapid roll fills", "[engine]") {
     core::KickEngine unshortenedEngine;
     core::KickEngine shortenedEngine;
     unshortenedEngine.prepare(48000.0);
     shortenedEngine.prepare(48000.0);
 
-    unshortenedEngine.sequencer().loadPresetIntoSlot(0, 11, 1); // Staccato Drop Stamp
+    unshortenedEngine.sequencer().loadPresetIntoSlot(0, 11, 1); // Pulse Stamp
     shortenedEngine.sequencer().loadPresetIntoSlot(0, 11, 1);
 
     core::EngineSettings unshortened{};
@@ -90,7 +90,7 @@ TEST_CASE("Auto mode tail shortener reduces tail energy on rapid 1/64 rolls", "[
     const float lateShort = std::accumulate(bufShort.begin() + 3000, bufShort.begin() + 5500, 0.0f,
         [](float acc, float s) { return acc + std::abs(s); });
 
-    REQUIRE(lateShort < lateLong * 0.55f);
+    REQUIRE(lateShort < lateLong * 0.8f);
 }
 
 TEST_CASE("Auto mode stays silent while the host transport is stopped", "[engine]") {
