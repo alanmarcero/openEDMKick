@@ -97,7 +97,7 @@ TEST_CASE("Beat synced reverse ends on the target sample across clocks and block
             float* pointer = buffer.data();
             engine.process(settings, transport, triggers, &pointer, 1, count);
             processed += count;
-            if (!engine.isVoiceReversing()) {
+            if (engine.isVoiceReversing() != (processed < expected)) {
                 return -2;
             }
         }
