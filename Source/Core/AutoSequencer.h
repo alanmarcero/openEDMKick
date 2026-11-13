@@ -18,40 +18,39 @@ inline constexpr std::array<int, 7> kAutoBarCounts = { 1, 2, 4, 8, 16, 32, 64 };
 inline constexpr std::array<int, 5> kGridStepSizes64 = { 16, 8, 4, 2, 1 };
 
 inline constexpr std::array<std::string_view, kNumFillPresets> kFillPresetNames = {
-    "Sunrise Four-Point Lift",
-    "Halo Step Ascent",
-    "Uplift Sixteenth Surge",
-    "Mainstage 138 Switchback",
-    "Peak-Time Thirty-Second Finale",
-    "Psy Triplet Carousel",
-    "Strobe Floor Climb",
-    "Skyline Offbeat Push",
-    "Last-Light Reverse Pickup",
-    "Progressive Meridian Rise",
-    "Hard Trance Double-Time",
-    "Staccato Drop Stamp",
-    "Psy Grid Vector",
-    "Afterhours Rolling Accent",
-    "144 Gate Step Sequence",
-    "Breakdown To Bright",
-    "Euphoric Long-Arc Build",
-    "Festival Ladder Climb",
-    "Forest Machine Pulse",
-    "Euro Anthem Bounce",
-    "Hard Circuit Sprint",
-    "Euphoria Call And Response",
-    "Trance Gate Matrix",
-    "Vintage Uplift Motion",
-    "Full Moon Progressive",
-    "Afterburn 64th Cyclone",
-    "Infinite Drop Roll",
-    "Final Beacon Reverse"
+    "Ion Drive Four",
+    "First Light Step",
+    "Afterglow Climb",
+    "Prism Gate",
+    "Skyline Sixteenths",
+    "Redshift Triplet",
+    "Blue Hour Push",
+    "Orbit Offbeat",
+    "Last Signal Reverse",
+    "Glassline Rise",
+    "Vector Doubletime",
+    "Pulse Stamp",
+    "Helix Grid",
+    "Night Bloom Roll",
+    "Volt Gate",
+    "Dawn Breaker",
+    "Luminous Arc",
+    "Front Row Ladder",
+    "Carbon Pulse",
+    "Europa Bounce",
+    "Hardlight Sprint",
+    "Callout Answer",
+    "Neon Matrix",
+    "Silverline Motion",
+    "Moonwire Progressive",
+    "Afterburn Cyclone",
+    "Infinite Roll",
+    "Final Orbit Reverse"
 };
 
 struct PianoRollNote {
     int step64 = 0;         // Start position in 1/64-note steps from the start of the pattern
     int length64 = 4;       // Gate length in 1/64-note steps (>= 1)
-    int semitoneOffset = 0; // Pitch offset in semitones (-12..+24) relative to tuned kick note
     float velocity = 1.0f;  // 0..1
     bool reverseCue = false;
 
@@ -63,7 +62,6 @@ struct AutoSlotSettings {
     int fillPreset = 0;        // Index into the current 28-fill trance bank.
     int gridResolution = 4;    // index into kGridStepSizes64 (default 4 = 1/64 note)
     float tailShorten = 0.65f; // 0..1 (specific to Auto Mode; never affects Regular Mode)
-    float pitchRise = 0.0f;    // 0..12 semitones progressive pitch rise across the bar window
     float crushSweep = 0.0f;   // 0..1 late-build bitcrush intensification
 
     bool operator==(const AutoSlotSettings&) const noexcept = default;
@@ -73,7 +71,6 @@ struct AutoTriggerEvent {
     bool triggered = false;
     int sampleOffset = 0;
     float velocity = 1.0f;
-    float semitoneOffset = 0.0f;
     float effectiveTailMs = -1.0f;
     bool reverseCue = false;
     double stepDurationBeats = 1.0;
@@ -99,7 +96,7 @@ public:
     [[nodiscard]] const std::vector<PianoRollNote>& notesForSlot(int slot) const noexcept;
     void setNotesForSlot(int slot, std::vector<PianoRollNote> notes);
     void loadPresetIntoSlot(int slot, int presetIndex, int bars);
-    bool toggleNoteAt(int slot, int step64, int length64, int semitoneOffset, int totalBars);
+    bool toggleNoteAt(int slot, int step64, int length64, int totalBars);
 
     // Advances the clock by one sample and returns a trigger event if a piano roll note starts on this sample.
     [[nodiscard]] AutoTriggerEvent stepSample(

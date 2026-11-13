@@ -13,7 +13,7 @@ constexpr float kLabelFont = 9.5f;
 
 Knob::Knob(Apvts& state, const juce::String& parameterId, const juce::String& title, juce::Colour accent)
     : slider_(juce::Slider::RotaryHorizontalVerticalDrag, juce::Slider::TextBoxBelow),
-      title_({}, title.toUpperCase()),
+      title_({}, title),
       attachment_(std::make_unique<Apvts::SliderAttachment>(state, parameterId, slider_)) {
     slider_.setComponentID(parameterId);
     slider_.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 68, kKnobValueHeight);
@@ -44,7 +44,7 @@ void Knob::resized() {
 }
 
 Choice::Choice(Apvts& state, const juce::String& parameterId, const juce::String& title, juce::Colour accent)
-    : title_({}, title.toUpperCase()) {
+    : title_({}, title) {
     box_.setComponentID(parameterId);
     if (auto* parameter = dynamic_cast<juce::AudioParameterChoice*>(state.getParameter(parameterId)))
         box_.addItemList(parameter->choices, 1);
@@ -80,28 +80,6 @@ Toggle::Toggle(Apvts& state, const juce::String& parameterId, const juce::String
 void Toggle::resized() { button_.setBounds(getLocalBounds()); }
 void Toggle::setTooltip(const juce::String& text) { button_.setTooltip(text); }
 
-SectionLock::SectionLock(const juce::String& title, juce::Colour accent,
-                         std::function<bool()> readState, std::function<void(bool)> writeState)
-    : title_(title), accent_(accent), readState_(std::move(readState)), writeState_(std::move(writeState)) {
-    button_.setComponentID("lock_" + title.toLowerCase().replace(" ", "_"));
-    button_.setTooltip("Keep this section unchanged when selecting another preset.");
-    button_.onClick = [this] { if (writeState_) writeState_(!readState_()); sync(); };
-    addAndMakeVisible(button_);
-    sync();
-    startTimerHz(5);
-}
-
-void SectionLock::timerCallback() { sync(); }
-void SectionLock::sync() {
-    const bool locked = readState_ && readState_();
-    button_.setButtonText(locked ? "LOCKED" : "LOCK");
-    button_.setToggleState(locked, juce::dontSendNotification);
-    button_.setColour(juce::TextButton::buttonOnColourId, locked ? accent_ : theme::kSteel);
-    button_.setColour(juce::TextButton::textColourOffId, locked ? theme::kInk : theme::kTextDim);
-    button_.setColour(juce::TextButton::textColourOnId, theme::kInk);
-}
-void SectionLock::resized() { button_.setBounds(getLocalBounds()); }
-
 void layoutRow(juce::Rectangle<int> area, std::initializer_list<juce::Component*> components, int gap) {
     const int count = static_cast<int>(components.size());
     if (count <= 0) return;
@@ -123,14 +101,14 @@ void drawCard(juce::Graphics& g, juce::Rectangle<int> area, const juce::String& 
     g.fillRoundedRectangle(r.getX() + 12.0f, r.getY() + 9.0f, 3.0f, 13.0f, 1.5f);
     g.setColour(accent);
     g.setFont(juce::FontOptions(10.0f, juce::Font::bold));
-    g.drawText(title.toUpperCase(), area.getX() + 22, area.getY() + 7, area.getWidth() - 32, 18,
+    g.drawText(title, area.getX() + 22, area.getY() + 7, area.getWidth() - 32, 18,
                juce::Justification::centredLeft);
 }
 
 void drawSmallLabel(juce::Graphics& g, juce::Rectangle<int> area, const juce::String& text, juce::Colour colour) {
     g.setColour(colour);
     g.setFont(juce::FontOptions(9.5f, juce::Font::bold));
-    g.drawText(text.toUpperCase(), area, juce::Justification::centredLeft);
+    g.drawText(text, area, juce::Justification::centredLeft);
 }
 
 } // namespace openedmkick::ui

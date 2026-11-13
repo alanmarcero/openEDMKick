@@ -1,19 +1,19 @@
 #include "Parameters.h"
 #include "KickSynth.h"
+
 #include <algorithm>
+#include <cmath>
 #include <ranges>
 
 namespace openedmkick::params {
-
 namespace {
 
 using Layout = juce::AudioProcessorValueTreeState::ParameterLayout;
-using Attributes = juce::AudioParameterFloatAttributes;
 using Formatter = std::function<juce::String(float, int)>;
-
 constexpr int kVersion = 1;
 
 const Formatter kFormatHz = [](float hz, int) { return formatHz(hz); };
+const Formatter kFormatOctaves = [](float value, int) { return juce::String(value, 1) + " oct"; };
 const Formatter kFormatPercent = [](float value, int) { return juce::String(juce::roundToInt(value * 100.0f)) + "%"; };
 const Formatter kFormatBipolar = [](float value, int) {
     const int percent = juce::roundToInt(value * 100.0f);
@@ -24,38 +24,8 @@ const Formatter kFormatMs = [](float ms, int) {
 };
 const Formatter kFormatDb = [](float db, int) { return juce::String(db, 1) + " dB"; };
 const Formatter kFormatBpm = [](float bpm, int) { return juce::String(bpm, 1) + " BPM"; };
-const Formatter kFormatCents = [](float cents, int) {
-    const int rounded = juce::roundToInt(cents);
-    return (rounded > 0 ? "+" : "") + juce::String(rounded) + " ct";
-};
-const Formatter kFormatSemitones = [](float st, int) {
-    return "+" + juce::String(st, 1) + " st";
-};
-const Formatter kFormatSnareDecay = [](float amount, int) {
-    return juce::String(juce::roundToInt(openedmkick::core::snareDecayMs(amount))) + " ms";
-};
-const Formatter kFormatClapSpread = [](float amount, int) {
-    if (amount <= 0.04f) {
-        return juce::String("Tight");
-    }
-    if (amount >= 0.96f) {
-        return juce::String("Wide");
-    }
-    return juce::String(openedmkick::core::clapSpreadMs(amount), 0) + " ms";
-};
-const Formatter kFormatClapDecay = [](float amount, int) {
-    return juce::String(juce::roundToInt(openedmkick::core::clapTailTimeMs(amount, 0.45f))) + " ms";
-};
-const Formatter kFormatHatDecay = [](float amount, int) {
-    const int ms = juce::roundToInt(openedmkick::core::hatDecayMs(amount));
-    return ms < 40 ? juce::String("Closed ") + juce::String(ms) + " ms" : juce::String(ms) + " ms";
-};
-const Formatter kFormatHighPass = [](float hz, int) {
-    return hz <= 20.5f ? juce::String("Off") : formatHz(hz);
-};
-const Formatter kFormatLowPass = [](float hz, int) {
-    return hz >= 19900.0f ? juce::String("Off") : formatHz(hz);
-};
+const Formatter kFormatHighPass = [](float hz, int) { return hz <= 20.5f ? juce::String("Off") : formatHz(hz); };
+const Formatter kFormatLowPass = [](float hz, int) { return hz >= 19900.0f ? juce::String("Off") : formatHz(hz); };
 
 juce::NormalisableRange<float> skewedRange(float min, float max, float centre) {
     juce::NormalisableRange<float> range(min, max);
@@ -63,149 +33,104 @@ juce::NormalisableRange<float> skewedRange(float min, float max, float centre) {
     return range;
 }
 
-void addFloat(
-    Layout& layout,
-    const juce::String& id,
-    const juce::String& name,
-    juce::NormalisableRange<float> range,
-    float defaultValue,
-    const Formatter& formatter,
-    int version = kVersion) {
+void addFloat(Layout& layout, const juce::String& id, const juce::String& name,
+              juce::NormalisableRange<float> range, float defaultValue, const Formatter& formatter,
+              int version = kVersion) {
     layout.add(std::make_unique<juce::AudioParameterFloat>(
-        juce::ParameterID{ id, version },
-        name,
-        range,
-        defaultValue,
-        Attributes().withStringFromValueFunction(formatter)));
+        juce::ParameterID{ id, version }, name, range, defaultValue,
+        juce::AudioParameterFloatAttributes().withStringFromValueFunction(formatter)));
 }
 
-void addChoice(
-    Layout& layout,
-    const juce::String& id,
-    const juce::String& name,
-    const juce::StringArray& choices,
-    int defaultIndex,
-    int version = kVersion) {
+void addChoice(Layout& layout, const juce::String& id, const juce::String& name,
+               const juce::StringArray& choices, int defaultIndex, int version = kVersion) {
     layout.add(std::make_unique<juce::AudioParameterChoice>(
-        juce::ParameterID{ id, version },
-        name,
-        choices,
-        defaultIndex));
+        juce::ParameterID{ id, version }, name, choices, defaultIndex));
 }
 
 void addBool(Layout& layout, const juce::String& id, const juce::String& name, bool defaultValue) {
     layout.add(std::make_unique<juce::AudioParameterBool>(
-        juce::ParameterID{ id, kVersion },
-        name,
-        defaultValue));
+        juce::ParameterID{ id, kVersion }, name, defaultValue));
 }
 
 } // namespace
 
 juce::String autoSlotId(int slot, const juce::String& baseId) {
-    if (slot <= 0) {
-        return baseId;
-    }
+    if (slot <= 0) return baseId;
     const auto slotChar = static_cast<juce::juce_wchar>('a' + std::clamp(slot, 0, 3));
     return "auto_" + juce::String::charToString(slotChar) + "_" + baseId.substring(5);
 }
 
 double beatsPerBarForSignature(int index) noexcept {
-    const auto safeIndex = static_cast<size_t>(
-        std::clamp(index, 0, static_cast<int>(kTimeSignatures.size()) - 1));
+    const auto safeIndex = static_cast<size_t>(std::clamp(index, 0, static_cast<int>(kTimeSignatures.size()) - 1));
     const auto [numerator, denominator] = kTimeSignatures[safeIndex];
     return static_cast<double>(numerator) * (4.0 / static_cast<double>(denominator));
 }
 
 juce::String formatHz(float hz) {
-    if (hz >= 1000.0f) {
-        return juce::String(hz / 1000.0f, 2) + " kHz";
-    }
+    if (!std::isfinite(hz)) return "0 Hz";
+    if (hz >= 1000.0f) return juce::String(hz / 1000.0f, 2) + " kHz";
     return (hz < 100.0f ? juce::String(hz, 1) : juce::String(juce::roundToInt(hz))) + " Hz";
 }
 
 juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout() {
     Layout layout;
-
-    const juce::StringArray notes{
-        "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"
-    };
-    const juce::StringArray octaves{ "0 Sub", "1 Club", "2 Punch" };
-    const juce::StringArray barChoices{
-        "1 Bar", "2 Bars", "4 Bars", "8 Bars", "16 Bars", "32 Bars", "64 Bars"
-    };
+    const juce::StringArray barChoices{ "1 Bar", "2 Bars", "4 Bars", "8 Bars", "16 Bars", "32 Bars", "64 Bars" };
     const juce::StringArray gridChoices{ "1/4", "1/8", "1/16", "1/32", "1/64" };
     const juce::StringArray syncDivisions{ "1/4", "1/8", "1/16", "1/32", "1/64" };
-    const juce::StringArray reverseModes{
-        "Off", "Beat End (Sync)", "Beat 4 Auto", "1/2 Beat", "1/4 Beat"
-    };
-
+    const juce::StringArray reverseModes{ "Off", "Beat End (Sync)", "Beat 4 Auto", "1/2 Beat", "1/4 Beat" };
     juce::StringArray fillChoices;
     std::ranges::for_each(core::kFillPresetNames, [&](std::string_view name) {
         fillChoices.add(juce::String(name.data(), name.size()));
     });
 
-    // Kick drum synthesis & 12-note tuning
-    addChoice(layout, kNote, "Kick Note", notes, 5); // Default F
-    addChoice(layout, kMidiMode, "Trigger", { "Fixed", "Note" }, 0);
-    addChoice(layout, kOctave, "Kick Octave", octaves, 1);
-    addFloat(layout, kFineTune, "Fine Tune", { -50.0f, 50.0f }, 0.0f, kFormatCents);
-    addFloat(layout, kStartPitch, "Start Pitch", skewedRange(100.0f, 2500.0f, 450.0f), 420.0f, kFormatHz);
-    addFloat(layout, kPitchDecay, "Pitch Decay", skewedRange(5.0f, 250.0f, 45.0f), 42.0f, kFormatMs);
-    addFloat(layout, kPitchCurve, "Pitch Curve", { -1.0f, 1.0f }, 0.25f, kFormatBipolar);
-    addFloat(layout, kTailLength, "Tail Length", skewedRange(30.0f, 1200.0f, 320.0f), 380.0f, kFormatMs);
-    addFloat(layout, kTailCurve, "Tail Curve", { -1.0f, 1.0f }, 0.15f, kFormatBipolar);
-    addFloat(layout, kSubDrive, "Sub Drive", { 0.0f, 1.0f }, 0.25f, kFormatPercent);
-    addFloat(layout, kClickLevel, "Click Level", { 0.0f, 1.0f }, 0.35f, kFormatPercent);
-    addFloat(layout, kClickFreq, "Click Freq", skewedRange(500.0f, 10000.0f, 2500.0f), 2800.0f, kFormatHz);
-    addFloat(layout, kPunch, "Punch", { 0.0f, 1.0f }, 0.45f, kFormatPercent);
-    addFloat(layout, kSnareLevel, "Snare Level", { 0.0f, 1.0f }, 0.0f, kFormatPercent);
-    addFloat(layout, kSnareTone, "Snare Tone", { 0.0f, 1.0f }, 0.55f, kFormatPercent);
-    addFloat(layout, kSnareDecay, "Snare Decay", { 0.0f, 1.0f }, 0.4f, kFormatSnareDecay);
-    addFloat(layout, kClapLevel, "Clap Level", { 0.0f, 1.0f }, 0.0f, kFormatPercent);
-    addFloat(layout, kClapSpread, "Clap Spread", { 0.0f, 1.0f }, 0.45f, kFormatClapSpread);
-    addFloat(layout, kClapTone, "Clap Tone", { 0.0f, 1.0f }, 0.6f, kFormatPercent);
-    addFloat(layout, kClapDecay, "Clap Decay", { 0.0f, 1.0f }, 0.35f, kFormatClapDecay);
-    addFloat(layout, kHatLevel, "Hat Level", { 0.0f, 1.0f }, 0.0f, kFormatPercent);
-    addFloat(layout, kHatTone, "Hat Tone", { 0.0f, 1.0f }, 0.7f, kFormatPercent);
-    addFloat(layout, kHatDecay, "Hat Decay", { 0.0f, 1.0f }, 0.25f, kFormatHatDecay);
-    addFloat(layout, kBodyTone, "Body Tone", { 0.0f, 1.0f }, 0.65f, kFormatPercent);
-    addFloat(layout, kAmpAttack, "Envelope Attack", { 0.05f, 20.0f }, 0.35f, kFormatMs);
-    addFloat(layout, kAmpDecay, "Envelope Decay", { 1.0f, 600.0f }, 72.0f, kFormatMs);
-    addFloat(layout, kAmpSustain, "Envelope Sustain", { 0.0f, 1.0f }, 0.7f, kFormatPercent);
-    addFloat(layout, kAmpRelease, "Envelope Release", { 5.0f, 800.0f }, 180.0f, kFormatMs);
-    addBool(layout, kLockIn, "Lock In (Cached WAV)", false);
+    addFloat(layout, kSweepOctaves, "Sweep", { 0.0f, 6.0f }, 2.4f, kFormatOctaves);
+    addFloat(layout, kSweepMs, "Sweep Time", skewedRange(5.0f, 400.0f, 70.0f), 70.0f, kFormatMs);
+    addFloat(layout, kSweepShape, "Sweep Shape", { -1.0f, 1.0f }, 0.55f, kFormatBipolar);
+    addFloat(layout, kSnapOctaves, "Snap", { 0.0f, 5.0f }, 2.0f, kFormatOctaves);
+    addFloat(layout, kSnapMs, "Snap Time", skewedRange(0.2f, 12.0f, 2.0f), 2.0f, kFormatMs);
+    addFloat(layout, kBodyTone, "Harmonics", { 0.0f, 1.0f }, 0.65f, kFormatPercent);
+    addFloat(layout, kBodyDrive, "Body Drive", { 0.0f, 1.0f }, 0.55f, kFormatPercent);
+    addChoice(layout, kSaturation, "Saturation", { "Warm", "Tube", "Crunch", "Fold" }, 0);
+    addFloat(layout, kKnockHz, "Knock Frequency", skewedRange(60.0f, 800.0f, 180.0f), 180.0f, kFormatHz);
+    addFloat(layout, kKnockDb, "Knock", { 0.0f, 18.0f }, 6.0f, kFormatDb);
+    addFloat(layout, kGrit, "Tail Grit", { 0.0f, 1.0f }, 0.35f, kFormatPercent);
+    addFloat(layout, kToneHz, "Body Tone", skewedRange(300.0f, 20000.0f, 9000.0f), 9000.0f, kFormatHz);
+    addFloat(layout, kSubLevel, "Sub", { 0.0f, 1.0f }, 0.35f, kFormatPercent);
+    addFloat(layout, kStartPhase, "Start Phase", { 0.0f, 1.0f }, 0.5f, kFormatPercent);
+    addChoice(layout, kClickType, "Transient Type", { "Beater", "Noise", "Tick", "Analog" }, 0);
+    addFloat(layout, kClickLevel, "Transient", { 0.0f, 1.0f }, 0.45f, kFormatPercent);
+    addFloat(layout, kClickHz, "Transient Frequency", skewedRange(500.0f, 14000.0f, 3500.0f), 3500.0f, kFormatHz);
+    addFloat(layout, kClickMs, "Transient Length", skewedRange(0.5f, 40.0f, 6.0f), 6.0f, kFormatMs);
+    addFloat(layout, kAttackMs, "Attack", { 0.05f, 10.0f }, 0.15f, kFormatMs);
+    addFloat(layout, kHoldMs, "Hold", { 0.0f, 400.0f }, 45.0f, kFormatMs);
+    addFloat(layout, kDecayMs, "Decay", skewedRange(1.0f, 1500.0f, 300.0f), 300.0f, kFormatMs);
+    addFloat(layout, kDecayShape, "Decay Shape", { -1.0f, 1.0f }, 0.5f, kFormatBipolar);
+    addFloat(layout, kLowCutHz, "Low Cut", skewedRange(10.0f, 90.0f, 25.0f), 25.0f, kFormatHz);
+    addFloat(layout, kClip, "Clip", { 0.0f, 1.0f }, 0.45f, kFormatPercent);
 
-    // Transport & Clock Sync
     addBool(layout, kClockSync, "Host Sync", true);
     addFloat(layout, kTempoBpm, "Tempo", { 40.0f, 240.0f }, 128.0f, kFormatBpm);
     addChoice(layout, kTimeSignature, "Time Signature",
               { "4/4", "3/4", "2/4", "5/4", "6/4", "6/8", "7/8", "9/8", "12/8" }, 0);
-
-    // A/B/C/D Auto Mode & 1/64 Piano Roll
     addBool(layout, kAutoEnabled, "Auto Mode On", false);
     addBool(layout, kAutoBypass, "Auto Bypass", false);
     addChoice(layout, kAutoSlot, "Auto Mode", { "A", "B", "C", "D" }, 0);
-
     std::ranges::for_each(std::views::iota(0, core::kNumAutoSlots), [&](int slot) {
         const auto id = [slot](const char* key) { return autoSlotId(slot, key); };
         const auto prefix = "Auto " + juce::String::charToString(static_cast<juce::juce_wchar>('A' + slot)) + " ";
         const int version = slot == 0 ? 1 : 2;
-        addChoice(layout, id(kAutoBars), prefix + "Bars", barChoices, 2, version); // default 4 Bars
+        addChoice(layout, id(kAutoBars), prefix + "Bars", barChoices, 2, version);
         addChoice(layout, id(kAutoFillPreset), prefix + "Fill Preset", fillChoices, slot % core::kNumFillPresets, version);
-        addChoice(layout, id(kAutoGrid), prefix + "Grid", gridChoices, 4, version); // default 1/64
+        addChoice(layout, id(kAutoGrid), prefix + "Grid", gridChoices, 4, version);
         addFloat(layout, id(kAutoTailShorten), prefix + "Tail Shortener", { 0.0f, 1.0f }, 0.65f, kFormatPercent, version);
-        addFloat(layout, id(kAutoPitchRise), prefix + "Pitch Rise", { 0.0f, 12.0f }, 0.0f, kFormatSemitones, version);
         addFloat(layout, id(kAutoCrushSweep), prefix + "Crush Ramp", { 0.0f, 1.0f }, 0.0f, kFormatPercent, version);
     });
 
-    // Host-Synced Effects & Output
     addChoice(layout, kReverseMode, "Reverse Sync Mode", reverseModes, 0);
     addFloat(layout, kReverseMix, "Reverse Mix", { 0.0f, 1.0f }, 1.0f, kFormatPercent);
     addFloat(layout, kDrive, "Drive", { 0.0f, 1.0f }, 0.15f, kFormatPercent);
     addFloat(layout, kCrushRate, "Crush Rate", skewedRange(200.0f, 48000.0f, 4000.0f), 8000.0f, kFormatHz);
-    layout.add(std::make_unique<juce::AudioParameterInt>(
-        juce::ParameterID{ kCrushBits, kVersion }, "Crush Bits", 1, 16, 8));
+    layout.add(std::make_unique<juce::AudioParameterInt>(juce::ParameterID{ kCrushBits, kVersion }, "Crush Bits", 1, 16, 8));
     addFloat(layout, kCrushMix, "Crush Mix", { 0.0f, 1.0f }, 0.0f, kFormatPercent);
     addChoice(layout, kStutterRate, "Stutter Rate", syncDivisions, 2);
     addFloat(layout, kStutterMix, "Stutter Mix", { 0.0f, 1.0f }, 0.0f, kFormatPercent);
@@ -219,7 +144,6 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout() {
     addBool(layout, kLimiter, "Limiter", true);
     addFloat(layout, kCeiling, "Ceiling", { -18.0f, 0.0f }, -0.3f, kFormatDb);
     addBool(layout, kMasterBypass, "Master Bypass", false);
-
     return layout;
 }
 

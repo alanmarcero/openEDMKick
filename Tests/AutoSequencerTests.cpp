@@ -21,17 +21,17 @@ TEST_CASE("All 28 trance fills generate valid patterns across 1 to 64 bars", "[a
     });
 }
 
-TEST_CASE("V2 trance fill names and patterns are distinct", "[auto]") {
+TEST_CASE("V3 trance fill names and patterns are distinct", "[auto]") {
     REQUIRE(core::kNumFillPresets == 28);
     REQUIRE(core::kFillPresetNames.size() == 28u);
-    REQUIRE(core::kFillPresetNames[0] == "Sunrise Four-Point Lift");
-    REQUIRE(core::kFillPresetNames[11] == "Staccato Drop Stamp");
-    REQUIRE(core::kFillPresetNames[12] == "Psy Grid Vector");
-    REQUIRE(core::kFillPresetNames[15] == "Breakdown To Bright");
-    REQUIRE(core::kFillPresetNames[16] == "Euphoric Long-Arc Build");
-    REQUIRE(core::kFillPresetNames[17] == "Festival Ladder Climb");
-    REQUIRE(core::kFillPresetNames[18] == "Forest Machine Pulse");
-    REQUIRE(core::kFillPresetNames[27] == "Final Beacon Reverse");
+    REQUIRE(core::kFillPresetNames[0] == "Ion Drive Four");
+    REQUIRE(core::kFillPresetNames[11] == "Pulse Stamp");
+    REQUIRE(core::kFillPresetNames[12] == "Helix Grid");
+    REQUIRE(core::kFillPresetNames[15] == "Dawn Breaker");
+    REQUIRE(core::kFillPresetNames[16] == "Luminous Arc");
+    REQUIRE(core::kFillPresetNames[17] == "Front Row Ladder");
+    REQUIRE(core::kFillPresetNames[18] == "Carbon Pulse");
+    REQUIRE(core::kFillPresetNames[27] == "Final Orbit Reverse");
 
     const auto floor = core::buildPresetPattern(0, 1);
     REQUIRE_FALSE(floor.empty());
@@ -43,7 +43,6 @@ TEST_CASE("V2 trance fill names and patterns are distinct", "[auto]") {
         for (const auto& note : core::buildPresetPattern(preset, 4)) {
             text += std::to_string(note.step64);
             text += ":";
-            text += std::to_string(note.semitoneOffset);
             text += note.reverseCue ? "r;" : "f;";
         }
         return text;
@@ -80,20 +79,14 @@ TEST_CASE("Auto tail shortener tightens kick tail on rapid notes to prevent mud"
     REQUIRE(shortened >= 15.0f);
 }
 
-TEST_CASE("Piano roll note toggle adds, updates pitch row, and removes notes at 1/64 resolution", "[auto]") {
+TEST_CASE("Piano roll note toggle adds and removes kick hits at 1/64 resolution", "[auto]") {
     core::AutoSequencer seq;
     seq.setNotesForSlot(0, {});
     REQUIRE(seq.notesForSlot(0).empty());
 
-    REQUIRE(seq.toggleNoteAt(0, 63, 1, 0, 1));
+    REQUIRE(seq.toggleNoteAt(0, 63, 1, 1));
     REQUIRE(seq.notesForSlot(0).size() == 1u);
     REQUIRE(seq.notesForSlot(0).front().step64 == 63);
-    REQUIRE(seq.notesForSlot(0).front().semitoneOffset == 0);
-
-    REQUIRE(seq.toggleNoteAt(0, 63, 1, 7, 1));
-    REQUIRE(seq.notesForSlot(0).size() == 1u);
-    REQUIRE(seq.notesForSlot(0).front().semitoneOffset == 7);
-
-    REQUIRE(!seq.toggleNoteAt(0, 63, 1, 7, 1));
+    REQUIRE(!seq.toggleNoteAt(0, 63, 1, 1));
     REQUIRE(seq.notesForSlot(0).empty());
 }

@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(OpenKicker VERSION 2.2.0 LANGUAGES C CXX)
+project(OpenKicker VERSION 3.0.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -16,6 +16,7 @@ option(OEK_BUILD_TESTS "Build the unit tests" ON)
 include(FetchContent)
 
 add_library(openedmkick_core STATIC
+    Source/Core/KickDsp.cpp
     Source/Core/KickSynth.cpp
     Source/Core/AutoSequencer.cpp
     Source/Core/Effects.cpp
@@ -29,12 +30,6 @@ if(OEK_BUILD_PLUGIN)
         GIT_TAG 8.0.9
         GIT_SHALLOW TRUE)
     FetchContent_MakeAvailable(juce)
-
-    juce_add_binary_data(KickAssets SOURCES
-        assets/kicking-mule.png
-        assets/analog-cyber-faceplate.png
-        assets/cyber-kick-mascot.png)
-    set_target_properties(KickAssets PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
     juce_add_plugin(OpenEDMKick
         VERSION "${PROJECT_VERSION}"
@@ -75,7 +70,6 @@ if(OEK_BUILD_PLUGIN)
     target_link_libraries(OpenEDMKick
         PRIVATE
             openedmkick_core
-            KickAssets
             juce::juce_audio_processors
             juce::juce_audio_utils
             juce::juce_gui_basics
@@ -109,7 +103,7 @@ if(OEK_BUILD_TESTS)
         add_executable(openedmkick_plugin_tests Tests/PluginTests.cpp)
         target_include_directories(openedmkick_plugin_tests PRIVATE Source/Plugin Source/Core)
         target_compile_definitions(openedmkick_plugin_tests PRIVATE $<TARGET_PROPERTY:OpenEDMKick,COMPILE_DEFINITIONS>)
-        target_link_libraries(openedmkick_plugin_tests PRIVATE OpenEDMKick KickAssets juce::juce_audio_utils Catch2::Catch2WithMain)
+        target_link_libraries(openedmkick_plugin_tests PRIVATE OpenEDMKick juce::juce_audio_utils Catch2::Catch2WithMain)
         catch_discover_tests(openedmkick_plugin_tests)
     endif()
 endif()

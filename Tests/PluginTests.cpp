@@ -1,18 +1,19 @@
 #include "PluginEditor.h"
 #include "PluginProcessor.h"
 #include "Presets.h"
+
 #include <algorithm>
 #include <array>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 #include <cmath>
+#include <cstdlib>
 #include <ranges>
 #include <string>
 #include <vector>
 
 namespace {
-
-class TestPlayHead : public juce::AudioPlayHead {
+class TestPlayHead final : public juce::AudioPlayHead {
 public:
     bool playing = false;
 
@@ -26,114 +27,47 @@ public:
     }
 };
 
-} // namespace
-
-using Catch::Matchers::WithinAbs;
-
-namespace {
-
 void setParam(OpenEdmKickProcessor& processor, const juce::String& id, float value) {
     auto* parameter = processor.parameters.getParameter(id);
     REQUIRE(parameter != nullptr);
     parameter->setValueNotifyingHost(parameter->convertTo0to1(value));
 }
-
 } // namespace
 
-TEST_CASE("A/B/C/D Auto Mode slots store independent bar counts, fill presets, and tail shorteners", "[plugin]") {
+using Catch::Matchers::WithinAbs;
+
+TEST_CASE("A/B/C/D Auto Mode slots store independent bar counts, fills, and tail trims", "[plugin]") {
     OpenEdmKickProcessor processor;
     auto* selector = processor.parameters.getParameter("auto_slot");
     REQUIRE(selector != nullptr);
     REQUIRE(selector->isAutomatable());
     REQUIRE(selector->getNumSteps() == 4);
 
-    setParam(processor, "auto_on", 1.0f);
     const std::array<juce::String, 4> prefixes{ "auto_", "auto_b_", "auto_c_", "auto_d_" };
     std::ranges::for_each(std::views::iota(0, 4), [&](int slot) {
-        const auto& p = prefixes[static_cast<size_t>(slot)];
-        setParam(processor, p + "bars", static_cast<float>(slot + 1));
-        setParam(processor, p + "fill", static_cast<float>(slot * 2 + 1));
-        setParam(processor, p + "tail_shorten", 0.2f * static_cast<float>(slot + 1));
+        const auto& prefix = prefixes[static_cast<size_t>(slot)];
+        setParam(processor, prefix + "bars", static_cast<float>(slot + 1));
+        setParam(processor, prefix + "fill", static_cast<float>(slot * 2 + 1));
+        setParam(processor, prefix + "tail_shorten", 0.2f * static_cast<float>(slot + 1));
     });
 
     std::ranges::for_each(std::array{ 3, 0, 2, 1 }, [&](int slot) {
         setParam(processor, "auto_slot", static_cast<float>(slot));
-        const auto s = processor.currentAutoSlotSettings();
-        REQUIRE(s.bars == openedmkick::core::kAutoBarCounts[static_cast<size_t>(slot + 1)]);
-        REQUIRE(s.fillPreset == slot * 2 + 1);
-        REQUIRE_THAT(s.tailShorten, WithinAbs(0.2f * static_cast<float>(slot + 1), 0.001f));
+        const auto settings = processor.currentAutoSlotSettings();
+        REQUIRE(settings.bars == openedmkick::core::kAutoBarCounts[static_cast<size_t>(slot + 1)]);
+        REQUIRE(settings.fillPreset == slot * 2 + 1);
+        REQUIRE_THAT(settings.tailShorten, WithinAbs(0.2f * static_cast<float>(slot + 1), 0.001f));
     });
 
     juce::MemoryBlock saved;
     processor.getStateInformation(saved);
     OpenEdmKickProcessor restored;
     restored.setStateInformation(saved.getData(), static_cast<int>(saved.getSize()));
-
-    std::ranges::for_each(std::views::iota(0, 4), [&](int slot) {
+    for (int slot = 0; slot < 4; ++slot) {
         setParam(restored, "auto_slot", static_cast<float>(slot));
-        REQUIRE_THAT(restored.currentAutoSlotSettings().tailShorten, WithinAbs(0.2f * static_cast<float>(slot + 1), 0.001f));
-    });
-}
-
-TEST_CASE("Lock In caches WAV in processor state and recalls locked WAV across sessions", "[plugin]") {
-    OpenEdmKickProcessor processor;
-    processor.prepareToPlay(48000.0, 512);
-    setParam(processor, "note", 7.0f); // G1
-    setParam(processor, "lock_in", 1.0f);
-
-    juce::AudioBuffer<float> buffer(2, 512);
-    juce::MidiBuffer midi;
-    midi.addEvent(juce::MidiMessage::noteOn(1, 60, 1.0f), 0);
-    processor.processBlock(buffer, midi);
-
-    REQUIRE(processor.isKickLockedIn());
-    const float lockedFirstSample = buffer.getSample(0, 10);
-
-    // Mutating synth parameters while Locked In must not change the cached WAV output
-    setParam(processor, "note", 0.0f);
-    setParam(processor, "start_pitch", 2200.0f);
-    setParam(processor, "tail_length", 50.0f);
-
-    juce::MemoryBlock stateData;
-    processor.getStateInformation(stateData);
-
-    OpenEdmKickProcessor restored;
-    restored.prepareToPlay(48000.0, 512);
-    restored.setStateInformation(stateData.getData(), static_cast<int>(stateData.getSize()));
-    REQUIRE(restored.isKickLockedIn());
-
-    juce::AudioBuffer<float> restoredBuf(2, 512);
-    restored.processBlock(restoredBuf, midi);
-    REQUIRE_THAT(restoredBuf.getSample(0, 10), WithinAbs(lockedFirstSample, 0.001f));
-}
-
-TEST_CASE("Lock In keeps the frozen WAV when the host sample rate changes", "[plugin]") {
-    OpenEdmKickProcessor processor;
-    processor.prepareToPlay(48000.0, 256);
-    setParam(processor, "note", 4.0f);
-    setParam(processor, "tail_length", 240.0f);
-    setParam(processor, "lock_in", 1.0f);
-
-    juce::AudioBuffer<float> buffer(2, 256);
-    juce::MidiBuffer midi;
-    midi.addEvent(juce::MidiMessage::noteOn(1, 60, 1.0f), 0);
-    processor.processBlock(buffer, midi);
-    REQUIRE(processor.isKickLockedIn());
-    const auto frozen = processor.previewKickWaveform();
-    REQUIRE(frozen.size() == 11520u);
-
-    processor.prepareToPlay(96000.0, 256);
-    const auto afterRateChange = processor.previewKickWaveform();
-    REQUIRE(processor.isKickLockedIn());
-    REQUIRE(afterRateChange.size() == frozen.size());
-    REQUIRE_THAT(afterRateChange[400], WithinAbs(frozen[400], 1.0e-6f));
-
-    juce::AudioBuffer<float> fast(2, 512);
-    processor.processBlock(fast, midi);
-    std::ranges::for_each(std::views::iota(0, fast.getNumSamples()), [&](int i) {
-        REQUIRE(std::isfinite(fast.getSample(0, i)));
-        REQUIRE(std::isfinite(fast.getSample(1, i)));
-    });
+        REQUIRE_THAT(restored.currentAutoSlotSettings().tailShorten,
+                     WithinAbs(0.2f * static_cast<float>(slot + 1), 0.001f));
+    }
 }
 
 TEST_CASE("Host stop silences Auto Mode and host play resumes it", "[plugin]") {
@@ -150,158 +84,51 @@ TEST_CASE("Host stop silences Auto Mode and host play resumes it", "[plugin]") {
     juce::MidiBuffer midi;
     processor.processBlock(buffer, midi);
     float stoppedEnergy = 0.0f;
-    std::ranges::for_each(std::views::iota(0, buffer.getNumSamples()), [&](int i) {
-        stoppedEnergy += std::abs(buffer.getSample(0, i));
-    });
+    for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
+        stoppedEnergy += std::abs(buffer.getSample(0, sample));
     REQUIRE_THAT(stoppedEnergy, WithinAbs(0.0f, 1.0e-5f));
 
     playHead.playing = true;
     processor.processBlock(buffer, midi);
     float playingEnergy = 0.0f;
-    std::ranges::for_each(std::views::iota(0, buffer.getNumSamples()), [&](int i) {
-        playingEnergy += std::abs(buffer.getSample(0, i));
-    });
+    for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
+        playingEnergy += std::abs(buffer.getSample(0, sample));
     REQUIRE(playingEnergy > 5.0f);
     processor.setPlayHead(nullptr);
 }
 
-TEST_CASE("Editor renders 12-note tuner, kicking mule stage, 1/64 piano roll, and captures native screenshot", "[plugin][ui]") {
+TEST_CASE("Editor shows the new sound pages and current MIDI note", "[plugin][ui]") {
 #if JUCE_LINUX
     if (std::getenv("DISPLAY") == nullptr) SKIP("Native editor requires a display");
 #endif
     juce::ScopedJuceInitialiser_GUI gui;
     OpenEdmKickProcessor processor;
     processor.prepareToPlay(48000.0, 512);
-    processor.setCurrentProgram(12); // New trance factory program
-    setParam(processor, "lock_in", 1.0f);
-    setParam(processor, "reverse_mode", 2.0f); // Beat 4 Auto
-
-    juce::AudioBuffer<float> warmBuffer(2, 512);
+    juce::AudioBuffer<float> buffer(2, 512);
     juce::MidiBuffer midi;
-    midi.addEvent(juce::MidiMessage::noteOn(1, 60, 1.0f), 0);
-    processor.processBlock(warmBuffer, midi);
+    midi.addEvent(juce::MidiMessage::noteOn(1, 69, 1.0f), 0);
+    processor.processBlock(buffer, midi);
 
     std::unique_ptr<juce::AudioProcessorEditor> editor(processor.createEditor());
     REQUIRE(editor != nullptr);
     REQUIRE(editor->getWidth() == 1100);
-    REQUIRE(editor->getHeight() == 972);
-
+    REQUIRE(editor->getHeight() == 940);
     auto* kickEditor = dynamic_cast<OpenEdmKickEditor*>(editor.get());
     REQUIRE(kickEditor != nullptr);
+    REQUIRE(processor.currentMidiNote() == 69);
+    REQUIRE_THAT(processor.displayMidiHz.load(), WithinAbs(440.0f, 0.001f));
     REQUIRE_FALSE(kickEditor->isAdvancedView());
     kickEditor->setAdvancedView(true);
     REQUIRE(kickEditor->isAdvancedView());
     kickEditor->setAdvancedView(false);
     REQUIRE_FALSE(kickEditor->isAdvancedView());
-
-    setParam(processor, "auto_slot", 2.0f);
-    REQUIRE(processor.currentAutoSlot() == 2);
-
-    if (const char* capture = std::getenv("OEK_CAPTURE")) {
-        setParam(processor, "auto_slot", 0.0f);
-        setParam(processor, "auto_bars", 0.0f); // 1 Bar view so 1/8, 1/16, 1/32, and 1/64 steps are crystal clear
-        setParam(processor, "auto_fill", 2.0f); // Uplift Sixteenth Surge
-        setParam(processor, "crush_mix", 0.45f);
-        setParam(processor, "stutter_mix", 0.35f);
-        juce::AudioBuffer<float> renderBuf(2, 64);
-        processor.processBlock(renderBuf, midi);
-        processor.displayAutoPhase.store(0.84f);
-        processor.displayPeak.store(0.92f);
-        const auto snapshot = editor->createComponentSnapshot(editor->getLocalBounds(), true, 1.0f);
-        juce::FileOutputStream stream{ juce::File(capture) };
-        REQUIRE(stream.openedOk());
-        REQUIRE(stream.setPosition(0));
-        REQUIRE(stream.truncate().wasOk());
-        REQUIRE(juce::PNGImageFormat().writeImageToStream(snapshot, stream));
-    }
-    if (const char* captureRev = std::getenv("OEK_CAPTURE_REVERSE")) {
-        processor.setCurrentProgram(4); // Rise Through Light
-        setParam(processor, "auto_on", 1.0f);
-        setParam(processor, "auto_slot", 1.0f);
-        setParam(processor, "auto_b_bars", 1.0f); // 2 Bars
-        setParam(processor, "auto_b_fill", 8.0f); // Last-Light Reverse Pickup
-        setParam(processor, "reverse_mode", 2.0f);
-        setParam(processor, "crush_mix", 0.38f);
-        setParam(processor, "gate_mix", 0.42f);
-        juce::AudioBuffer<float> renderBuf(2, 64);
-        processor.processBlock(renderBuf, midi);
-        processor.displayAutoPhase.store(0.42f);
-        processor.displayPeak.store(0.88f);
-        processor.displayReversing.store(true);
-        const auto snapshot = editor->createComponentSnapshot(editor->getLocalBounds(), true, 1.0f);
-        juce::FileOutputStream stream{ juce::File(captureRev) };
-        REQUIRE(stream.openedOk());
-        REQUIRE(stream.setPosition(0));
-        REQUIRE(stream.truncate().wasOk());
-        REQUIRE(juce::PNGImageFormat().writeImageToStream(snapshot, stream));
-    }
-    if (const char* captureLayers = std::getenv("OEK_CAPTURE_LAYERS")) {
-        kickEditor->setAdvancedView(true);
-        const auto& programs = openedmkick::presets::factoryPresets();
-        int stackIndex = 0;
-        for (int i = 0; i < static_cast<int>(programs.size()); ++i) {
-            if (std::string(programs[static_cast<size_t>(i)].name) == "Steel Anthem 142") {
-                stackIndex = i;
-            }
-        }
-        processor.setCurrentProgram(stackIndex);
-        setParam(processor, "auto_on", 1.0f);
-        setParam(processor, "lock_in", 0.0f);
-        setParam(processor, "snare_level", 0.55f);
-        setParam(processor, "clap_level", 0.42f);
-        setParam(processor, "hat_level", 0.38f);
-        juce::AudioBuffer<float> renderBuf(2, 64);
-        processor.processBlock(renderBuf, midi);
-        processor.displayPeak.store(0.72f);
-        processor.displayReversing.store(false);
-        const auto snapshot = editor->createComponentSnapshot(editor->getLocalBounds(), true, 1.0f);
-        juce::FileOutputStream stream{ juce::File(captureLayers) };
-        REQUIRE(stream.openedOk());
-        REQUIRE(stream.setPosition(0));
-        REQUIRE(stream.truncate().wasOk());
-        REQUIRE(juce::PNGImageFormat().writeImageToStream(snapshot, stream));
-    }
 }
 
-TEST_CASE("Timbre layer parameters default off and survive the session", "[plugin]") {
-    OpenEdmKickProcessor processor;
-    REQUIRE_THAT(processor.currentSynthSettings().snareLevel, WithinAbs(0.0f, 1.0e-6f));
-    REQUIRE_THAT(processor.currentSynthSettings().clapLevel, WithinAbs(0.0f, 1.0e-6f));
-    REQUIRE_THAT(processor.currentSynthSettings().hatLevel, WithinAbs(0.0f, 1.0e-6f));
-    REQUIRE_THAT(processor.parameters.getRawParameterValue("hp_cutoff")->load(), WithinAbs(20.0f, 0.02f));
-    REQUIRE_THAT(processor.parameters.getRawParameterValue("lp_cutoff")->load(), WithinAbs(20000.0f, 1.0f));
-
-    setParam(processor, "snare_level", 0.4f);
-    setParam(processor, "clap_spread", 0.8f);
-    setParam(processor, "hat_decay", 0.66f);
-    setParam(processor, "clap_decay", 0.82f);
-    setParam(processor, "snare_decay", 0.22f);
-    setParam(processor, "hp_cutoff", 240.0f);
-    setParam(processor, "lp_cutoff", 3200.0f);
-    juce::MemoryBlock saved;
-    processor.getStateInformation(saved);
-    OpenEdmKickProcessor restored;
-    restored.setStateInformation(saved.getData(), static_cast<int>(saved.getSize()));
-    REQUIRE_THAT(restored.currentSynthSettings().snareLevel, WithinAbs(0.4f, 0.002f));
-    REQUIRE_THAT(restored.currentSynthSettings().clapSpread, WithinAbs(0.8f, 0.002f));
-    REQUIRE_THAT(restored.currentSynthSettings().hatDecay, WithinAbs(0.66f, 0.002f));
-    REQUIRE_THAT(restored.currentSynthSettings().clapDecay, WithinAbs(0.82f, 0.002f));
-    REQUIRE_THAT(restored.currentSynthSettings().snareDecay, WithinAbs(0.22f, 0.002f));
-    REQUIRE_THAT(restored.parameters.getRawParameterValue("hp_cutoff")->load(), WithinAbs(240.0f, 1.0f));
-    REQUIRE_THAT(restored.parameters.getRawParameterValue("lp_cutoff")->load(), WithinAbs(3200.0f, 20.0f));
-
-    restored.setCurrentProgram(0);
-    REQUIRE_THAT(restored.currentSynthSettings().snareLevel, WithinAbs(0.0f, 0.002f));
-    REQUIRE_THAT(restored.currentSynthSettings().clapLevel, WithinAbs(0.0f, 0.002f));
-    REQUIRE_THAT(restored.currentSynthSettings().hatLevel, WithinAbs(0.0f, 0.002f));
-}
-
-TEST_CASE("MIDI note-on velocity zero and other channels follow the trigger rules", "[plugin][midi]") {
+TEST_CASE("MIDI input tracks pitch and octave, including notes from other channels", "[plugin][midi]") {
     OpenEdmKickProcessor processor;
     processor.prepareToPlay(48000.0, 512);
     setParam(processor, "drive", 0.0f);
     setParam(processor, "limiter", 0.0f);
-    REQUIRE(processor.parameters.getParameter("midi_mode")->getValue() == 0.0f);
 
     juce::AudioBuffer<float> buffer(2, 512);
     juce::MidiBuffer midi;
@@ -309,160 +136,71 @@ TEST_CASE("MIDI note-on velocity zero and other channels follow the trigger rule
     midi.addEvent(juce::MidiMessage::noteOff(3, 60), 20);
     processor.processBlock(buffer, midi);
     float silent = 0.0f;
-    std::ranges::for_each(std::views::iota(0, buffer.getNumSamples()), [&](int i) {
-        silent += std::abs(buffer.getSample(0, i));
-    });
+    for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
+        silent += std::abs(buffer.getSample(0, sample));
     REQUIRE_THAT(silent, WithinAbs(0.0f, 1.0e-5f));
 
     midi.clear();
-    midi.addEvent(juce::MidiMessage::noteOn(5, 48, 0.9f), 16);
+    midi.addEvent(juce::MidiMessage::noteOn(5, 69, 0.9f), 16);
     processor.processBlock(buffer, midi);
     float heard = 0.0f;
-    std::ranges::for_each(std::views::iota(16, buffer.getNumSamples()), [&](int i) {
-        heard += std::abs(buffer.getSample(0, i));
-    });
+    for (int sample = 16; sample < buffer.getNumSamples(); ++sample)
+        heard += std::abs(buffer.getSample(0, sample));
     REQUIRE(heard > 1.0f);
+    REQUIRE(processor.currentMidiNote() == 69);
+    REQUIRE_THAT(processor.displayMidiHz.load(), WithinAbs(440.0f, 0.001f));
 
-    setParam(processor, "midi_mode", 1.0f);
-    juce::MemoryBlock saved;
-    processor.getStateInformation(saved);
-    OpenEdmKickProcessor restored;
-    restored.setStateInformation(saved.getData(), static_cast<int>(saved.getSize()));
-    REQUIRE(restored.parameters.getParameter("midi_mode")->getValue() > 0.5f);
-}
-
-TEST_CASE("Mule artwork kicks when a trigger arrives", "[plugin][ui][mule]") {
-#if JUCE_LINUX
-    if (std::getenv("DISPLAY") == nullptr) SKIP("Native editor requires a display");
-#endif
-    juce::ScopedJuceInitialiser_GUI gui;
-    OpenEdmKickProcessor processor;
-    processor.prepareToPlay(48000.0, 256);
-    std::unique_ptr<juce::AudioProcessorEditor> editor(processor.createEditor());
-    openedmkick::ui::MuleStagePanel* muleStage = nullptr;
-    for (int i = 0; i < editor->getNumChildComponents(); ++i) {
-        muleStage = dynamic_cast<openedmkick::ui::MuleStagePanel*>(editor->getChildComponent(i));
-        if (muleStage != nullptr) break;
-    }
-    REQUIRE(muleStage != nullptr);
-    const auto stageBounds = muleStage->getBounds();
-    const auto idle = editor->createComponentSnapshot(editor->getLocalBounds(), true, 1.0f);
-
-    juce::AudioBuffer<float> buffer(2, 256);
-    juce::MidiBuffer midi;
-    midi.addEvent(juce::MidiMessage::noteOn(1, 36, 1.0f), 0);
+    midi.clear();
+    midi.addEvent(juce::MidiMessage::noteOn(5, 57, 0.9f), 0);
     processor.processBlock(buffer, midi);
-    REQUIRE(processor.displayTriggerCount.load() == 1u);
-    juce::Thread::sleep(40);
-    juce::Timer::callPendingTimersSynchronously();
-    juce::Thread::sleep(50);
-    const auto strike = editor->createComponentSnapshot(editor->getLocalBounds(), true, 1.0f);
-
-    const int x0 = std::max(0, stageBounds.getX());
-    const int x1 = std::min(idle.getWidth(), stageBounds.getRight());
-    const int y0 = std::max(0, stageBounds.getY());
-    const int y1 = std::min(idle.getHeight(), stageBounds.getBottom());
-    int different = 0;
-    for (int y = y0; y < y1; y += 2) {
-        for (int x = x0; x < x1; x += 2) {
-            if (idle.getPixelAt(x, y) != strike.getPixelAt(x, y)) {
-                ++different;
-            }
-        }
-    }
-    REQUIRE(different > 30);
-
-    if (const char* directory = std::getenv("OEK_MULE_DIR")) {
-        const auto write = [&](const juce::Image& image, const char* name) {
-            juce::FileOutputStream stream{ juce::File(juce::String(directory) + "/" + name) };
-            REQUIRE(stream.openedOk());
-            REQUIRE(juce::PNGImageFormat().writeImageToStream(image, stream));
-        };
-        write(idle, "mule-idle.png");
-        write(strike, "mule-strike.png");
-        juce::Thread::sleep(120);
-        write(editor->createComponentSnapshot(editor->getLocalBounds(), true, 1.0f), "mule-recoil.png");
-    }
+    REQUIRE(processor.currentMidiNote() == 57);
+    REQUIRE_THAT(processor.displayMidiHz.load(), WithinAbs(220.0f, 0.001f));
 }
 
-TEST_CASE("V2 factory banks use newly authored trance names", "[plugin][presets]") {
+TEST_CASE("V3 factory bank contains the new kick and fill catalogs", "[plugin][presets]") {
     const auto& programs = openedmkick::presets::factoryPresets();
-    const auto& patterns = openedmkick::presets::fillBuildPresets();
+    const auto& fills = openedmkick::presets::fillBuildPresets();
     REQUIRE(programs.size() == 48u);
-    REQUIRE(patterns.size() == 28u);
-    REQUIRE(std::string(programs.front().name) == "Northstar 138");
-    REQUIRE(std::string(programs[31].name) == "Psy Meridian 148");
-    REQUIRE(std::string(programs.back().name) == "Final Beacon");
-    REQUIRE(std::string(patterns[0].name) == "Sunrise Four-Point Lift");
-    REQUIRE(std::string(patterns[27].name) == "Final Beacon Reverse");
+    REQUIRE(fills.size() == 28u);
+    REQUIRE(std::string(programs.front().name) == "Plasma Breaker");
+    REQUIRE(std::string(programs.back().name) == "Eventide Engine");
+    REQUIRE(std::string(fills.front().name) == "Ion Drive Four");
+    REQUIRE(std::string(fills.back().name) == "Final Orbit Reverse");
 
     OpenEdmKickProcessor processor;
     REQUIRE(processor.getNumPrograms() == static_cast<int>(programs.size()));
-    std::vector<std::string> states;
-    states.reserve(programs.size());
-    for (int i = 0; i < processor.getNumPrograms(); ++i) {
-        processor.setCurrentProgram(i);
-        juce::MemoryBlock block;
-        processor.getStateInformation(block);
-        states.emplace_back(static_cast<const char*>(block.getData()), block.getSize());
-        REQUIRE(processor.getProgramName(i) == programs[static_cast<size_t>(i)].name);
+    for (int index = 0; index < processor.getNumPrograms(); ++index) {
+        processor.setCurrentProgram(index);
+        REQUIRE(processor.getProgramName(index) == programs[static_cast<size_t>(index)].name);
     }
-    auto sorted = states;
-    std::ranges::sort(sorted);
-    REQUIRE(std::ranges::adjacent_find(sorted) == sorted.end());
 
     processor.setCurrentProgram(0);
-    REQUIRE_THAT(processor.currentSynthSettings().bodyTone, WithinAbs(0.78f, 0.02f));
-    REQUIRE_THAT(processor.currentSynthSettings().attackMs, WithinAbs(0.18f, 0.02f));
+    const auto first = processor.currentSynthSettings();
+    REQUIRE_THAT(first.bodyTone, WithinAbs(0.78f, 0.01f));
+    REQUIRE(first.clickLevel > 0.8f);
 
-    setParam(processor, "snare_decay", 0.22f);
-    setParam(processor, "hat_decay", 0.81f);
-    setParam(processor, "clap_decay", 0.9f);
-    setParam(processor, "auto_fill", 11.0f);
-    auto legacy = processor.parameters.copyState();
-    for (int i = legacy.getNumChildren() - 1; i >= 0; --i) {
-        if (legacy.getChild(i).getProperty("id").toString() == "clap_decay") {
-            legacy.removeChild(i, nullptr);
-        }
-    }
-    OpenEdmKickProcessor recalled;
-    recalled.parameters.replaceState(legacy);
-    REQUIRE_THAT(recalled.currentSynthSettings().snareDecay, WithinAbs(0.22f, 0.002f));
-    REQUIRE_THAT(recalled.currentSynthSettings().hatDecay, WithinAbs(0.81f, 0.002f));
-    REQUIRE_THAT(recalled.currentSynthSettings().clapDecay, WithinAbs(0.35f, 0.002f));
-    REQUIRE(recalled.currentAutoSlotSettings().fillPreset == 11);
-
-    setParam(processor, "auto_fill", 15.0f);
     juce::MemoryBlock saved;
     processor.getStateInformation(saved);
     OpenEdmKickProcessor restored;
     restored.setStateInformation(saved.getData(), static_cast<int>(saved.getSize()));
-    REQUIRE(restored.currentAutoSlotSettings().fillPreset == 15);
-    REQUIRE_THAT(restored.currentSynthSettings().clapDecay, WithinAbs(0.9f, 0.002f));
+    REQUIRE(restored.getCurrentProgram() == 0);
+    REQUIRE_FALSE(restored.hasRestoredCustomState());
 }
 
 TEST_CASE("All 48 trance kick presets load and report valid program names", "[plugin][presets]") {
     OpenEdmKickProcessor processor;
     const auto& presets = openedmkick::presets::factoryPresets();
-    REQUIRE(presets.size() == 48);
     REQUIRE(processor.getNumPrograms() == 48);
 
-    for (int i = 0; i < 48; ++i) {
-        REQUIRE(processor.getProgramName(i).isNotEmpty());
-        processor.setCurrentProgram(i);
-        REQUIRE(processor.getCurrentProgram() == i);
+    std::vector<std::string> names;
+    for (int index = 0; index < processor.getNumPrograms(); ++index) {
+        const auto name = processor.getProgramName(index);
+        REQUIRE(name.isNotEmpty());
+        processor.setCurrentProgram(index);
+        REQUIRE(processor.getCurrentProgram() == index);
+        names.push_back(name.toStdString());
     }
-
-    const std::array<const char*, 5> tranceKicks{{
-        "Northstar 138",
-        "Violet Horizon",
-        "Psy Meridian 148",
-        "Hard Circuit 145",
-        "Final Beacon"
-    }};
-    for (const auto* name : tranceKicks) {
-        const auto it = std::ranges::find_if(presets, [&](const auto& p) { return std::string(p.name) == name; });
-        REQUIRE(it != presets.end());
-    }
-
+    std::ranges::sort(names);
+    REQUIRE(std::ranges::adjacent_find(names) == names.end());
+    REQUIRE(presets.size() == 48u);
 }

@@ -52,12 +52,10 @@ struct EffectSettings {
 };
 
 struct EngineSettings {
-    KickSynthSettings synth{};
-    bool lockIn = false;
+    KickSettings synth{};
     bool autoEnabled = false;
     bool autoBypass = false;
     int activeAutoSlot = 0; // 0=A, 1=B, 2=C, 3=D
-    bool noteTracking = false;
     std::array<AutoSlotSettings, kNumAutoSlots> autoSlots{};
     EffectSettings effects{};
     bool masterBypass = false;
@@ -79,12 +77,6 @@ public:
         int numSamples,
         std::span<const MidiCcEvent> controlChanges = {}) noexcept;
 
-    void lockCurrentKick(const KickSynthSettings& settings);
-    void unlockKick() noexcept;
-    bool restoreLockedWav(const std::vector<uint8_t>& wavBytes);
-
-    [[nodiscard]] bool isKickLocked() const noexcept { return wavCache_.isLocked(); }
-    [[nodiscard]] const KickWavCache& wavCache() const noexcept { return wavCache_; }
     [[nodiscard]] AutoSequencer& sequencer() noexcept { return sequencer_; }
     [[nodiscard]] const AutoSequencer& sequencer() const noexcept { return sequencer_; }
 
@@ -100,18 +92,16 @@ private:
         double samplePpq,
         double bpm,
         double beatsPerBar,
+        int midiNote,
         float velocity,
-        float semitoneOffset,
         float effectiveTailMs,
         bool reverseCue) noexcept;
 
     double sampleRate_ = 48000.0;
     double fallbackPpq_ = 0.0;
-    bool previousLockState_ = false;
     float currentPeak_ = 0.0f;
     float currentBeatPhase_ = 0.0f;
 
-    KickWavCache wavCache_;
     KickVoice forwardVoice_;
     KickVoice reverseVoice_;
     AutoSequencer sequencer_;
