@@ -339,6 +339,13 @@ TEST_CASE("Mule artwork kicks when a trigger arrives", "[plugin][ui][mule]") {
     OpenEdmKickProcessor processor;
     processor.prepareToPlay(48000.0, 256);
     std::unique_ptr<juce::AudioProcessorEditor> editor(processor.createEditor());
+    openedmkick::ui::MuleStagePanel* muleStage = nullptr;
+    for (int i = 0; i < editor->getNumChildComponents(); ++i) {
+        muleStage = dynamic_cast<openedmkick::ui::MuleStagePanel*>(editor->getChildComponent(i));
+        if (muleStage != nullptr) break;
+    }
+    REQUIRE(muleStage != nullptr);
+    const auto stageBounds = muleStage->getBounds();
     const auto idle = editor->createComponentSnapshot(editor->getLocalBounds(), true, 1.0f);
 
     juce::AudioBuffer<float> buffer(2, 256);
@@ -351,10 +358,10 @@ TEST_CASE("Mule artwork kicks when a trigger arrives", "[plugin][ui][mule]") {
     juce::Thread::sleep(50);
     const auto strike = editor->createComponentSnapshot(editor->getLocalBounds(), true, 1.0f);
 
-    const int x0 = 760;
-    const int x1 = std::min(idle.getWidth(), 1080);
-    const int y0 = 50;
-    const int y1 = std::min(idle.getHeight(), 320);
+    const int x0 = std::max(0, stageBounds.getX());
+    const int x1 = std::min(idle.getWidth(), stageBounds.getRight());
+    const int y0 = std::max(0, stageBounds.getY());
+    const int y1 = std::min(idle.getHeight(), stageBounds.getBottom());
     int different = 0;
     for (int y = y0; y < y1; y += 2) {
         for (int x = x0; x < x1; x += 2) {
