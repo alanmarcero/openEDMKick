@@ -13,15 +13,15 @@ EdmLookAndFeel::EdmLookAndFeel() {
     setColour(juce::ResizableWindow::backgroundColourId, theme::kInk);
     setColour(juce::Label::textColourId, theme::kText);
     setColour(juce::Slider::textBoxTextColourId, theme::kText);
-    setColour(juce::Slider::textBoxHighlightColourId, theme::kCyan.withAlpha(0.3f));
+    setColour(juce::Slider::textBoxHighlightColourId, theme::kViolet.withAlpha(0.3f));
     setColour(juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
     setColour(juce::Slider::textBoxBackgroundColourId, theme::kInk.brighter(0.04f));
     setColour(juce::ComboBox::backgroundColourId, theme::kSteel);
     setColour(juce::ComboBox::textColourId, theme::kText);
-    setColour(juce::ComboBox::arrowColourId, theme::kCyan);
+    setColour(juce::ComboBox::arrowColourId, theme::kViolet);
     setColour(juce::PopupMenu::backgroundColourId, theme::kSteel);
     setColour(juce::PopupMenu::textColourId, theme::kText);
-    setColour(juce::PopupMenu::highlightedBackgroundColourId, theme::kCyan);
+    setColour(juce::PopupMenu::highlightedBackgroundColourId, theme::kViolet);
     setColour(juce::PopupMenu::highlightedTextColourId, theme::kInk);
     setColour(juce::TextButton::buttonColourId, theme::kSteel);
     setColour(juce::TextButton::textColourOffId, theme::kTextDim);
@@ -74,7 +74,8 @@ void EdmLookAndFeel::drawComboBox(juce::Graphics& g, int width, int height, bool
     g.fillRoundedRectangle(bounds, kCorner);
     g.setColour(box.findColour(juce::ComboBox::outlineColourId).withAlpha(box.isMouseOver(true) ? 0.9f : 0.55f));
     g.drawRoundedRectangle(bounds, kCorner, 1.0f);
-    const auto arrow = bounds.withLeft(bounds.getRight() - 19.0f).reduced(5.0f, height * 0.36f);
+    const auto arrow = bounds.withLeft(bounds.getRight() - 19.0f)
+        .reduced(5.0f, static_cast<float>(height) * 0.36f);
     juce::Path triangle;
     triangle.addTriangle(arrow.getX(), arrow.getY(), arrow.getRight(), arrow.getY(), arrow.getCentreX(), arrow.getBottom());
     g.setColour(box.findColour(juce::ComboBox::arrowColourId));

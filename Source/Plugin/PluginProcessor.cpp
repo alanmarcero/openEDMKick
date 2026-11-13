@@ -1,7 +1,9 @@
 #include "PluginProcessor.h"
+
 #include "Parameters.h"
 #include "PluginEditor.h"
 #include "Presets.h"
+
 #include <algorithm>
 #include <ranges>
 
@@ -9,49 +11,39 @@ namespace core = openedmkick::core;
 namespace params = openedmkick::params;
 
 OpenEdmKickProcessor::OpenEdmKickProcessor()
-    : AudioProcessor(BusesProperties()
-                         .withOutput("Output", juce::AudioChannelSet::stereo(), true)),
+    : AudioProcessor(BusesProperties().withOutput("Output", juce::AudioChannelSet::stereo(), true)),
       parameters(*this, nullptr, "openEDMKick", params::createParameterLayout()),
       values_([this] {
           const auto raw = [this](const juce::String& id) { return parameters.getRawParameterValue(id); };
           const auto slotParams = [&](int slot) {
-              const auto sRaw = [&](const char* key) { return raw(params::autoSlotId(slot, key)); };
-              return AutoSlotParams{
-                  sRaw(params::kAutoBars),
-                  sRaw(params::kAutoFillPreset),
-                  sRaw(params::kAutoGrid),
-                  sRaw(params::kAutoTailShorten),
-                  sRaw(params::kAutoPitchRise),
-                  sRaw(params::kAutoCrushSweep)
-              };
+              const auto slotRaw = [&](const char* key) { return raw(params::autoSlotId(slot, key)); };
+              return AutoSlotParams{ slotRaw(params::kAutoBars), slotRaw(params::kAutoFillPreset),
+                                     slotRaw(params::kAutoGrid), slotRaw(params::kAutoTailShorten),
+                                     slotRaw(params::kAutoCrushSweep) };
           };
           return ParameterValues{
-              raw(params::kNote), raw(params::kOctave), raw(params::kFineTune),
-              raw(params::kStartPitch), raw(params::kPitchDecay), raw(params::kPitchCurve),
-              raw(params::kTailLength), raw(params::kTailCurve), raw(params::kSubDrive),
-              raw(params::kClickLevel), raw(params::kClickFreq), raw(params::kPunch),
-              raw(params::kSnareLevel), raw(params::kSnareTone), raw(params::kSnareDecay),
-              raw(params::kClapLevel), raw(params::kClapSpread), raw(params::kClapTone), raw(params::kClapDecay),
-              raw(params::kHatLevel), raw(params::kHatTone), raw(params::kHatDecay),
-              raw(params::kBodyTone), raw(params::kAmpAttack), raw(params::kAmpDecay),
-              raw(params::kAmpSustain), raw(params::kAmpRelease),
-              raw(params::kLockIn), raw(params::kClockSync), raw(params::kTempoBpm),
-              raw(params::kTimeSignature), raw(params::kAutoEnabled), raw(params::kAutoBypass),
-              raw(params::kAutoSlot),
+              raw(params::kSweepOctaves), raw(params::kSweepMs), raw(params::kSweepShape),
+              raw(params::kSnapOctaves), raw(params::kSnapMs), raw(params::kBodyTone),
+              raw(params::kBodyDrive), raw(params::kSaturation), raw(params::kKnockHz),
+              raw(params::kKnockDb), raw(params::kGrit), raw(params::kToneHz),
+              raw(params::kSubLevel), raw(params::kStartPhase), raw(params::kClickType),
+              raw(params::kClickLevel), raw(params::kClickHz), raw(params::kClickMs),
+              raw(params::kAttackMs), raw(params::kHoldMs), raw(params::kDecayMs),
+              raw(params::kDecayShape), raw(params::kLowCutHz), raw(params::kClip),
+              raw(params::kClockSync), raw(params::kTempoBpm), raw(params::kTimeSignature),
+              raw(params::kAutoEnabled), raw(params::kAutoBypass), raw(params::kAutoSlot),
               { slotParams(0), slotParams(1), slotParams(2), slotParams(3) },
               raw(params::kReverseMode), raw(params::kReverseMix), raw(params::kDrive),
               raw(params::kCrushRate), raw(params::kCrushBits), raw(params::kCrushMix),
               raw(params::kStutterRate), raw(params::kStutterMix), raw(params::kGateRate),
-              raw(params::kGateMix),               raw(params::kPumpRate), raw(params::kPumpMix),
-              raw(params::kHighPass), raw(params::kLowPass),
-              raw(params::kOutput), raw(params::kLimiter), raw(params::kCeiling),
-              raw(params::kMidiMode),
-              raw(params::kMasterBypass)
+              raw(params::kGateMix), raw(params::kPumpRate), raw(params::kPumpMix),
+              raw(params::kHighPass), raw(params::kLowPass), raw(params::kOutput),
+              raw(params::kLimiter), raw(params::kCeiling), raw(params::kMasterBypass)
           };
       }()) {
     setLatencySamples(core::KickEngine::kLatencySamples);
     engine_.prepare(48000.0);
-    openedmkick::presets::apply(openedmkick::presets::factoryPresets().front(), parameters, 0);
+    openedmkick::presets::apply(openedmkick::presets::factoryPresets().front(), parameters);
 }
 
 void OpenEdmKickProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
@@ -59,12 +51,6 @@ void OpenEdmKickProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
     engine_.prepare(sampleRate);
     midiScratch_.reserve(static_cast<size_t>(std::max(64, samplesPerBlock)));
     midiCcScratch_.reserve(static_cast<size_t>(std::max(64, samplesPerBlock)));
-    // An existing Lock In WAV is resampled on playback. Re-rendering here would
-    // replace the frozen hit whenever the host changes sample rate.
-    if (values_.lockIn->load() > 0.5f && !engine_.isKickLocked()) {
-        engine_.lockCurrentKick(currentSynthSettings());
-    }
-    displayLockedIn.store(engine_.isKickLocked());
 }
 
 bool OpenEdmKickProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const {
@@ -76,71 +62,33 @@ int OpenEdmKickProcessor::currentAutoSlot() const noexcept {
     return std::clamp(static_cast<int>(values_.autoSlot->load()), 0, core::kNumAutoSlots - 1);
 }
 
-bool OpenEdmKickProcessor::isSectionLocked(int section) const noexcept {
-    if (section < 0 || section >= params::kSectionCount) {
-        return false;
-    }
-    return (sectionLockMask_.load() & static_cast<uint16_t>(1u << section)) != 0;
-}
-
-void OpenEdmKickProcessor::setSectionLocked(int section, bool locked) noexcept {
-    if (section < 0 || section >= params::kSectionCount) {
-        return;
-    }
-    const auto bit = static_cast<uint16_t>(1u << section);
-    if (locked) {
-        sectionLockMask_.fetch_or(bit);
-        return;
-    }
-    sectionLockMask_.fetch_and(static_cast<uint16_t>(~bit));
-}
-
-core::KickSynthSettings OpenEdmKickProcessor::currentSynthSettings() const noexcept {
+core::KickSettings OpenEdmKickProcessor::currentSynthSettings() const noexcept {
     const auto choice = [](const std::atomic<float>* value) { return static_cast<int>(value->load()); };
-    return core::KickSynthSettings{
-        choice(values_.note),
-        choice(values_.octave),
-        values_.fineTune->load(),
-        values_.startPitch->load(),
-        values_.pitchDecay->load(),
-        values_.pitchCurve->load(),
-        values_.tailLength->load(),
-        values_.tailCurve->load(),
-        values_.subDrive->load(),
-        values_.clickLevel->load(),
-        values_.clickFreq->load(),
-        values_.punch->load(),
-        values_.snareLevel->load(),
-        values_.snareTone->load(),
-        values_.snareDecay->load(),
-        values_.clapLevel->load(),
-        values_.clapSpread->load(),
-        values_.clapTone->load(),
-        values_.clapDecay->load(),
-        values_.hatLevel->load(),
-        values_.hatTone->load(),
-        values_.hatDecay->load(),
-        values_.bodyTone->load(),
-        values_.ampAttack->load(),
-        values_.ampDecay->load(),
-        values_.ampSustain->load(),
-        values_.ampRelease->load()
+    return core::KickSettings{
+        values_.sweepOctaves->load(), values_.sweepMs->load(), values_.sweepShape->load(),
+        values_.snapOctaves->load(), values_.snapMs->load(), values_.bodyTone->load(),
+        values_.bodyDrive->load(), static_cast<core::Saturation>(choice(values_.saturation)),
+        values_.knockHz->load(), values_.knockDb->load(), values_.grit->load(),
+        values_.toneHz->load(), values_.subLevel->load(), values_.startPhase->load(),
+        static_cast<core::ClickType>(choice(values_.clickType)), values_.clickLevel->load(),
+        values_.clickHz->load(), values_.clickMs->load(), values_.attackMs->load(),
+        values_.holdMs->load(), values_.decayMs->load(), values_.decayShape->load(),
+        values_.lowCutHz->load(), values_.clip->load()
     };
 }
 
 core::AutoSlotSettings OpenEdmKickProcessor::autoSlotSettings(int slot) const noexcept {
     const int safeSlot = std::clamp(slot, 0, core::kNumAutoSlots - 1);
-    const auto& s = values_.autoSlots[static_cast<size_t>(safeSlot)];
+    const auto& slotValues = values_.autoSlots[static_cast<size_t>(safeSlot)];
     const auto choice = [](const std::atomic<float>* value) { return static_cast<int>(value->load()); };
-    const auto barIdx = static_cast<size_t>(
-        std::clamp(choice(s.bars), 0, static_cast<int>(core::kAutoBarCounts.size()) - 1));
+    const auto barIndex = static_cast<size_t>(
+        std::clamp(choice(slotValues.bars), 0, static_cast<int>(core::kAutoBarCounts.size()) - 1));
     return core::AutoSlotSettings{
-        core::kAutoBarCounts[barIdx],
-        std::clamp(choice(s.fillPreset), 0, core::kNumFillPresets - 1),
-        std::clamp(choice(s.grid), 0, static_cast<int>(core::kGridStepSizes64.size()) - 1),
-        s.tailShorten->load(),
-        s.pitchRise->load(),
-        s.crushSweep->load()
+        core::kAutoBarCounts[barIndex],
+        std::clamp(choice(slotValues.fillPreset), 0, core::kNumFillPresets - 1),
+        std::clamp(choice(slotValues.grid), 0, static_cast<int>(core::kGridStepSizes64.size()) - 1),
+        slotValues.tailShorten->load(),
+        slotValues.crushSweep->load()
     };
 }
 
@@ -149,20 +97,13 @@ core::AutoSlotSettings OpenEdmKickProcessor::currentAutoSlotSettings() const noe
 }
 
 std::vector<float> OpenEdmKickProcessor::previewKickWaveform() const {
-    const std::scoped_lock lock(stateMutex_);
-    std::vector<float> wave;
-    double rate = 24000.0;
-    if (engine_.isKickLocked() && !engine_.wavCache().samples().empty()) {
-        wave = engine_.wavCache().samples();
-        rate = engine_.wavCache().sampleRate();
-    } else {
-        wave = core::renderKickWaveform(currentSynthSettings(), rate, 0.0f);
-    }
+    constexpr double previewRate = 24000.0;
+    auto wave = core::renderKick(currentSynthSettings(), previewRate, currentMidiNote());
     core::ToneFilter filter;
     const float highPass = values_.highPass->load();
     const float lowPass = values_.lowPass->load();
     std::ranges::for_each(wave, [&](float& sample) {
-        sample = filter.process(sample, highPass, lowPass, rate);
+        sample = filter.process(sample, highPass, lowPass, previewRate);
     });
     return wave;
 }
@@ -172,23 +113,20 @@ std::vector<core::PianoRollNote> OpenEdmKickProcessor::currentPianoRollNotes() c
     return engine_.sequencer().notesForSlot(currentAutoSlot());
 }
 
-void OpenEdmKickProcessor::togglePianoRollNote(int step64, int length64, int semitoneOffset) {
+void OpenEdmKickProcessor::togglePianoRollNote(int step64, int length64) {
     const std::scoped_lock lock(stateMutex_);
     const int slot = currentAutoSlot();
-    const auto settings = autoSlotSettings(slot);
-    engine_.sequencer().toggleNoteAt(slot, step64, length64, semitoneOffset, settings.bars);
+    engine_.sequencer().toggleNoteAt(slot, step64, length64, autoSlotSettings(slot).bars);
 }
 
 void OpenEdmKickProcessor::syncSequencerPresets(
     const std::array<core::AutoSlotSettings, core::kNumAutoSlots>& slots) {
     std::ranges::for_each(std::views::iota(0, core::kNumAutoSlots), [&](int slot) {
-        const auto idx = static_cast<size_t>(slot);
-        const int preset = slots[idx].fillPreset;
-        const int bars = slots[idx].bars;
-        if (preset != lastSlotPreset_[idx] || bars != lastSlotBars_[idx]) {
-            engine_.sequencer().loadPresetIntoSlot(slot, preset, bars);
-            lastSlotPreset_[idx] = preset;
-            lastSlotBars_[idx] = bars;
+        const auto index = static_cast<size_t>(slot);
+        if (slots[index].fillPreset != lastSlotPreset_[index] || slots[index].bars != lastSlotBars_[index]) {
+            engine_.sequencer().loadPresetIntoSlot(slot, slots[index].fillPreset, slots[index].bars);
+            lastSlotPreset_[index] = slots[index].fillPreset;
+            lastSlotBars_[index] = slots[index].bars;
         }
     });
 }
@@ -200,7 +138,6 @@ juce::AudioProcessorParameter* OpenEdmKickProcessor::getBypassParameter() const 
 void OpenEdmKickProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi) {
     juce::ScopedNoDenormals noDenormals;
     const std::scoped_lock lock(stateMutex_);
-
     const auto isOn = [](const std::atomic<float>* value) { return value->load() > 0.5f; };
     const auto choice = [](const std::atomic<float>* value) { return static_cast<int>(value->load()); };
 
@@ -210,30 +147,15 @@ void OpenEdmKickProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
     syncSequencerPresets(slotSettings);
 
     const core::EngineSettings settings{
-        currentSynthSettings(),
-        isOn(values_.lockIn),
-        isOn(values_.autoEnabled),
-        isOn(values_.autoBypass),
-        currentAutoSlot(),
-        choice(values_.midiMode) == 1,
-        slotSettings,
+        currentSynthSettings(), isOn(values_.autoEnabled), isOn(values_.autoBypass), currentAutoSlot(), slotSettings,
         core::EffectSettings{
             static_cast<core::ReverseSyncMode>(std::clamp(choice(values_.reverseMode), 0, 4)),
-            values_.reverseMix->load(),
-            values_.drive->load(),
-            values_.crushRate->load(),
-            choice(values_.crushBits),
-            values_.crushMix->load(),
-            choice(values_.stutterRate),
-            values_.stutterMix->load(),
-            choice(values_.gateRate),
-            values_.gateMix->load(),
-            choice(values_.pumpRate),
-            values_.pumpMix->load(),
-            juce::Decibels::decibelsToGain(values_.output->load()),
-            isOn(values_.limiter),
-            juce::Decibels::decibelsToGain(values_.ceiling->load()),
-            values_.highPass->load(),
+            values_.reverseMix->load(), values_.drive->load(), values_.crushRate->load(),
+            choice(values_.crushBits), values_.crushMix->load(), choice(values_.stutterRate),
+            values_.stutterMix->load(), choice(values_.gateRate), values_.gateMix->load(),
+            choice(values_.pumpRate), values_.pumpMix->load(),
+            juce::Decibels::decibelsToGain(values_.output->load()), isOn(values_.limiter),
+            juce::Decibels::decibelsToGain(values_.ceiling->load()), values_.highPass->load(),
             values_.lowPass->load()
         },
         isOn(values_.masterBypass)
@@ -241,82 +163,58 @@ void OpenEdmKickProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
 
     const bool syncToHost = isOn(values_.clockSync);
     const double manualBpm = static_cast<double>(values_.tempoBpm->load());
-    const int sigChoice = choice(values_.timeSignature);
-    const double manualBeatsPerBar = params::beatsPerBarForSignature(sigChoice);
-
+    const int signatureChoice = choice(values_.timeSignature);
+    const double manualBeatsPerBar = params::beatsPerBarForSignature(signatureChoice);
     const core::Transport transport = [&] {
-        if (!syncToHost) {
-            return core::Transport{ manualBpm, std::nullopt, manualBeatsPerBar, true };
-        }
+        if (!syncToHost) return core::Transport{ manualBpm, std::nullopt, manualBeatsPerBar, true };
         auto* playHead = getPlayHead();
-        if (playHead == nullptr) {
-            return core::Transport{ manualBpm, std::nullopt, manualBeatsPerBar, true };
-        }
+        if (playHead == nullptr) return core::Transport{ manualBpm, std::nullopt, manualBeatsPerBar, true };
         const auto position = playHead->getPosition();
-        if (!position.hasValue()) {
-            return core::Transport{ manualBpm, std::nullopt, manualBeatsPerBar, true };
-        }
+        if (!position.hasValue()) return core::Transport{ manualBpm, std::nullopt, manualBeatsPerBar, true };
         const double bpm = position->getBpm().orFallback(manualBpm);
         double beatsPerBar = manualBeatsPerBar;
-        if (sigChoice == 0 && position->getTimeSignature().hasValue()) {
-            const auto sig = *position->getTimeSignature();
-            if (sig.numerator > 0 && sig.denominator > 0) {
-                beatsPerBar = static_cast<double>(sig.numerator) * (4.0 / static_cast<double>(sig.denominator));
-            }
+        if (signatureChoice == 0 && position->getTimeSignature().hasValue()) {
+            const auto signature = *position->getTimeSignature();
+            if (signature.numerator > 0 && signature.denominator > 0)
+                beatsPerBar = static_cast<double>(signature.numerator) * (4.0 / static_cast<double>(signature.denominator));
         }
         const bool playing = position->getIsPlaying();
-        if (!playing || !position->getPpqPosition().hasValue()) {
+        if (!playing || !position->getPpqPosition().hasValue())
             return core::Transport{ bpm, std::nullopt, beatsPerBar, playing };
-        }
         return core::Transport{ bpm, *position->getPpqPosition(), beatsPerBar, true };
     }();
 
     midiScratch_.clear();
     midiCcScratch_.clear();
     const int lastSample = std::max(0, buffer.getNumSamples() - 1);
-    std::ranges::for_each(midi, [&](const juce::MidiMessageMetadata& meta) {
-        const auto msg = meta.getMessage();
-        const int sample = std::clamp(meta.samplePosition, 0, lastSample);
-        if (msg.isNoteOn() && msg.getFloatVelocity() > 0.0f) {
-            midiScratch_.push_back(core::MidiTrigger{
-                sample,
-                msg.getNoteNumber(),
-                msg.getFloatVelocity(),
-                false
-            });
+    std::ranges::for_each(midi, [&](const juce::MidiMessageMetadata& metadata) {
+        const auto message = metadata.getMessage();
+        const int sample = std::clamp(metadata.samplePosition, 0, lastSample);
+        if (message.isNoteOn() && message.getFloatVelocity() > 0.0f) {
+            const int note = message.getNoteNumber();
+            midiScratch_.push_back({ sample, note, message.getFloatVelocity(), false });
+            displayMidiNote.store(note, std::memory_order_relaxed);
+            displayMidiHz.store(core::noteFrequencyHz(note), std::memory_order_relaxed);
             return;
         }
-        if (!msg.isController()) {
-            return;
-        }
-        const int controller = msg.getControllerNumber();
+        if (!message.isController()) return;
+        const int controller = message.getControllerNumber();
         if (controller != 7 && controller != 11 && controller != 74
-            && controller != 120 && controller != 121 && controller != 123) {
-            return;
-        }
-        midiCcScratch_.push_back(core::MidiCcEvent{ sample, controller, msg.getControllerValue() });
+            && controller != 120 && controller != 121 && controller != 123) return;
+        midiCcScratch_.push_back({ sample, controller, message.getControllerValue() });
     });
 
-    if (auditionPending_.exchange(false)) {
-        midiScratch_.push_back(core::MidiTrigger{ 0, 60, 1.0f, true });
-    }
+    if (auditionPending_.exchange(false))
+        midiScratch_.push_back({ 0, core::kDefaultMidiNote, 1.0f, true });
 
     buffer.clear();
-    engine_.process(
-        settings,
-        transport,
-        midiScratch_,
-        buffer.getArrayOfWritePointers(),
-        buffer.getNumChannels(),
-        buffer.getNumSamples(),
-        midiCcScratch_);
-
+    engine_.process(settings, transport, midiScratch_, buffer.getArrayOfWritePointers(),
+                    buffer.getNumChannels(), buffer.getNumSamples(), midiCcScratch_);
     displayPeak.store(engine_.currentPeak());
     displayAutoPhase.store(engine_.currentAutoPhase());
     displayBeatPhase.store(engine_.currentBeatPhase());
     displayBpm.store(static_cast<float>(transport.bpm));
     displayBeatsPerBar.store(static_cast<float>(transport.beatsPerBar));
-    displayLockedIn.store(engine_.isKickLocked());
     displayReversing.store(engine_.isVoiceReversing());
     displayTriggerCount.store(engine_.triggerSerial(), std::memory_order_relaxed);
 }
@@ -331,14 +229,11 @@ int OpenEdmKickProcessor::getNumPrograms() {
 
 void OpenEdmKickProcessor::setCurrentProgram(int index) {
     const auto& presets = openedmkick::presets::factoryPresets();
-    if (index < 0 || index >= static_cast<int>(presets.size())) {
-        return;
-    }
+    if (index < 0 || index >= static_cast<int>(presets.size())) return;
     {
         const std::scoped_lock lock(stateMutex_);
         currentProgram_ = index;
-        openedmkick::presets::apply(
-            presets[static_cast<size_t>(index)], parameters, sectionLockMask_.load());
+        openedmkick::presets::apply(presets[static_cast<size_t>(index)], parameters);
         restoredCustomState_.store(false);
     }
     juce::AudioProcessorListener::ChangeDetails details;
@@ -348,9 +243,7 @@ void OpenEdmKickProcessor::setCurrentProgram(int index) {
 
 const juce::String OpenEdmKickProcessor::getProgramName(int index) {
     const auto& presets = openedmkick::presets::factoryPresets();
-    if (index < 0 || index >= static_cast<int>(presets.size())) {
-        return {};
-    }
+    if (index < 0 || index >= static_cast<int>(presets.size())) return {};
     return presets[static_cast<size_t>(index)].name;
 }
 
@@ -358,23 +251,15 @@ void OpenEdmKickProcessor::getStateInformation(juce::MemoryBlock& destData) {
     const std::scoped_lock lock(stateMutex_);
     auto state = parameters.copyState();
     state.setProperty("program", currentProgram_, nullptr);
-    state.setProperty("presetCatalogVersion", 2, nullptr);
+    state.setProperty("presetCatalogVersion", 3, nullptr);
     state.setProperty("programCustom", restoredCustomState_.load(), nullptr);
-    state.setProperty("sectionLockMask", static_cast<int>(sectionLockMask_.load()), nullptr);
-    if (engine_.isKickLocked() && !engine_.wavCache().wavBytes().empty()) {
-        const auto& bytes = engine_.wavCache().wavBytes();
-        const auto b64 = juce::Base64::toBase64(bytes.data(), bytes.size());
-        state.setProperty("lockedWavBase64", b64, nullptr);
-    }
     const auto xml = state.createXml();
     copyXmlToBinary(*xml, destData);
 }
 
 void OpenEdmKickProcessor::setStateInformation(const void* data, int sizeInBytes) {
     const auto xml = getXmlFromBinary(data, sizeInBytes);
-    if (xml == nullptr || !xml->hasTagName(parameters.state.getType())) {
-        return;
-    }
+    if (xml == nullptr || !xml->hasTagName(parameters.state.getType())) return;
     auto state = juce::ValueTree::fromXml(*xml);
     std::ranges::for_each(getParameters(), [&](juce::AudioProcessorParameter* parameter) {
         auto* ranged = dynamic_cast<juce::RangedAudioParameter*>(parameter);
@@ -385,30 +270,16 @@ void OpenEdmKickProcessor::setStateInformation(const void* data, int sizeInBytes
             state.appendChild(value, nullptr);
         }
     });
-    const bool hasV2Catalog = static_cast<int>(state.getProperty("presetCatalogVersion", 0)) == 2;
-    currentProgram_ = hasV2Catalog
+    const bool hasV3Catalog = static_cast<int>(state.getProperty("presetCatalogVersion", 0)) == 3;
+    currentProgram_ = hasV3Catalog
         ? std::clamp(static_cast<int>(state.getProperty("program", 0)), 0,
                      static_cast<int>(openedmkick::presets::factoryPresets().size()) - 1)
         : 0;
     restoredCustomState_.store(
-        !hasV2Catalog || static_cast<bool>(state.getProperty("programCustom", false)));
-    sectionLockMask_.store(static_cast<uint16_t>(
-        std::clamp(static_cast<int>(state.getProperty("sectionLockMask", 0)), 0,
-                   (1 << params::kSectionCount) - 1)));
+        !hasV3Catalog || static_cast<bool>(state.getProperty("programCustom", false)));
     parameters.replaceState(state);
-
     const std::scoped_lock lock(stateMutex_);
     lastSlotPreset_.fill(-1);
-    const auto b64 = state.getProperty("lockedWavBase64", juce::String{}).toString();
-    if (b64.isNotEmpty()) {
-        juce::MemoryOutputStream decoded;
-        if (juce::Base64::convertFromBase64(decoded, b64)) {
-            const auto* ptr = static_cast<const uint8_t*>(decoded.getData());
-            std::vector<uint8_t> wavBytes(ptr, ptr + decoded.getDataSize());
-            engine_.restoreLockedWav(wavBytes);
-        }
-    }
-    displayLockedIn.store(engine_.isKickLocked());
 }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter() {

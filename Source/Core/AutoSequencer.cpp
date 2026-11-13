@@ -17,7 +17,7 @@ struct PatternShape {
 };
 
 constexpr std::array<PatternShape, kNumFillPresets> kShapes{{
-    {16, 8, 3, 0, true}, {16, 4, 2, 1, true}, {8, 4, 3, 2, false}, {16, 4, 0, 3, true},
+    {16, 8, 3, 0, true}, {16, 4, 1, 1, true}, {8, 4, 2, 2, false}, {16, 4, 0, 3, true},
     {8, 2, 3, 4, true}, {12, 3, 1, 5, false}, {16, 4, 2, 6, true}, {8, 4, 0, 7, false},
     {16, 4, 3, 8, true}, {16, 8, 1, 9, true}, {8, 2, 2, 10, false}, {4, 2, 3, 11, true},
     {12, 3, 0, 12, false}, {8, 4, 1, 13, false}, {4, 2, 2, 14, true}, {16, 4, 3, 15, true},
@@ -25,6 +25,25 @@ constexpr std::array<PatternShape, kNumFillPresets> kShapes{{
     {4, 1, 1, 20, true}, {16, 4, 2, 21, false}, {8, 2, 3, 22, true}, {16, 8, 0, 23, false},
     {8, 2, 1, 24, true}, {4, 1, 3, 25, true}, {4, 1, 2, 26, false}, {8, 2, 3, 27, true}
 }};
+
+constexpr std::array<int, 7> kPresetBarChoices{ 1, 2, 4, 8, 16, 32, 64 };
+
+using PresetPatternBank = std::array<
+    std::array<std::vector<PianoRollNote>, kPresetBarChoices.size()>, kNumFillPresets>;
+
+const PresetPatternBank& presetPatternBank() {
+    static const PresetPatternBank patterns = [] {
+        PresetPatternBank result;
+        for (int preset = 0; preset < kNumFillPresets; ++preset) {
+            for (size_t barChoice = 0; barChoice < kPresetBarChoices.size(); ++barChoice) {
+                result[static_cast<size_t>(preset)][barChoice] =
+                    buildPresetPattern(preset, kPresetBarChoices[barChoice]);
+            }
+        }
+        return result;
+    }();
+    return patterns;
+}
 
 [[nodiscard]] float clampUnit(float value) noexcept {
     return std::clamp(std::isfinite(value) ? value : 0.0f, 0.0f, 1.0f);
@@ -56,8 +75,7 @@ std::vector<PianoRollNote> buildPresetPattern(int presetIndex, int bars) {
             const int step = localStart + beat * 16;
             const bool keepAnchor = ((shape.variation + beat + bar) % 5) != 1 || !finalBar;
             if (keepAnchor && !hasNoteAt(result, step)) {
-                result.push_back({step, std::min(12, stride), (beat + shape.accent) % 4 == 0 ? 7 : 0,
-                                  beat == 0 ? 1.0f : 0.82f, false});
+                result.push_back({step, std::min(12, stride), beat == 0 ? 1.0f : 0.82f, false});
             }
         }
 
@@ -70,18 +88,16 @@ std::vector<PianoRollNote> buildPresetPattern(int presetIndex, int bars) {
             if (!buildZone && ((local / stride + shape.variation) % 3 != 0)) {
                 continue;
             }
-            const int pitchLane = (local / std::max(1, stride) + shape.variation + bar) % 7;
-            const int semitone = pitchLane == 0 ? 12 : (pitchLane == 3 ? 7 : (pitchLane == 5 ? 3 : 0));
             const float velocity = std::clamp(0.52f + 0.06f * static_cast<float>((local / stride + shape.accent) % 6), 0.48f, 0.92f);
             const int length = std::clamp(stride - stride / 4, 1, 16);
-            result.push_back({step, length, semitone, velocity,
+            result.push_back({step, length, velocity,
                               shape.reverseEnding && finalBar && step >= finalQuarterStart && (step + shape.variation) % (2 * stride) == 0});
         }
 
         if (shape.variation % 4 == 0 || shape.variation % 4 == 3) {
             const int pickup = localStart + 60 + (shape.variation % 4);
             if (pickup < localStart + kStepsPerBar64 && !hasNoteAt(result, pickup)) {
-                result.push_back({pickup, 2, 12, 0.88f, shape.reverseEnding && finalBar});
+                result.push_back({pickup, 2, 0.88f, shape.reverseEnding && finalBar});
             }
         }
     }
@@ -103,6 +119,7 @@ float computeAutoEffectiveTailMs(float baseTailMs, float tailShorten, double ste
 }
 
 AutoSequencer::AutoSequencer() {
+    for (auto& notes : slotNotes_) notes.reserve(kStepsPerBar64 * 64u);
     for (int slot = 0; slot < kNumAutoSlots; ++slot) {
         loadPresetIntoSlot(slot, slot, 4);
     }
@@ -128,7 +145,8 @@ void AutoSequencer::setNotesForSlot(int slot, std::vector<PianoRollNote> notes) 
         return;
     }
     std::ranges::sort(notes, {}, &PianoRollNote::step64);
-    slotNotes_[static_cast<size_t>(slot)] = std::move(notes);
+    auto& slotNotes = slotNotes_[static_cast<size_t>(slot)];
+    slotNotes.assign(notes.begin(), notes.end());
     loadedPreset_[static_cast<size_t>(slot)] = -1;
 }
 
@@ -139,12 +157,21 @@ void AutoSequencer::loadPresetIntoSlot(int slot, int presetIndex, int bars) {
     const int safePreset = std::clamp(presetIndex, 0, kNumFillPresets - 1);
     const int safeBars = std::clamp(bars, 1, 64);
     const auto index = static_cast<size_t>(slot);
-    slotNotes_[index] = buildPresetPattern(safePreset, safeBars);
+    const auto barChoice = std::ranges::find(kPresetBarChoices, safeBars);
+    if (barChoice != kPresetBarChoices.end()) {
+        const auto presetIndexSafe = static_cast<size_t>(safePreset);
+        const auto barChoiceIndex = static_cast<size_t>(std::distance(kPresetBarChoices.begin(), barChoice));
+        const auto& pattern = presetPatternBank()[presetIndexSafe][barChoiceIndex];
+        slotNotes_[index].assign(pattern.begin(), pattern.end());
+    } else {
+        auto pattern = buildPresetPattern(safePreset, safeBars);
+        slotNotes_[index].assign(pattern.begin(), pattern.end());
+    }
     loadedPreset_[index] = safePreset;
     loadedBars_[index] = safeBars;
 }
 
-bool AutoSequencer::toggleNoteAt(int slot, int step64, int length64, int semitoneOffset, int totalBars) {
+bool AutoSequencer::toggleNoteAt(int slot, int step64, int length64, int totalBars) {
     if (slot < 0 || slot >= kNumAutoSlots) {
         return false;
     }
@@ -153,23 +180,16 @@ bool AutoSequencer::toggleNoteAt(int slot, int step64, int length64, int semiton
         return false;
     }
     auto& notes = slotNotes_[static_cast<size_t>(slot)];
-    const int safePitch = std::clamp(semitoneOffset, -12, 24);
     const int safeLength = std::clamp(length64, 1, 64);
     const auto found = std::ranges::find_if(notes, [step64](const auto& note) {
         return note.step64 == step64;
     });
     if (found != notes.end()) {
-        if (found->semitoneOffset != safePitch) {
-            found->length64 = safeLength;
-            found->semitoneOffset = safePitch;
-            loadedPreset_[static_cast<size_t>(slot)] = -1;
-            return true;
-        }
         notes.erase(found);
         loadedPreset_[static_cast<size_t>(slot)] = -1;
         return false;
     }
-    notes.push_back({step64, safeLength, safePitch, 1.0f, false});
+    notes.push_back({step64, safeLength, 1.0f, false});
     std::ranges::sort(notes, {}, &PianoRollNote::step64);
     loadedPreset_[static_cast<size_t>(slot)] = -1;
     return true;
@@ -223,8 +243,6 @@ AutoTriggerEvent AutoSequencer::stepSample(
     const double stepSpacingMs = (static_cast<double>(spacing64) / kStepsPerBeat64) * 60000.0 / safeBpm;
     event.triggered = true;
     event.velocity = clampUnit(found->velocity);
-    event.semitoneOffset = static_cast<float>(found->semitoneOffset)
-        + std::clamp(std::isfinite(settings.pitchRise) ? settings.pitchRise : 0.0f, 0.0f, 12.0f) * windowPhase_;
     event.effectiveTailMs = computeAutoEffectiveTailMs(baseTailMs, settings.tailShorten, stepSpacingMs);
     event.reverseCue = found->reverseCue;
     event.stepDurationBeats = static_cast<double>(spacing64) / kStepsPerBeat64;

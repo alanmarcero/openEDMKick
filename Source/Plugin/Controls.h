@@ -1,7 +1,6 @@
 #pragma once
 
 #include "Parameters.h"
-#include <functional>
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 
@@ -47,22 +46,6 @@ public:
 private:
     juce::TextButton button_;
     Apvts::ButtonAttachment attachment_;
-};
-
-class SectionLock : public juce::Component, private juce::Timer {
-public:
-    SectionLock(const juce::String& title, juce::Colour accent,
-                std::function<bool()> readState, std::function<void(bool)> writeState);
-    void resized() override;
-
-private:
-    void timerCallback() override;
-    void sync();
-    juce::TextButton button_;
-    juce::String title_;
-    juce::Colour accent_;
-    std::function<bool()> readState_;
-    std::function<void(bool)> writeState_;
 };
 
 void layoutRow(juce::Rectangle<int> area, std::initializer_list<juce::Component*> components, int gap = 5);

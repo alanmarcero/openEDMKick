@@ -4,8 +4,6 @@
 #include "Presets.h"
 #include "Theme.h"
 
-#include <ranges>
-
 namespace {
 
 namespace theme = openedmkick::theme;
@@ -13,12 +11,12 @@ namespace params = openedmkick::params;
 namespace presets = openedmkick::presets;
 
 constexpr int kEditorWidth = 1100;
-constexpr int kEditorHeight = 972;
+constexpr int kEditorHeight = 940;
 
 void styleTab(juce::TextButton& button, const juce::String& id) {
     button.setComponentID(id);
     button.setClickingTogglesState(false);
-    button.setColour(juce::TextButton::buttonOnColourId, theme::kCyan);
+    button.setColour(juce::TextButton::buttonOnColourId, theme::kViolet);
     button.setTooltip("Open this workspace page.");
 }
 
@@ -28,7 +26,6 @@ OpenEdmKickEditor::OpenEdmKickEditor(OpenEdmKickProcessor& processorToEdit)
     : AudioProcessorEditor(processorToEdit),
       processor_(processorToEdit),
       synthPanel_(processorToEdit),
-      muleStage_(processorToEdit),
       autoPanel_(processorToEdit),
       effectsPanel_(processorToEdit),
       tooltipWindow_(this, 650) {
@@ -40,8 +37,8 @@ OpenEdmKickEditor::OpenEdmKickEditor(OpenEdmKickProcessor& processorToEdit)
         presetBox_.addItem(factory[static_cast<size_t>(i)].name, i + 1);
     presetBox_.setComponentID("factoryPreset");
     presetBox_.setTextWhenNothingSelected("CUSTOM SOUND");
-    presetBox_.setTooltip("48 new trance kicks. Locked sections keep their current settings while you browse.");
-    presetBox_.setColour(juce::ComboBox::outlineColourId, theme::kCyan);
+    presetBox_.setTooltip("48 tuned, impact-focused trance kick starting points.");
+    presetBox_.setColour(juce::ComboBox::outlineColourId, theme::kViolet);
     presetBox_.onChange = [this] {
         const int selected = presetBox_.getSelectedId() - 1;
         if (selected >= 0 && selected < processor_.getNumPrograms()) processor_.setCurrentProgram(selected);
@@ -67,7 +64,7 @@ OpenEdmKickEditor::OpenEdmKickEditor(OpenEdmKickProcessor& processorToEdit)
     };
 
     viewToggleBtn_.setComponentID("viewToggle");
-    viewToggleBtn_.setTooltip("Toggle between the essential controls and the complete sound design controls.");
+    viewToggleBtn_.setTooltip("Show the essential controls or every sound design control.");
     viewToggleBtn_.onClick = [this] { setAdvancedView(!isAdvancedView()); };
     styleTab(kickTab_, "page_kick");
     styleTab(patternTab_, "page_pattern");
@@ -76,9 +73,9 @@ OpenEdmKickEditor::OpenEdmKickEditor(OpenEdmKickProcessor& processorToEdit)
     patternTab_.onClick = [this] { setPage(Page::pattern); };
     effectsTab_.onClick = [this] { setPage(Page::effects); };
 
-    for (juce::Component* component : std::array<juce::Component*, 11>{
+    for (juce::Component* component : std::array<juce::Component*, 10>{
              &presetBox_, &prevPresetBtn_, &nextPresetBtn_, &viewToggleBtn_, &kickTab_, &patternTab_, &effectsTab_,
-             &synthPanel_, &muleStage_, &autoPanel_, &effectsPanel_}) addAndMakeVisible(component);
+             &synthPanel_, &autoPanel_, &effectsPanel_}) addAndMakeVisible(component);
 
     processor_.addListener(this);
     setPage(Page::kick);
@@ -113,8 +110,8 @@ void OpenEdmKickEditor::setAdvancedView(bool advanced) {
     synthPanel_.setAdvancedMode(advanced);
     autoPanel_.setAdvancedMode(advanced);
     effectsPanel_.setAdvancedMode(advanced);
-    viewToggleBtn_.setButtonText(advanced ? "FULL CONTROLS" : "SIMPLE VIEW");
-    viewToggleBtn_.setColour(juce::TextButton::buttonOnColourId, advanced ? theme::kAmber : theme::kCyan);
+    viewToggleBtn_.setButtonText(advanced ? "SIMPLE VIEW" : "ADVANCED");
+    viewToggleBtn_.setColour(juce::TextButton::buttonOnColourId, advanced ? theme::kBrass : theme::kViolet);
     resized();
     repaint();
 }
@@ -122,7 +119,6 @@ void OpenEdmKickEditor::setAdvancedView(bool advanced) {
 void OpenEdmKickEditor::setPage(Page page) {
     page_ = page;
     synthPanel_.setVisible(page == Page::kick);
-    muleStage_.setVisible(page == Page::kick);
     autoPanel_.setVisible(page == Page::pattern);
     effectsPanel_.setVisible(page == Page::effects);
     kickTab_.setToggleState(page == Page::kick, juce::dontSendNotification);
@@ -135,27 +131,27 @@ void OpenEdmKickEditor::paint(juce::Graphics& g) {
     g.setGradientFill(juce::ColourGradient(theme::kInk.brighter(0.035f), 0.0f, 0.0f,
                                            theme::kInk.darker(0.08f), 0.0f, static_cast<float>(getHeight()), false));
     g.fillAll();
-    g.setColour(theme::kCyan.withAlpha(0.08f));
-    g.fillRoundedRectangle(juce::Rectangle<float>(getWidth() - 210.0f, -54.0f, 250.0f, 190.0f), 34.0f);
+    g.setColour(theme::kViolet.withAlpha(0.10f));
+    g.fillRoundedRectangle(juce::Rectangle<float>(static_cast<float>(getWidth()) - 260.0f, -70.0f, 300.0f, 210.0f), 42.0f);
+    g.setColour(theme::kCoral.withAlpha(0.045f));
+    g.fillEllipse(juce::Rectangle<float>(static_cast<float>(getWidth()) - 150.0f, 0.0f, 105.0f, 105.0f));
     g.setColour(theme::kEdge.withAlpha(0.62f));
     g.drawLine(18.0f, 60.0f, static_cast<float>(getWidth() - 18), 60.0f, 1.0f);
-    g.setColour(theme::kCyan.withAlpha(0.35f));
-    g.fillRoundedRectangle(18.0f, 60.0f, 110.0f, 2.0f, 1.0f);
+    g.setColour(theme::kViolet.withAlpha(0.42f));
+    g.fillRoundedRectangle(18.0f, 60.0f, 130.0f, 2.0f, 1.0f);
 
     g.setFont(juce::FontOptions(25.0f, juce::Font::bold));
     g.setColour(theme::kText);
     g.drawText("open", 20, 8, 58, 32, juce::Justification::centredLeft);
     const int openWidth = juce::GlyphArrangement::getStringWidthInt(g.getCurrentFont(), "open");
-    g.setColour(theme::kCyan);
+    g.setColour(theme::kViolet);
     g.drawText("Kicker", 20 + openWidth, 8, 90, 32, juce::Justification::centredLeft);
     g.setColour(theme::kTextDim);
     g.setFont(juce::FontOptions(9.5f, juce::Font::bold));
-    g.drawText("TRANCE KICK DESIGN SYSTEM", 22, 39, 230, 14, juce::Justification::centredLeft);
-
-    const auto status = processor_.isKickLockedIn() ? "WAV FROZEN" : "SYNTH LIVE";
-    g.setColour(processor_.isKickLockedIn() ? theme::kAmber : theme::kCyan);
+    g.drawText("TRANCE KICK SYNTHESIS  /  MIDI TRACKING", 22, 39, 300, 14, juce::Justification::centredLeft);
+    g.setColour(theme::kBrass);
     g.setFont(juce::FontOptions(9.0f, juce::Font::bold));
-    g.drawText(status, 254, 17, 95, 20, juce::Justification::centredLeft);
+    g.drawText("V3  ·  NOTE IN, KICK OUT", 330, 17, 180, 20, juce::Justification::centredLeft);
 }
 
 void OpenEdmKickEditor::resized() {
@@ -177,11 +173,7 @@ void OpenEdmKickEditor::resized() {
     bounds.removeFromTop(10);
 
     if (page_ == Page::kick) {
-        auto kickArea = bounds;
-        const int stageWidth = std::clamp(kickArea.getWidth() / 4, 250, 290);
-        muleStage_.setBounds(kickArea.removeFromRight(stageWidth));
-        kickArea.removeFromRight(10);
-        synthPanel_.setBounds(kickArea);
+        synthPanel_.setBounds(bounds);
     } else if (page_ == Page::pattern) {
         autoPanel_.setBounds(bounds);
     } else {

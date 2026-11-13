@@ -29,12 +29,11 @@ private:
     juce::ComboBox presetBox_;
     juce::TextButton prevPresetBtn_{"<"};
     juce::TextButton nextPresetBtn_{">"};
-    juce::TextButton viewToggleBtn_{"SIMPLE"};
+    juce::TextButton viewToggleBtn_{"ADVANCED"};
     juce::TextButton kickTab_{"KICK"};
     juce::TextButton patternTab_{"PATTERN"};
     juce::TextButton effectsTab_{"FX"};
     openedmkick::ui::KickSynthPanel synthPanel_;
-    openedmkick::ui::MuleStagePanel muleStage_;
     openedmkick::ui::AutoPianoRollPanel autoPanel_;
     openedmkick::ui::EffectsPanel effectsPanel_;
     juce::TooltipWindow tooltipWindow_;

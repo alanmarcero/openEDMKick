@@ -16,11 +16,6 @@ private:
     void timerCallback() override;
     OpenEdmKickProcessor& processor_;
     std::vector<float> samples_;
-    openedmkick::core::KickSynthSettings cachedSettings_{};
-    bool hasCache_ = false;
-    bool cachedLocked_ = false;
-    float cachedHighPass_ = -1.0f;
-    float cachedLowPass_ = -1.0f;
 };
 
 class KickSynthPanel final : public juce::Component {
@@ -32,61 +27,33 @@ public:
     [[nodiscard]] bool isAdvancedMode() const noexcept { return advancedMode_; }
 
 private:
-    void selectNote(int index);
-    void updateNoteButtons(float note);
-    OpenEdmKickProcessor& processor_;
+    void setVisibleControls(std::initializer_list<juce::Component*> controls, bool visible);
     bool advancedMode_ = false;
-    std::array<juce::TextButton, openedmkick::core::kNumNotes> noteButtons_;
-    juce::TextButton auditionButton_{ "AUDITION" };
-    Choice triggerMode_;
-    Choice octave_;
-    Knob fineTune_;
-    Knob startPitch_;
-    Knob pitchDecay_;
-    Knob pitchCurve_;
+    Knob sweepOctaves_;
+    Knob sweepMs_;
+    Knob sweepShape_;
+    Knob snapOctaves_;
+    Knob snapMs_;
     Knob bodyTone_;
-    Knob attack_;
-    Knob decay_;
-    Knob sustain_;
-    Knob release_;
-    Knob tailLength_;
-    Knob tailCurve_;
-    Knob punch_;
-    Knob subDrive_;
-    Toggle lockIn_;
+    Knob bodyDrive_;
+    Choice saturation_;
+    Knob knockHz_;
+    Knob knockDb_;
+    Knob grit_;
+    Knob toneHz_;
+    Knob subLevel_;
+    Knob startPhase_;
+    Choice clickType_;
     Knob clickLevel_;
-    Knob clickFreq_;
-    Knob snareLevel_;
-    Knob snareTone_;
-    Knob snareDecay_;
-    Knob clapLevel_;
-    Knob clapSpread_;
-    Knob clapTone_;
-    Knob clapDecay_;
-    Knob hatLevel_;
-    Knob hatTone_;
-    Knob hatDecay_;
+    Knob clickHz_;
+    Knob clickMs_;
+    Knob attack_;
+    Knob hold_;
+    Knob decay_;
+    Knob decayShape_;
+    Knob lowCut_;
+    Knob clip_;
     KickWaveformView waveform_;
-    SectionLock tuningLock_;
-    SectionLock pitchLock_;
-    SectionLock bodyLock_;
-    SectionLock transientLock_;
-    SectionLock layersLock_;
-    juce::ParameterAttachment noteWatcher_;
-    juce::Rectangle<int> tuningArea_, waveArea_, pitchArea_, bodyArea_, transientArea_, layersArea_;
-};
-
-class MuleStagePanel final : public juce::Component, private juce::Timer {
-public:
-    explicit MuleStagePanel(OpenEdmKickProcessor& processor);
-    void paint(juce::Graphics& g) override;
-
-private:
-    void timerCallback() override;
-    OpenEdmKickProcessor& processor_;
-    juce::Image mascot_;
-    uint32_t seenTriggers_ = 0;
-    double kickStartedMs_ = -1.0e12;
 };
 
 class PianoRollView final : public juce::Component, private juce::Timer {
@@ -111,6 +78,8 @@ public:
     [[nodiscard]] bool isAdvancedMode() const noexcept { return advancedMode_; }
 
 private:
+    void bindSlotControls();
+    void syncSelectedSlot(int slot);
     OpenEdmKickProcessor& processor_;
     bool advancedMode_ = false;
     Toggle bypass_;
@@ -120,14 +89,12 @@ private:
     Choice bars_;
     Choice grid_;
     Choice fillPreset_;
-    juce::ComboBox quickPresetBox_;
     std::array<juce::TextButton, openedmkick::core::kNumAutoSlots> slotButtons_;
     Knob tempo_;
     Knob tailShorten_;
-    Knob pitchRise_;
     Knob crushSweep_;
     PianoRollView pianoRoll_;
-    SectionLock autoLock_;
+    int selectedSlot_ = -1;
     juce::ParameterAttachment slotWatcher_;
 };
 
@@ -170,10 +137,6 @@ private:
     Toggle limiter_;
     Toggle masterBypass_;
     PeakMeter meter_;
-    SectionLock reverseLock_;
-    SectionLock textureLock_;
-    SectionLock rhythmLock_;
-    SectionLock toneLock_;
 };
 
 } // namespace openedmkick::ui

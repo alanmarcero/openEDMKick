@@ -17,7 +17,6 @@ public:
 
     juce::AudioProcessorEditor* createEditor() override;
     bool hasEditor() const override { return true; }
-
     const juce::String getName() const override { return JucePlugin_Name; }
     bool acceptsMidi() const override { return true; }
     bool producesMidi() const override { return false; }
@@ -34,18 +33,15 @@ public:
     void getStateInformation(juce::MemoryBlock& destData) override;
     void setStateInformation(const void* data, int sizeInBytes) override;
 
-    [[nodiscard]] openedmkick::core::KickSynthSettings currentSynthSettings() const noexcept;
+    [[nodiscard]] openedmkick::core::KickSettings currentSynthSettings() const noexcept;
     [[nodiscard]] openedmkick::core::AutoSlotSettings currentAutoSlotSettings() const noexcept;
     [[nodiscard]] openedmkick::core::AutoSlotSettings autoSlotSettings(int slot) const noexcept;
     [[nodiscard]] int currentAutoSlot() const noexcept;
-    [[nodiscard]] bool isKickLockedIn() const noexcept { return displayLockedIn.load(); }
-    [[nodiscard]] bool isSectionLocked(int section) const noexcept;
-    void setSectionLocked(int section, bool locked) noexcept;
-    [[nodiscard]] uint16_t sectionLockMask() const noexcept { return sectionLockMask_.load(); }
     [[nodiscard]] bool hasRestoredCustomState() const noexcept { return restoredCustomState_.load(); }
+    [[nodiscard]] int currentMidiNote() const noexcept { return displayMidiNote.load(); }
     [[nodiscard]] std::vector<float> previewKickWaveform() const;
     [[nodiscard]] std::vector<openedmkick::core::PianoRollNote> currentPianoRollNotes() const;
-    void togglePianoRollNote(int step64, int length64, int semitoneOffset);
+    void togglePianoRollNote(int step64, int length64);
     void triggerAudition() noexcept { auditionPending_.store(true); }
 
     juce::AudioProcessorValueTreeState parameters;
@@ -55,51 +51,48 @@ public:
     std::atomic<float> displayBeatPhase{ 0.0f };
     std::atomic<float> displayBpm{ 128.0f };
     std::atomic<float> displayBeatsPerBar{ 4.0f };
-    std::atomic<bool> displayLockedIn{ false };
+    std::atomic<float> displayMidiHz{ 65.4064f };
+    std::atomic<int> displayMidiNote{ openedmkick::core::kDefaultMidiNote };
     std::atomic<bool> displayReversing{ false };
     std::atomic<uint32_t> displayTriggerCount{ 0 };
 
 private:
-    void syncSequencerPresets(const std::array<openedmkick::core::AutoSlotSettings, openedmkick::core::kNumAutoSlots>& slots);
+    void syncSequencerPresets(
+        const std::array<openedmkick::core::AutoSlotSettings, openedmkick::core::kNumAutoSlots>& slots);
 
     struct AutoSlotParams {
         std::atomic<float>* bars;
         std::atomic<float>* fillPreset;
         std::atomic<float>* grid;
         std::atomic<float>* tailShorten;
-        std::atomic<float>* pitchRise;
         std::atomic<float>* crushSweep;
     };
 
     struct ParameterValues {
-        std::atomic<float>* note;
-        std::atomic<float>* octave;
-        std::atomic<float>* fineTune;
-        std::atomic<float>* startPitch;
-        std::atomic<float>* pitchDecay;
-        std::atomic<float>* pitchCurve;
-        std::atomic<float>* tailLength;
-        std::atomic<float>* tailCurve;
-        std::atomic<float>* subDrive;
-        std::atomic<float>* clickLevel;
-        std::atomic<float>* clickFreq;
-        std::atomic<float>* punch;
-        std::atomic<float>* snareLevel;
-        std::atomic<float>* snareTone;
-        std::atomic<float>* snareDecay;
-        std::atomic<float>* clapLevel;
-        std::atomic<float>* clapSpread;
-        std::atomic<float>* clapTone;
-        std::atomic<float>* clapDecay;
-        std::atomic<float>* hatLevel;
-        std::atomic<float>* hatTone;
-        std::atomic<float>* hatDecay;
+        std::atomic<float>* sweepOctaves;
+        std::atomic<float>* sweepMs;
+        std::atomic<float>* sweepShape;
+        std::atomic<float>* snapOctaves;
+        std::atomic<float>* snapMs;
         std::atomic<float>* bodyTone;
-        std::atomic<float>* ampAttack;
-        std::atomic<float>* ampDecay;
-        std::atomic<float>* ampSustain;
-        std::atomic<float>* ampRelease;
-        std::atomic<float>* lockIn;
+        std::atomic<float>* bodyDrive;
+        std::atomic<float>* saturation;
+        std::atomic<float>* knockHz;
+        std::atomic<float>* knockDb;
+        std::atomic<float>* grit;
+        std::atomic<float>* toneHz;
+        std::atomic<float>* subLevel;
+        std::atomic<float>* startPhase;
+        std::atomic<float>* clickType;
+        std::atomic<float>* clickLevel;
+        std::atomic<float>* clickHz;
+        std::atomic<float>* clickMs;
+        std::atomic<float>* attackMs;
+        std::atomic<float>* holdMs;
+        std::atomic<float>* decayMs;
+        std::atomic<float>* decayShape;
+        std::atomic<float>* lowCutHz;
+        std::atomic<float>* clip;
         std::atomic<float>* clockSync;
         std::atomic<float>* tempoBpm;
         std::atomic<float>* timeSignature;
@@ -124,7 +117,6 @@ private:
         std::atomic<float>* output;
         std::atomic<float>* limiter;
         std::atomic<float>* ceiling;
-        std::atomic<float>* midiMode;
         std::atomic<float>* masterBypass;
     };
 
@@ -134,7 +126,6 @@ private:
     std::array<int, openedmkick::core::kNumAutoSlots> lastSlotPreset_{ -1, -1, -1, -1 };
     std::array<int, openedmkick::core::kNumAutoSlots> lastSlotBars_{ 0, 0, 0, 0 };
     std::atomic<bool> auditionPending_{ false };
-    std::atomic<uint16_t> sectionLockMask_{ 0 };
     std::atomic<bool> restoredCustomState_{ false };
     std::vector<openedmkick::core::MidiTrigger> midiScratch_;
     std::vector<openedmkick::core::MidiCcEvent> midiCcScratch_;

@@ -35,16 +35,16 @@ TEST_CASE("Beat 4 reverse effect finishes at the exact end of Beat 4", "[effects
     REQUIRE(halfBeat4Samples == kSamplesPerBeat / 2);
 
     // Verify KickVoice reverse playback stays active for exactly fullBeat4Samples and finishes at sample 24000.
-    const core::KickSynthSettings synth{};
-    const core::KickWavCache cache{};
+    const core::KickSettings synth{};
     core::KickVoice voice;
-    voice.triggerReverse(synth, cache, kSampleRate, fullBeat4Samples, 1.0f, 0.0f);
+    voice.prepare(kSampleRate);
+    voice.startReverse(synth, 60, 1.0f, fullBeat4Samples);
 
     float earlyEnergy = 0.0f;
     float lateEnergy = 0.0f;
     std::ranges::for_each(std::views::iota(0, fullBeat4Samples), [&](int i) {
         REQUIRE(voice.isActive());
-        const float s = std::abs(voice.nextSample(synth, cache, kSampleRate));
+        const float s = std::abs(voice.nextSample());
         if (i < 4000) {
             earlyEnergy += s;
         }
@@ -79,7 +79,7 @@ TEST_CASE("Beat synced reverse ends on the target sample across clocks and block
         settings.effects.reverseMix = 1.0f;
         settings.effects.drive = 0.0f;
         settings.effects.limiterEnabled = false;
-        settings.synth.tailLengthMs = 400.0f;
+        settings.synth.decayMs = 400.0f;
         const int expected = core::computeSyncedReverseSamples(mode, startPpq, bpm, beats, rate);
         if (expected != expectSamples(mode, startPpq, bpm, beats, rate) || expected <= 0) {
             return -1;
@@ -210,8 +210,8 @@ TEST_CASE("Bitcrusher quantizer stays on the bit grid and rejects NaNs", "[effec
     crusher.reset();
     const float recovered = crusher.process(std::numeric_limits<float>::quiet_NaN(), 1000.0f, 4, 48000.0);
     REQUIRE(std::isfinite(recovered));
-    REQUIRE_THAT(core::saturate(1.0f, 1.0f), WithinAbs(1.0f, 1.0e-4f));
-    REQUIRE_THAT(core::saturate(std::numeric_limits<float>::quiet_NaN(), 0.4f), WithinAbs(0.0f, 1.0e-6f));
+    REQUIRE_THAT(core::saturate(1.0f, core::Saturation::warm), WithinAbs(1.0f, 1.0e-4f));
+    REQUIRE_THAT(core::saturate(std::numeric_limits<float>::quiet_NaN(), core::Saturation::tube), WithinAbs(0.0f, 1.0e-6f));
 }
 
 TEST_CASE("Limiter catches the peak on the same sample and stays at the ceiling", "[effects]") {

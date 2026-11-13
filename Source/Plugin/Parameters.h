@@ -7,59 +7,34 @@
 
 namespace openedmkick::params {
 
-enum class Section : int {
-    tuning,
-    pitch,
-    bodyEnvelope,
-    transient,
-    layers,
-    autoMode,
-    reverse,
-    texture,
-    rhythm,
-    toneOutput,
-    count
-};
-
-inline constexpr int kSectionCount = static_cast<int>(Section::count);
-
-// Kick drum synthesis & 12-note tuning parameters
-inline constexpr const char* kNote = "note";
-inline constexpr const char* kMidiMode = "midi_mode";
-inline constexpr const char* kOctave = "octave";
-inline constexpr const char* kFineTune = "fine_tune";
-inline constexpr const char* kStartPitch = "start_pitch";
-inline constexpr const char* kPitchDecay = "pitch_decay";
-inline constexpr const char* kPitchCurve = "pitch_curve";
-inline constexpr const char* kTailLength = "tail_length";
-inline constexpr const char* kTailCurve = "tail_curve";
-inline constexpr const char* kSubDrive = "sub_drive";
-inline constexpr const char* kClickLevel = "click_level";
-inline constexpr const char* kClickFreq = "click_freq";
-inline constexpr const char* kPunch = "punch";
-inline constexpr const char* kSnareLevel = "snare_level";
-inline constexpr const char* kSnareTone = "snare_tone";
-inline constexpr const char* kSnareDecay = "snare_decay";
-inline constexpr const char* kClapLevel = "clap_level";
-inline constexpr const char* kClapSpread = "clap_spread";
-inline constexpr const char* kClapTone = "clap_tone";
-inline constexpr const char* kClapDecay = "clap_decay";
-inline constexpr const char* kHatLevel = "hat_level";
-inline constexpr const char* kHatTone = "hat_tone";
-inline constexpr const char* kHatDecay = "hat_decay";
+inline constexpr const char* kSweepOctaves = "sweep_octaves";
+inline constexpr const char* kSweepMs = "sweep_ms";
+inline constexpr const char* kSweepShape = "sweep_shape";
+inline constexpr const char* kSnapOctaves = "snap_octaves";
+inline constexpr const char* kSnapMs = "snap_ms";
 inline constexpr const char* kBodyTone = "body_tone";
-inline constexpr const char* kAmpAttack = "amp_attack";
-inline constexpr const char* kAmpDecay = "amp_decay";
-inline constexpr const char* kAmpSustain = "amp_sustain";
-inline constexpr const char* kAmpRelease = "amp_release";
-inline constexpr const char* kLockIn = "lock_in";
+inline constexpr const char* kBodyDrive = "body_drive";
+inline constexpr const char* kSaturation = "saturation";
+inline constexpr const char* kKnockHz = "knock_hz";
+inline constexpr const char* kKnockDb = "knock_db";
+inline constexpr const char* kGrit = "grit";
+inline constexpr const char* kToneHz = "tone_hz";
+inline constexpr const char* kSubLevel = "sub_level";
+inline constexpr const char* kStartPhase = "start_phase";
+inline constexpr const char* kClickType = "click_type";
+inline constexpr const char* kClickLevel = "click_level";
+inline constexpr const char* kClickHz = "click_hz";
+inline constexpr const char* kClickMs = "click_ms";
+inline constexpr const char* kAttackMs = "attack_ms";
+inline constexpr const char* kHoldMs = "hold_ms";
+inline constexpr const char* kDecayMs = "decay_ms";
+inline constexpr const char* kDecayShape = "decay_shape";
+inline constexpr const char* kLowCutHz = "low_cut_hz";
+inline constexpr const char* kClip = "clip";
 
-// Clock sync & transport parameters
 inline constexpr const char* kClockSync = "clock_sync";
 inline constexpr const char* kTempoBpm = "tempo_bpm";
 inline constexpr const char* kTimeSignature = "time_sig";
-
-// A/B/C/D Auto Mode & 1/64 Piano Roll parameters
 inline constexpr const char* kAutoEnabled = "auto_on";
 inline constexpr const char* kAutoBypass = "auto_bypass";
 inline constexpr const char* kAutoSlot = "auto_slot";
@@ -67,14 +42,12 @@ inline constexpr const char* kAutoBars = "auto_bars";
 inline constexpr const char* kAutoFillPreset = "auto_fill";
 inline constexpr const char* kAutoGrid = "auto_grid";
 inline constexpr const char* kAutoTailShorten = "auto_tail_shorten";
-inline constexpr const char* kAutoPitchRise = "auto_pitch_rise";
 inline constexpr const char* kAutoCrushSweep = "auto_crush_sweep";
 
-inline constexpr std::array<const char*, 6> kAutoSlotIds{
-    kAutoBars, kAutoFillPreset, kAutoGrid, kAutoTailShorten, kAutoPitchRise, kAutoCrushSweep
+inline constexpr std::array<const char*, 5> kAutoSlotIds{
+    kAutoBars, kAutoFillPreset, kAutoGrid, kAutoTailShorten, kAutoCrushSweep
 };
 
-// Host-synced Effects & Output parameters
 inline constexpr const char* kReverseMode = "reverse_mode";
 inline constexpr const char* kReverseMix = "reverse_mix";
 inline constexpr const char* kDrive = "drive";

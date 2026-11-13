@@ -18,7 +18,6 @@ namespace {
 
 void KickEngine::prepare(double sampleRate) {
     sampleRate_ = std::max(8000.0, sampleRate);
-    wavCache_.prepare(sampleRate_);
     forwardVoice_.prepare(sampleRate_);
     reverseVoice_.prepare(sampleRate_);
     stutter_.prepare(sampleRate_);
@@ -29,7 +28,6 @@ void KickEngine::prepare(double sampleRate) {
 
 void KickEngine::reset() noexcept {
     fallbackPpq_ = 0.0;
-    previousLockState_ = wavCache_.isLocked();
     currentPeak_ = currentBeatPhase_ = 0.0f;
     forwardVoice_.reset();
     reverseVoice_.reset();
@@ -48,37 +46,29 @@ void KickEngine::reset() noexcept {
     hasLastPpq_ = false;
 }
 
-void KickEngine::lockCurrentKick(const KickSynthSettings& settings) {
-    wavCache_.lockIn(settings, sampleRate_);
-    previousLockState_ = true;
-}
-
-void KickEngine::unlockKick() noexcept {
-    wavCache_.unlock();
-    previousLockState_ = false;
-}
-
-bool KickEngine::restoreLockedWav(const std::vector<uint8_t>& wavBytes) {
-    const bool restored = wavCache_.loadFromWavBytes(wavBytes);
-    previousLockState_ = restored;
-    return restored;
-}
-
 void KickEngine::triggerNote(
     const EngineSettings& settings,
     double samplePpq,
     double bpm,
     double beatsPerBar,
+    int midiNote,
     float velocity,
-    float semitoneOffset,
     float effectiveTailMs,
     bool reverseCue) noexcept {
     ++triggerSerial_;
     velocity = unit(velocity);
+    KickSettings voiceSettings = settings.synth;
+    if (effectiveTailMs > 0.0f) {
+        const float attack = std::clamp(voiceSettings.attackMs, 0.05f, 10.0f);
+        const float target = std::clamp(effectiveTailMs, 15.0f, hitLengthMs(settings.synth));
+        voiceSettings.holdMs = std::min(std::clamp(voiceSettings.holdMs, 0.0f, 400.0f),
+                                        std::max(0.0f, target - attack - 1.0f));
+        voiceSettings.decayMs = std::clamp(target - attack - voiceSettings.holdMs, 1.0f, 1500.0f);
+    }
     const bool reverse = shouldTriggerReverse(settings.effects.reverseMode, reverseCue, samplePpq, beatsPerBar)
         && settings.effects.reverseMix > 0.001f;
     if (!reverse) {
-        forwardVoice_.triggerForward(settings.synth, wavCache_, sampleRate_, velocity, semitoneOffset, effectiveTailMs);
+        forwardVoice_.start(voiceSettings, midiNote, velocity);
         return;
     }
 
@@ -87,13 +77,12 @@ void KickEngine::triggerNote(
     const double endPpq = reverseTargetPpq(mode, samplePpq, beatsPerBar);
     const int length = computeSyncedReverseSamples(mode, samplePpq, bpm, beatsPerBar, sampleRate_);
     if (length <= 0) {
-        forwardVoice_.triggerForward(settings.synth, wavCache_, sampleRate_, velocity, semitoneOffset, effectiveTailMs);
+        forwardVoice_.start(voiceSettings, midiNote, velocity);
         return;
     }
 
-    reverseVoice_.triggerReverse(settings.synth, wavCache_, sampleRate_, length,
-                                 velocity * unit(settings.effects.reverseMix), semitoneOffset);
-    reverseVoice_.armMusicalReverse(samplePpq, endPpq);
+    reverseVoice_.startReverse(voiceSettings, midiNote,
+                               velocity * unit(settings.effects.reverseMix), length);
     reverseArmed_ = true;
     reverseStartPpq_ = samplePpq;
     reverseEndPpq_ = endPpq;
@@ -101,8 +90,7 @@ void KickEngine::triggerNote(
     if (forwardLevel <= 0.001f) {
         forwardVoice_.reset();
     } else {
-        forwardVoice_.triggerForward(settings.synth, wavCache_, sampleRate_, velocity * forwardLevel,
-                                     semitoneOffset, effectiveTailMs);
+        forwardVoice_.start(voiceSettings, midiNote, velocity * forwardLevel);
     }
 }
 
@@ -115,10 +103,6 @@ void KickEngine::process(
     int numSamples,
     std::span<const MidiCcEvent> controlChanges) noexcept {
     if (channels == nullptr || numChannels <= 0 || numSamples <= 0) return;
-
-    if (settings.lockIn && !previousLockState_ && !wavCache_.isLocked()) wavCache_.lockIn(settings.synth, sampleRate_);
-    if (!settings.lockIn && previousLockState_) wavCache_.unlock();
-    previousLockState_ = settings.lockIn;
 
     if (settings.masterBypass) {
         for (int channel = 0; channel < numChannels; ++channel) std::fill_n(channels[channel], numSamples, 0.0f);
@@ -171,22 +155,20 @@ void KickEngine::process(
         }
 
         if (autoActive && transport.isPlaying) {
-            const auto event = sequencer_.stepSample(slot, autoSettings, settings.synth.tailLengthMs,
+            const auto event = sequencer_.stepSample(slot, autoSettings, hitLengthMs(settings.synth),
                 bpm, beatsPerBar, sampleRate_, hasHostPpq, ppq);
             if (event.triggered)
-                triggerNote(settings, ppq, bpm, beatsPerBar, event.velocity, event.semitoneOffset,
+                triggerNote(settings, ppq, bpm, beatsPerBar, kDefaultMidiNote, event.velocity,
                             event.effectiveTailMs, event.reverseCue);
         }
 
         for (const auto& trigger : midiTriggers) {
-            if (trigger.sampleOffset != sample || trigger.velocity <= 0.0f || (autoActive && !trigger.audition)) continue;
-            const float transpose = settings.noteTracking && !trigger.audition
-                ? trackedSemitoneOffset(settings.synth.note, settings.synth.octave, trigger.noteNumber) : 0.0f;
-            triggerNote(settings, ppq, bpm, beatsPerBar, trigger.velocity, transpose, -1.0f, false);
+            if (trigger.sampleOffset != sample || trigger.velocity <= 0.0f) continue;
+            const int note = trigger.audition ? kDefaultMidiNote : trigger.noteNumber;
+            triggerNote(settings, ppq, bpm, beatsPerBar, note, trigger.velocity, -1.0f, false);
         }
 
-        const float raw = forwardVoice_.nextSample(settings.synth, wavCache_, sampleRate_, ppq)
-            + reverseVoice_.nextSample(settings.synth, wavCache_, sampleRate_, ppq);
+        const float raw = forwardVoice_.nextSample() + reverseVoice_.nextSample();
         const float driven = saturate(raw, settings.effects.drive);
         const float ramp = autoActive ? unit(autoSettings.crushSweep) * sequencer_.currentWindowPhase() : 0.0f;
         const float crushMix = std::clamp(unit(settings.effects.crushMix) + ramp, 0.0f, 1.0f);
