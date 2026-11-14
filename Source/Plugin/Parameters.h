@@ -32,6 +32,14 @@ inline constexpr const char* kDecayShape = "decay_shape";
 inline constexpr const char* kLowCutHz = "low_cut_hz";
 inline constexpr const char* kClip = "clip";
 
+inline constexpr const char* kLayerEnabled = "enabled";
+inline constexpr const char* kLayerSound = "sound";
+inline constexpr const char* kLayerGain = "gain";
+inline constexpr const char* kLayerTranspose = "transpose";
+inline constexpr const char* kLayerDecay = "decay";
+inline constexpr const char* kLayerHighPass = "hp";
+inline constexpr const char* kLayerLowPass = "lp";
+
 inline constexpr const char* kClockSync = "clock_sync";
 inline constexpr const char* kTempoBpm = "tempo_bpm";
 inline constexpr const char* kTimeSignature = "time_sig";
@@ -62,6 +70,10 @@ inline constexpr const char* kPumpRate = "pump_rate";
 inline constexpr const char* kPumpMix = "pump_mix";
 inline constexpr const char* kHighPass = "hp_cutoff";
 inline constexpr const char* kLowPass = "lp_cutoff";
+inline constexpr const char* kHighPassSyncEnabled = "hp_sync_on";
+inline constexpr const char* kHighPassSyncRate = "hp_sync_rate";
+inline constexpr const char* kLowPassSyncEnabled = "lp_sync_on";
+inline constexpr const char* kLowPassSyncRate = "lp_sync_rate";
 inline constexpr const char* kOutput = "output";
 inline constexpr const char* kLimiter = "limiter";
 inline constexpr const char* kCeiling = "ceiling";
@@ -72,6 +84,7 @@ inline constexpr std::array<std::pair<int, int>, 9> kTimeSignatures = { {
 } };
 
 [[nodiscard]] juce::String autoSlotId(int slot, const juce::String& baseId);
+[[nodiscard]] juce::String layerId(int layer, const juce::String& baseId);
 [[nodiscard]] double beatsPerBarForSignature(int index) noexcept;
 [[nodiscard]] juce::String formatHz(float hz);
 [[nodiscard]] juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();

@@ -34,6 +34,8 @@ public:
     void setStateInformation(const void* data, int sizeInBytes) override;
 
     [[nodiscard]] openedmkick::core::KickSettings currentSynthSettings() const noexcept;
+    [[nodiscard]] std::array<openedmkick::core::DrumLayerSettings, openedmkick::core::kNumSoundLayers>
+        currentLayerSettings() const noexcept;
     [[nodiscard]] openedmkick::core::AutoSlotSettings currentAutoSlotSettings() const noexcept;
     [[nodiscard]] openedmkick::core::AutoSlotSettings autoSlotSettings(int slot) const noexcept;
     [[nodiscard]] int currentAutoSlot() const noexcept;
@@ -68,6 +70,16 @@ private:
         std::atomic<float>* crushSweep;
     };
 
+    struct LayerParams {
+        std::atomic<float>* enabled;
+        std::atomic<float>* sound;
+        std::atomic<float>* gain;
+        std::atomic<float>* transpose;
+        std::atomic<float>* decay;
+        std::atomic<float>* highPass;
+        std::atomic<float>* lowPass;
+    };
+
     struct ParameterValues {
         std::atomic<float>* sweepOctaves;
         std::atomic<float>* sweepMs;
@@ -100,6 +112,7 @@ private:
         std::atomic<float>* autoBypass;
         std::atomic<float>* autoSlot;
         std::array<AutoSlotParams, openedmkick::core::kNumAutoSlots> autoSlots;
+        std::array<LayerParams, openedmkick::core::kNumSoundLayers> layers;
         std::atomic<float>* reverseMode;
         std::atomic<float>* reverseMix;
         std::atomic<float>* drive;
@@ -114,6 +127,10 @@ private:
         std::atomic<float>* pumpMix;
         std::atomic<float>* highPass;
         std::atomic<float>* lowPass;
+        std::atomic<float>* highPassSyncEnabled;
+        std::atomic<float>* highPassSyncRate;
+        std::atomic<float>* lowPassSyncEnabled;
+        std::atomic<float>* lowPassSyncRate;
         std::atomic<float>* output;
         std::atomic<float>* limiter;
         std::atomic<float>* ceiling;

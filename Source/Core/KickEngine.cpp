@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <ranges>
 
 namespace openedmkick::core {
 namespace {
@@ -18,8 +19,8 @@ namespace {
 
 void KickEngine::prepare(double sampleRate) {
     sampleRate_ = std::max(8000.0, sampleRate);
-    forwardVoice_.prepare(sampleRate_);
-    reverseVoice_.prepare(sampleRate_);
+    std::ranges::for_each(forwardVoices_, [this](KickVoice& voice) { voice.prepare(sampleRate_); });
+    std::ranges::for_each(reverseVoices_, [this](KickVoice& voice) { voice.prepare(sampleRate_); });
     stutter_.prepare(sampleRate_);
     limiter_.prepare(sampleRate_);
     toneSmooth_ = static_cast<float>(1.0 - std::exp(-1.0 / (0.012 * sampleRate_)));
@@ -29,8 +30,8 @@ void KickEngine::prepare(double sampleRate) {
 void KickEngine::reset() noexcept {
     fallbackPpq_ = 0.0;
     currentPeak_ = currentBeatPhase_ = 0.0f;
-    forwardVoice_.reset();
-    reverseVoice_.reset();
+    std::ranges::for_each(forwardVoices_, [](KickVoice& voice) { voice.reset(); });
+    std::ranges::for_each(reverseVoices_, [](KickVoice& voice) { voice.reset(); });
     sequencer_.reset();
     crusher_.reset();
     stutter_.reset();
@@ -41,9 +42,14 @@ void KickEngine::reset() noexcept {
     smoothedLowPassHz_ = ToneFilter::kLowPassBypassHz;
     toneSnap_ = true;
     midiVolume_ = midiExpression_ = midiBrightness_ = 1.0f;
+    reverseCcEnabled_ = highPassCcEnabled_ = lowPassCcEnabled_ = false;
     reverseArmed_ = false;
     lastPpqStep_ = 0.0;
     hasLastPpq_ = false;
+}
+
+bool KickEngine::isVoiceReversing() const noexcept {
+    return std::ranges::any_of(reverseVoices_, [](const KickVoice& voice) { return voice.isActive(); });
 }
 
 void KickEngine::triggerNote(
@@ -65,32 +71,43 @@ void KickEngine::triggerNote(
                                         std::max(0.0f, target - attack - 1.0f));
         voiceSettings.decayMs = std::clamp(target - attack - voiceSettings.holdMs, 1.0f, 1500.0f);
     }
-    const bool reverse = shouldTriggerReverse(settings.effects.reverseMode, reverseCue, samplePpq, beatsPerBar)
+    ReverseSyncMode reverseMode = settings.effects.reverseMode;
+    if (reverseMode == ReverseSyncMode::Off && reverseCcEnabled_) reverseMode = ReverseSyncMode::BeatEnd;
+    const bool reverse = shouldTriggerReverse(reverseMode, reverseCue, samplePpq, beatsPerBar)
         && settings.effects.reverseMix > 0.001f;
-    if (!reverse) {
-        forwardVoice_.start(voiceSettings, midiNote, velocity);
-        return;
+    const auto mode = reverseMode == ReverseSyncMode::Off ? ReverseSyncMode::BeatEnd : reverseMode;
+    double endPpq = samplePpq;
+    int length = 0;
+    if (reverse) {
+        endPpq = reverseTargetPpq(mode, samplePpq, beatsPerBar);
+        length = computeSyncedReverseSamples(mode, samplePpq, bpm, beatsPerBar, sampleRate_);
     }
+    float reverseLevel = 0.0f;
+    if (reverse && length > 0) reverseLevel = unit(settings.effects.reverseMix);
+    const float forwardLevel = reverse && length > 0 ? 1.0f - reverseLevel : 1.0f;
 
-    const auto mode = settings.effects.reverseMode == ReverseSyncMode::Off
-        ? ReverseSyncMode::BeatEnd : settings.effects.reverseMode;
-    const double endPpq = reverseTargetPpq(mode, samplePpq, beatsPerBar);
-    const int length = computeSyncedReverseSamples(mode, samplePpq, bpm, beatsPerBar, sampleRate_);
-    if (length <= 0) {
-        forwardVoice_.start(voiceSettings, midiNote, velocity);
-        return;
-    }
+    std::ranges::for_each(std::views::iota(size_t{ 0 }, static_cast<size_t>(kNumSoundLayers)), [&](size_t i) {
+        const auto& layer = settings.layers[i];
+        if (!layer.enabled || layer.gain <= 0.0001f) {
+            forwardVoices_[i].reset();
+            reverseVoices_[i].reset();
+            return;
+        }
+        if (reverseLevel > 0.001f) {
+            reverseVoices_[i].startReverse(voiceSettings, midiNote, velocity, length, layer, reverseLevel);
+        }
+        if (forwardLevel > 0.001f) {
+            forwardVoices_[i].start(voiceSettings, midiNote, velocity, layer, forwardLevel);
+        }
+        if (forwardLevel <= 0.001f) {
+            forwardVoices_[i].reset();
+        }
+    });
 
-    reverseVoice_.startReverse(voiceSettings, midiNote,
-                               velocity * unit(settings.effects.reverseMix), length);
-    reverseArmed_ = true;
-    reverseStartPpq_ = samplePpq;
-    reverseEndPpq_ = endPpq;
-    const float forwardLevel = 1.0f - unit(settings.effects.reverseMix);
-    if (forwardLevel <= 0.001f) {
-        forwardVoice_.reset();
-    } else {
-        forwardVoice_.start(voiceSettings, midiNote, velocity * forwardLevel);
+    if (reverseLevel > 0.001f && length > 0) {
+        reverseArmed_ = true;
+        reverseStartPpq_ = samplePpq;
+        reverseEndPpq_ = endPpq;
     }
 }
 
@@ -132,7 +149,7 @@ void KickEngine::process(
         const bool seekedBack = hasLastPpq_ && ppq + 1.0e-7 < lastSamplePpq_;
         const bool seekedForward = hasLastPpq_ && ppq > lastSamplePpq_ + expectedPpqStep + seekTolerance;
         if (reverseArmed_ && (!transport.isPlaying || seekedBack || seekedForward || ppq >= reverseEndPpq_)) {
-            reverseVoice_.reset();
+            std::ranges::for_each(reverseVoices_, [](KickVoice& voice) { voice.reset(); });
             reverseArmed_ = false;
         }
         hasLastPpq_ = true;
@@ -146,10 +163,18 @@ void KickEngine::process(
                 case 7: midiVolume_ = value; break;
                 case 11: midiExpression_ = value; break;
                 case 74: midiBrightness_ = value; break;
+                case 20: reverseCcEnabled_ = value >= 0.5f; break;
+                case 21: highPassCcEnabled_ = value >= 0.5f; break;
+                case 22: lowPassCcEnabled_ = value >= 0.5f; break;
                 case 120:
-                    forwardVoice_.reset(); reverseVoice_.reset(); reverseArmed_ = false; break;
+                    std::ranges::for_each(forwardVoices_, [](KickVoice& voice) { voice.reset(); });
+                    std::ranges::for_each(reverseVoices_, [](KickVoice& voice) { voice.reset(); });
+                    reverseArmed_ = false;
+                    break;
                 case 121:
-                    midiVolume_ = midiExpression_ = midiBrightness_ = 1.0f; break;
+                    midiVolume_ = midiExpression_ = midiBrightness_ = 1.0f;
+                    reverseCcEnabled_ = highPassCcEnabled_ = lowPassCcEnabled_ = false;
+                    break;
                 default: break;
             }
         }
@@ -168,7 +193,10 @@ void KickEngine::process(
             triggerNote(settings, ppq, bpm, beatsPerBar, note, trigger.velocity, -1.0f, false);
         }
 
-        const float raw = forwardVoice_.nextSample() + reverseVoice_.nextSample();
+        float raw = 0.0f;
+        std::ranges::for_each(std::views::iota(size_t{ 0 }, static_cast<size_t>(kNumSoundLayers)), [&](size_t i) {
+            raw += forwardVoices_[i].nextSample() + reverseVoices_[i].nextSample();
+        });
         const float driven = saturate(raw, settings.effects.drive);
         const float ramp = autoActive ? unit(autoSettings.crushSweep) * sequencer_.currentWindowPhase() : 0.0f;
         const float crushMix = std::clamp(unit(settings.effects.crushMix) + ramp, 0.0f, 1.0f);
@@ -181,13 +209,34 @@ void KickEngine::process(
         const float gated = pumped * TempoGate::gainAt(ppq, division(settings.effects.gateDivision), settings.effects.gateMix);
         float out = gated * settings.effects.outputGain * midiVolume_ * midiExpression_;
 
+        const bool highPassSync = settings.effects.highPassSyncEnabled || highPassCcEnabled_;
+        const bool lowPassSync = settings.effects.lowPassSyncEnabled || lowPassCcEnabled_;
+        const auto syncMotion = [&](int rateIndex) noexcept {
+            const double grid = division(rateIndex);
+            const double cycle = std::max(0.0, ppq) / grid;
+            const float phase = static_cast<float>(cycle - std::floor(cycle));
+            return 0.5f - 0.5f * std::cos(2.0f * std::numbers::pi_v<float> * phase);
+        };
+        const float hpBase = settings.effects.highPassHz;
+        const float lpBase = settings.effects.lowPassHz;
+        const float hpCeiling = hpBase > ToneFilter::kHighPassBypassHz + 0.5f ? hpBase : 8000.0f;
+        const float lpFloor = lpBase < ToneFilter::kLowPassBypassHz - 1.0f ? lpBase : 200.0f;
+        float highPassTarget = hpBase;
+        float lowPassTarget = lpBase;
+        if (highPassSync)
+            highPassTarget = ToneFilter::kHighPassBypassHz + syncMotion(settings.effects.highPassSyncDivision)
+                * (hpCeiling - ToneFilter::kHighPassBypassHz);
+        if (lowPassSync)
+            lowPassTarget = ToneFilter::kLowPassBypassHz - syncMotion(settings.effects.lowPassSyncDivision)
+                * (ToneFilter::kLowPassBypassHz - lpFloor);
+
         if (toneSnap_) {
-            smoothedHighPassHz_ = settings.effects.highPassHz;
-            smoothedLowPassHz_ = settings.effects.lowPassHz;
+            smoothedHighPassHz_ = highPassTarget;
+            smoothedLowPassHz_ = lowPassTarget;
             toneSnap_ = false;
         } else {
-            smoothedHighPassHz_ += toneSmooth_ * (settings.effects.highPassHz - smoothedHighPassHz_);
-            smoothedLowPassHz_ += toneSmooth_ * (settings.effects.lowPassHz - smoothedLowPassHz_);
+            smoothedHighPassHz_ += toneSmooth_ * (highPassTarget - smoothedHighPassHz_);
+            smoothedLowPassHz_ += toneSmooth_ * (lowPassTarget - smoothedLowPassHz_);
         }
         const float brightnessMax = 40.0f + midiBrightness_ * (ToneFilter::kLowPassBypassHz - 40.0f);
         out = toneFilter_.process(out, smoothedHighPassHz_, std::min(smoothedLowPassHz_, brightnessMax), sampleRate_);

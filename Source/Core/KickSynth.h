@@ -1,6 +1,7 @@
 #pragma once
 
 #include "KickDsp.h"
+#include "Effects.h"
 
 #include <array>
 #include <cstdint>
@@ -11,9 +12,22 @@ namespace openedmkick::core {
 
 enum class Saturation : int { warm = 0, tube, crunch, fold };
 enum class ClickType : int { beater = 0, noise, tick, analog };
+enum class DrumSoundType : int { kick = 0, snare, clap, hat };
 
 inline constexpr std::array<std::string_view, 4> kSaturationNames{ "Warm", "Tube", "Crunch", "Fold" };
 inline constexpr std::array<std::string_view, 4> kClickTypeNames{ "Beater", "Noise", "Tick", "Analog" };
+inline constexpr std::array<std::string_view, 4> kDrumSoundNames{ "Kick", "Snare", "Clap", "Hat" };
+inline constexpr int kNumSoundLayers = 4;
+
+struct DrumLayerSettings {
+    bool enabled = true;
+    DrumSoundType sound = DrumSoundType::kick;
+    float gain = 1.0f;
+    float transposeSemitones = 0.0f;
+    float decayMs = 300.0f;
+    float highPassHz = ToneFilter::kHighPassBypassHz;
+    float lowPassHz = ToneFilter::kLowPassBypassHz;
+};
 
 // Every control that shapes a single hit. Root pitch always comes from MIDI.
 struct KickSettings {
@@ -84,8 +98,10 @@ inline constexpr int kDefaultMidiNote = 36; // C2, 65.41 Hz
 class KickVoice {
 public:
     void prepare(double hostRate);
-    void start(const KickSettings& settings, int midiNote, float gain) noexcept;
-    void startReverse(const KickSettings& settings, int midiNote, float gain, int durationSamples) noexcept;
+    void start(const KickSettings& settings, int midiNote, float velocity,
+               const DrumLayerSettings& layer = {}, float gainScale = 1.0f) noexcept;
+    void startReverse(const KickSettings& settings, int midiNote, float velocity, int durationSamples,
+                      const DrumLayerSettings& layer = {}, float gainScale = 1.0f) noexcept;
     void choke() noexcept;
     void reset() noexcept;
 
@@ -93,18 +109,22 @@ public:
     [[nodiscard]] float nextSample() noexcept;
 
 private:
-    void startState(const KickSettings& settings, int midiNote, float gain) noexcept;
+    void startState(const KickSettings& settings, int midiNote, float velocity,
+                    const DrumLayerSettings& layer, float gainScale) noexcept;
     [[nodiscard]] float renderHostSample() noexcept;
     [[nodiscard]] float renderOversampled() noexcept;
     [[nodiscard]] float renderClick(float timeMs) noexcept;
+    [[nodiscard]] float renderDrumLayer(float timeMs) noexcept;
 
     double hostRate_ = 48000.0;
     double osRate_ = 192000.0;
     dsp::Decimator decimator_;
 
     KickSettings settings_{};
+    DrumLayerSettings layer_{};
     bool active_ = false;
     float gain_ = 1.0f;
+    float velocity_ = 1.0f;
     float noteHz_ = 43.65f;
     float previousSample_ = 0.0f;
     double phase_ = 0.0;
@@ -125,10 +145,16 @@ private:
     dsp::Biquad tone_;
     dsp::Biquad lowCut_;
     dsp::Biquad clickFilter_;
+    ToneFilter layerFilter_;
     dsp::Noise noise_;
 };
 
 // Offline render of one hit, sample-identical to live playback of the same note.
 [[nodiscard]] std::vector<float> renderKick(const KickSettings& settings, double sampleRate, int midiNote);
+[[nodiscard]] std::vector<float> renderLayeredKick(
+    const KickSettings& settings,
+    const std::array<DrumLayerSettings, kNumSoundLayers>& layers,
+    double sampleRate,
+    int midiNote);
 
 } // namespace openedmkick::core

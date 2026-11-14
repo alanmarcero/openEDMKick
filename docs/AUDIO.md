@@ -1,36 +1,45 @@
-# V3 audio engine
+# V3.1 audio engine
 
-openKicker v3 replaces the kick voice, sequencer patterns, and sound design controls. The engine remains a self-contained C++20 library without a JUCE dependency.
+openKicker v3.1 combines four independently shaped drum voices into one MIDI instrument. The engine remains a self-contained C++20 library without a JUCE dependency.
 
-## MIDI-tuned kick voice
+## Drum layers
 
-The incoming MIDI note directly sets the oscillator's fundamental using equal temperament around A4 = 440 Hz. Pitch sweeps start above that note and land on it; no fixed root, octave offset, fine tuning, or pitch-lock stage can override incoming MIDI. An A4 therefore lands at 440 Hz and A3 at 220 Hz.
+Each MIDI or Auto Mode trigger plays every enabled layer. Layers A–D each select Kick, Snare, Clap, or Hat and have their own level, pitch, decay, high-pass, and low-pass settings. Each layer's filters run before the voices are mixed. Layer A starts as an enabled kick; B, C, and D start muted with Snare, Clap, and Hat selected.
 
-The oscillator adds second through fourth harmonics to the fundamental. Resonant knock, several saturation curves, a decaying grit stage, tone shaping, and a parallel clean sub component give the body more midrange weight than a sine-only kick. The transient has beater, noise, tick, and analog modes. An attack, hold, decay, and curve shape the one-shot amplitude; MIDI note-off does not end a hit.
+Kick layers use the main kick controls for their swept, harmonically shaped voice. Their layer decay scales the main decay. Snare layers combine a pitched body with band-limited noise. Clap layers use a short noise burst pattern. Hat layers combine bright noise with inharmonic metallic partials. Layer pitch transposes kick and snare notes and tunes the hat partials.
 
-The editor preview and live voice share `renderKick`/`KickVoice` synthesis. The waveform page reports the latest MIDI note and its frequency. Audition uses C2.
+The incoming MIDI note sets the kick oscillator's equal-tempered fundamental around A4 = 440 Hz. Pitch sweeps start above that note and land on its tuned pitch. All enabled layers receive the same MIDI note and velocity; Auto Mode uses C2. Note-off does not end a one-shot.
+
+Velocity maps to a curved level response and also changes kick drive and transient intensity. Pattern steps use their stored velocity through the same response.
 
 ## Pattern clock
 
-The sequencer has four independent slots. Each stores a fill selection, bar count, grid, tail trim, and bitcrush ramp. The 28 trance fills create a single-pitch trigger lane with velocity and optional reverse cues. The piano roll changes trigger position and length only. Generated Auto Mode hits use C2; external MIDI triggers always use their incoming note.
+The sequencer has four independent pattern scenes. Each stores a fill selection, bar count, grid, tail trim, and bitcrush ramp. The 28 trance fills create a one-lane trigger pattern with velocity and optional reverse cues. The piano roll changes trigger position and length only. Auto Mode triggers use C2; external MIDI triggers use their incoming note.
 
-Host sync uses host PPQ, tempo, and meter. Internal clock uses the selected tempo and meter. Auto Mode triggers use C2 because they are generated without a MIDI note. Tail trim estimates the time to the next pattern hit and reduces the current tail for fast patterns. It only applies to Auto Mode triggers.
+Host sync uses host PPQ, tempo, and meter. Internal clock uses the selected tempo and meter. Tail trim estimates the time to the next pattern hit and reduces the current kick tail for fast patterns. It only applies to Auto Mode triggers.
+
+## Host-synced effects and MIDI CC
+
+The reverse mode, high-pass sync switch/rate, and low-pass sync switch/rate are plug-in parameters that hosts can automate. HP and LP sync rates range from 1/4 to 1/64. The high-pass sweep opens from 20 Hz to its selected cutoff (or 8 kHz when the cutoff is bypassed). The low-pass sweep closes from 20 kHz to its selected cutoff (or 200 Hz when bypassed). Both follow host PPQ and the selected musical division.
+
+MIDI CC values activate the matching mode on every MIDI channel. Values 64–127 enable an effect; values 0–63 disable its CC activation. The mode parameter still controls its independently automated state.
+
+| CC | Effect |
+| --- | --- |
+| 20 | Reverse; uses Beat End when Reverse mode is Off |
+| 21 | Host-synced high-pass sweep |
+| 22 | Host-synced low-pass sweep |
+| 7 | MIDI volume trim |
+| 11 | MIDI expression trim |
+| 74 | Brightness / low-pass ceiling |
+| 120 | All Sound Off |
+| 121 | Reset volume, expression, brightness, and CC20–22 activations |
+| 123 | Ignored; one-shot hits continue |
 
 ## Effect path
 
-Reverse samples the synthesized voice and schedules it against the selected musical boundary. The remaining signal path is:
-
-1. Drive saturation.
-2. Sample-rate and bit-depth reduction, blended with the dry signal.
-3. Host-synced beat repeat, blended with the dry signal.
-4. Rhythmic low-pass pump.
-5. Tempo gate.
-6. Output gain and MIDI Volume/Expression.
-7. Smoothed high-pass and low-pass filters, plus MIDI Brightness ceiling.
-8. Optional zero-latency peak limiter.
-
-The high-pass and low-pass each use two cascaded one-pole stages. The effect returns the input at the 20 Hz high-pass and 20 kHz low-pass bypass points. The limiter applies gain reduction on the sample that crosses the ceiling and reports zero samples of latency.
+After the layered voices are mixed, the engine applies drive saturation, bitcrushing, host-synced beat repeat, rhythmic filter pump, tempo gate, output gain and MIDI Volume/Expression. It then applies the host-synced or static high-pass and low-pass filters, MIDI Brightness ceiling, and optional zero-latency peak limiter.
 
 ## Session state
 
-The processor preserves the plug-in identity. New v3 state stores the selected v3 program, current parameters, and four pattern slots. Older state is loaded using matching parameter IDs where available and marked as a custom sound. Frozen WAV data and old pitch-lock state are not restored.
+The processor keeps the openKicker plug-in identity and v3 factory bank. Layer settings and host-sync parameters are saved with the session and are available for automation. Older sessions retain matching parameter values and use defaults for the added layer and sync controls.

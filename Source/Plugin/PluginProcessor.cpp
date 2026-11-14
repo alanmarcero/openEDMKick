@@ -21,6 +21,13 @@ OpenEdmKickProcessor::OpenEdmKickProcessor()
                                      slotRaw(params::kAutoGrid), slotRaw(params::kAutoTailShorten),
                                      slotRaw(params::kAutoCrushSweep) };
           };
+          const auto layerParams = [&](int layer) {
+              const auto layerRaw = [&](const char* key) { return raw(params::layerId(layer, key)); };
+              return LayerParams{ layerRaw(params::kLayerEnabled), layerRaw(params::kLayerSound),
+                                  layerRaw(params::kLayerGain), layerRaw(params::kLayerTranspose),
+                                  layerRaw(params::kLayerDecay), layerRaw(params::kLayerHighPass),
+                                  layerRaw(params::kLayerLowPass) };
+          };
           return ParameterValues{
               raw(params::kSweepOctaves), raw(params::kSweepMs), raw(params::kSweepShape),
               raw(params::kSnapOctaves), raw(params::kSnapMs), raw(params::kBodyTone),
@@ -33,11 +40,14 @@ OpenEdmKickProcessor::OpenEdmKickProcessor()
               raw(params::kClockSync), raw(params::kTempoBpm), raw(params::kTimeSignature),
               raw(params::kAutoEnabled), raw(params::kAutoBypass), raw(params::kAutoSlot),
               { slotParams(0), slotParams(1), slotParams(2), slotParams(3) },
+              { layerParams(0), layerParams(1), layerParams(2), layerParams(3) },
               raw(params::kReverseMode), raw(params::kReverseMix), raw(params::kDrive),
               raw(params::kCrushRate), raw(params::kCrushBits), raw(params::kCrushMix),
               raw(params::kStutterRate), raw(params::kStutterMix), raw(params::kGateRate),
               raw(params::kGateMix), raw(params::kPumpRate), raw(params::kPumpMix),
-              raw(params::kHighPass), raw(params::kLowPass), raw(params::kOutput),
+              raw(params::kHighPass), raw(params::kLowPass), raw(params::kHighPassSyncEnabled),
+              raw(params::kHighPassSyncRate), raw(params::kLowPassSyncEnabled), raw(params::kLowPassSyncRate),
+              raw(params::kOutput),
               raw(params::kLimiter), raw(params::kCeiling), raw(params::kMasterBypass)
           };
       }()) {
@@ -77,6 +87,20 @@ core::KickSettings OpenEdmKickProcessor::currentSynthSettings() const noexcept {
     };
 }
 
+std::array<core::DrumLayerSettings, core::kNumSoundLayers> OpenEdmKickProcessor::currentLayerSettings() const noexcept {
+    std::array<core::DrumLayerSettings, core::kNumSoundLayers> result{};
+    std::ranges::for_each(std::views::iota(size_t{ 0 }, result.size()), [&](size_t index) {
+        const auto& layer = values_.layers[index];
+        result[index] = core::DrumLayerSettings{
+            layer.enabled->load() > 0.5f,
+            static_cast<core::DrumSoundType>(std::clamp(static_cast<int>(layer.sound->load()), 0, 3)),
+            layer.gain->load(), layer.transpose->load(), layer.decay->load(),
+            layer.highPass->load(), layer.lowPass->load()
+        };
+    });
+    return result;
+}
+
 core::AutoSlotSettings OpenEdmKickProcessor::autoSlotSettings(int slot) const noexcept {
     const int safeSlot = std::clamp(slot, 0, core::kNumAutoSlots - 1);
     const auto& slotValues = values_.autoSlots[static_cast<size_t>(safeSlot)];
@@ -98,7 +122,7 @@ core::AutoSlotSettings OpenEdmKickProcessor::currentAutoSlotSettings() const noe
 
 std::vector<float> OpenEdmKickProcessor::previewKickWaveform() const {
     constexpr double previewRate = 24000.0;
-    auto wave = core::renderKick(currentSynthSettings(), previewRate, currentMidiNote());
+    auto wave = core::renderLayeredKick(currentSynthSettings(), currentLayerSettings(), previewRate, currentMidiNote());
     core::ToneFilter filter;
     const float highPass = values_.highPass->load();
     const float lowPass = values_.lowPass->load();
@@ -146,20 +170,25 @@ void OpenEdmKickProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
     };
     syncSequencerPresets(slotSettings);
 
-    const core::EngineSettings settings{
-        currentSynthSettings(), isOn(values_.autoEnabled), isOn(values_.autoBypass), currentAutoSlot(), slotSettings,
-        core::EffectSettings{
-            static_cast<core::ReverseSyncMode>(std::clamp(choice(values_.reverseMode), 0, 4)),
-            values_.reverseMix->load(), values_.drive->load(), values_.crushRate->load(),
-            choice(values_.crushBits), values_.crushMix->load(), choice(values_.stutterRate),
-            values_.stutterMix->load(), choice(values_.gateRate), values_.gateMix->load(),
-            choice(values_.pumpRate), values_.pumpMix->load(),
-            juce::Decibels::decibelsToGain(values_.output->load()), isOn(values_.limiter),
-            juce::Decibels::decibelsToGain(values_.ceiling->load()), values_.highPass->load(),
-            values_.lowPass->load()
-        },
-        isOn(values_.masterBypass)
+    core::EngineSettings settings{};
+    settings.synth = currentSynthSettings();
+    settings.layers = currentLayerSettings();
+    settings.autoEnabled = isOn(values_.autoEnabled);
+    settings.autoBypass = isOn(values_.autoBypass);
+    settings.activeAutoSlot = currentAutoSlot();
+    settings.autoSlots = slotSettings;
+    settings.effects = core::EffectSettings{
+        static_cast<core::ReverseSyncMode>(std::clamp(choice(values_.reverseMode), 0, 4)),
+        values_.reverseMix->load(), values_.drive->load(), values_.crushRate->load(),
+        choice(values_.crushBits), values_.crushMix->load(), choice(values_.stutterRate),
+        values_.stutterMix->load(), choice(values_.gateRate), values_.gateMix->load(),
+        choice(values_.pumpRate), values_.pumpMix->load(),
+        juce::Decibels::decibelsToGain(values_.output->load()), isOn(values_.limiter),
+        juce::Decibels::decibelsToGain(values_.ceiling->load()), values_.highPass->load(),
+        values_.lowPass->load(), isOn(values_.highPassSyncEnabled), choice(values_.highPassSyncRate),
+        isOn(values_.lowPassSyncEnabled), choice(values_.lowPassSyncRate)
     };
+    settings.masterBypass = isOn(values_.masterBypass);
 
     const bool syncToHost = isOn(values_.clockSync);
     const double manualBpm = static_cast<double>(values_.tempoBpm->load());
@@ -199,7 +228,7 @@ void OpenEdmKickProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
         }
         if (!message.isController()) return;
         const int controller = message.getControllerNumber();
-        if (controller != 7 && controller != 11 && controller != 74
+        if (controller != 7 && controller != 11 && controller != 20 && controller != 21 && controller != 22 && controller != 74
             && controller != 120 && controller != 121 && controller != 123) return;
         midiCcScratch_.push_back({ sample, controller, message.getControllerValue() });
     });

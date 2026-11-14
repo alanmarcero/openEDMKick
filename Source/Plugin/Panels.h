@@ -4,6 +4,7 @@
 #include "PluginProcessor.h"
 
 #include <array>
+#include <memory>
 
 namespace openedmkick::ui {
 
@@ -54,6 +55,36 @@ private:
     Knob lowCut_;
     Knob clip_;
     KickWaveformView waveform_;
+};
+
+class LayerPage final : public juce::Component {
+public:
+    LayerPage(OpenEdmKickProcessor& processor, int layer);
+    void paint(juce::Graphics& g) override;
+    void resized() override;
+
+private:
+    int layer_ = 0;
+    Toggle enabled_;
+    Choice sound_;
+    Knob level_;
+    Knob pitch_;
+    Knob decay_;
+    Knob highPass_;
+    Knob lowPass_;
+};
+
+class LayerPanel final : public juce::Component {
+public:
+    explicit LayerPanel(OpenEdmKickProcessor& processor);
+    void paint(juce::Graphics& g) override;
+    void resized() override;
+    void selectLayer(int layer);
+
+private:
+    std::array<std::unique_ptr<LayerPage>, openedmkick::core::kNumSoundLayers> pages_;
+    std::array<juce::TextButton, openedmkick::core::kNumSoundLayers> tabs_;
+    int selectedLayer_ = 0;
 };
 
 class PianoRollView final : public juce::Component, private juce::Timer {
@@ -132,6 +163,10 @@ private:
     Knob pumpMix_;
     Knob highPass_;
     Knob lowPass_;
+    Toggle highPassSync_;
+    Choice highPassSyncRate_;
+    Toggle lowPassSync_;
+    Choice lowPassSyncRate_;
     Knob output_;
     Knob ceiling_;
     Toggle limiter_;

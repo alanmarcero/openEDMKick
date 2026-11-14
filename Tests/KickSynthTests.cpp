@@ -6,6 +6,7 @@
 #include <cmath>
 #include <numeric>
 #include <ranges>
+#include <ranges>
 
 using Catch::Matchers::WithinAbs;
 namespace core = openedmkick::core;
@@ -83,4 +84,51 @@ TEST_CASE("Kick synthesis stays finite at parameter and sample-rate extremes", "
             REQUIRE(sample >= -1.0f);
         });
     });
+}
+
+TEST_CASE("Kick, snare, clap, and hat layers render and filter independently", "[synth][layers]") {
+    core::KickSettings settings{};
+    settings.sweepOctaves = 0.0f;
+    settings.snapOctaves = 0.0f;
+    settings.bodyTone = 0.0f;
+    settings.knockDb = 0.0f;
+    settings.subLevel = 0.0f;
+    settings.clickLevel = 0.0f;
+    settings.drive = 0.0f;
+    settings.clip = 0.0f;
+
+    std::array<core::DrumLayerSettings, core::kNumSoundLayers> layers{};
+    std::ranges::for_each(layers, [](core::DrumLayerSettings& layer) { layer.enabled = false; });
+    std::array<std::vector<float>, 4> sounds;
+    std::ranges::for_each(std::views::iota(0, 4), [&](int type) {
+        layers[0] = { true, static_cast<core::DrumSoundType>(type), 1.0f,
+                      type == 1 ? 12.0f : 0.0f, 180.0f };
+        sounds[static_cast<size_t>(type)] = core::renderLayeredKick(settings, layers, 48000.0, 36);
+        REQUIRE(!sounds[static_cast<size_t>(type)].empty());
+        const double energy = std::accumulate(sounds[static_cast<size_t>(type)].begin(),
+                                              sounds[static_cast<size_t>(type)].end(), 0.0,
+            [](double sum, float sample) { return sum + std::abs(static_cast<double>(sample)); });
+        REQUIRE(energy > 1.0);
+    });
+
+    const auto difference = [](const std::vector<float>& a, const std::vector<float>& b) {
+        const size_t count = std::min(a.size(), b.size());
+        return std::inner_product(a.begin(), a.begin() + static_cast<ptrdiff_t>(count), b.begin(), 0.0,
+            std::plus<>(), [](float left, float right) { return std::abs(static_cast<double>(left - right)); });
+    };
+    REQUIRE(difference(sounds[0], sounds[1]) > 10.0);
+    REQUIRE(difference(sounds[1], sounds[2]) > 10.0);
+    REQUIRE(difference(sounds[2], sounds[3]) > 10.0);
+
+    settings.sweepOctaves = settings.snapOctaves = 0.0f;
+    settings.drive = settings.clip = settings.clickLevel = settings.subLevel = 0.0f;
+    layers[0] = { true, core::DrumSoundType::kick, 1.0f, 0.0f, 300.0f };
+    const auto dry = core::renderLayeredKick(settings, layers, 48000.0, 36);
+    layers[0].highPassHz = 1500.0f;
+    const auto filtered = core::renderLayeredKick(settings, layers, 48000.0, 36);
+    const double dryEnergy = std::accumulate(dry.begin(), dry.end(), 0.0,
+        [](double sum, float sample) { return sum + static_cast<double>(sample) * sample; });
+    const double filteredEnergy = std::accumulate(filtered.begin(), filtered.end(), 0.0,
+        [](double sum, float sample) { return sum + static_cast<double>(sample) * sample; });
+    REQUIRE(filteredEnergy < dryEnergy * 0.35);
 }
