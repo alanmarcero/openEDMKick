@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <ranges>
+#include <type_traits>
 
 namespace openedmkick::core {
 namespace {
@@ -118,7 +119,8 @@ void KickEngine::process(
     float* const* channels,
     int numChannels,
     int numSamples,
-    std::span<const MidiCcEvent> controlChanges) noexcept {
+    std::span<const MidiCcEvent> controlChanges,
+    std::span<const MidiInputEvent> midiEvents) noexcept {
     if (channels == nullptr || numChannels <= 0 || numSamples <= 0) return;
 
     if (settings.masterBypass) {
@@ -156,8 +158,8 @@ void KickEngine::process(
         lastSamplePpq_ = ppq;
         lastPpqStep_ = ppqPerSample;
 
-        for (const auto& cc : controlChanges) {
-            if (cc.sampleOffset != sample) continue;
+        const auto applyControlChange = [&](const MidiCcEvent& cc) {
+            if (cc.sampleOffset != sample) return;
             const float value = std::clamp(cc.value, 0, 127) / 127.0f;
             switch (cc.controller) {
                 case 7: midiVolume_ = value; break;
@@ -177,6 +179,16 @@ void KickEngine::process(
                     break;
                 default: break;
             }
+        };
+
+        const auto triggerMidiNote = [&](const MidiTrigger& trigger) {
+            if (trigger.sampleOffset != sample || trigger.velocity <= 0.0f) return;
+            const int note = trigger.audition ? kDefaultMidiNote : trigger.noteNumber;
+            triggerNote(settings, ppq, bpm, beatsPerBar, note, trigger.velocity, -1.0f, false);
+        };
+
+        if (midiEvents.empty()) {
+            std::ranges::for_each(controlChanges, applyControlChange);
         }
 
         if (autoActive && transport.isPlaying) {
@@ -187,10 +199,16 @@ void KickEngine::process(
                             event.effectiveTailMs, event.reverseCue);
         }
 
-        for (const auto& trigger : midiTriggers) {
-            if (trigger.sampleOffset != sample || trigger.velocity <= 0.0f) continue;
-            const int note = trigger.audition ? kDefaultMidiNote : trigger.noteNumber;
-            triggerNote(settings, ppq, bpm, beatsPerBar, note, trigger.velocity, -1.0f, false);
+        if (midiEvents.empty()) std::ranges::for_each(midiTriggers, triggerMidiNote);
+        if (!midiEvents.empty()) {
+            std::ranges::for_each(midiEvents, [&](const MidiInputEvent& inputEvent) {
+                std::visit([&](const auto& event) {
+                    if (event.sampleOffset != sample) return;
+                    using Event = std::decay_t<decltype(event)>;
+                    if constexpr (std::is_same_v<Event, MidiCcEvent>) applyControlChange(event);
+                    if constexpr (std::is_same_v<Event, MidiTrigger>) triggerMidiNote(event);
+                }, inputEvent);
+            });
         }
 
         float raw = 0.0f;

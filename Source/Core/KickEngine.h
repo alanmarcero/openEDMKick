@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <optional>
 #include <span>
+#include <variant>
 #include <vector>
 
 namespace openedmkick::core {
@@ -30,6 +31,8 @@ struct MidiCcEvent {
     int controller = 0;
     int value = 0;
 };
+
+using MidiInputEvent = std::variant<MidiTrigger, MidiCcEvent>;
 
 struct EffectSettings {
     ReverseSyncMode reverseMode = ReverseSyncMode::Off;
@@ -85,7 +88,8 @@ public:
         float* const* channels,
         int numChannels,
         int numSamples,
-        std::span<const MidiCcEvent> controlChanges = {}) noexcept;
+        std::span<const MidiCcEvent> controlChanges = {},
+        std::span<const MidiInputEvent> midiEvents = {}) noexcept;
 
     [[nodiscard]] AutoSequencer& sequencer() noexcept { return sequencer_; }
     [[nodiscard]] const AutoSequencer& sequencer() const noexcept { return sequencer_; }
