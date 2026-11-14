@@ -144,8 +144,7 @@ private:
     std::array<int, openedmkick::core::kNumAutoSlots> lastSlotBars_{ 0, 0, 0, 0 };
     std::atomic<bool> auditionPending_{ false };
     std::atomic<bool> restoredCustomState_{ false };
-    std::vector<openedmkick::core::MidiTrigger> midiScratch_;
-    std::vector<openedmkick::core::MidiCcEvent> midiCcScratch_;
+    std::vector<openedmkick::core::MidiInputEvent> midiEventScratch_;
     int currentProgram_ = 0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(OpenEdmKickProcessor)

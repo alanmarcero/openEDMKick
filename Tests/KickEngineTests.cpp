@@ -358,3 +358,27 @@ TEST_CASE("MIDI CC20 and Reverse Mode automation activate synced reverse hits", 
     REQUIRE_FALSE(reversing(core::ReverseSyncMode::Off, 0));
     REQUIRE(reversing(core::ReverseSyncMode::BeatEnd, 0));
 }
+
+TEST_CASE("Same-sample MIDI CC and note events keep their input order", "[engine][midi][effects]") {
+    const std::array<core::MidiInputEvent, 2> enableThenNote{
+        core::MidiInputEvent{ std::in_place_type<core::MidiCcEvent>, core::MidiCcEvent{ 0, 20, 127 } },
+        core::MidiInputEvent{ std::in_place_type<core::MidiTrigger>, core::MidiTrigger{ 0, 36, 1.0f, false } }
+    };
+    const std::array<core::MidiInputEvent, 2> noteThenEnable{
+        core::MidiInputEvent{ std::in_place_type<core::MidiTrigger>, core::MidiTrigger{ 0, 36, 1.0f, false } },
+        core::MidiInputEvent{ std::in_place_type<core::MidiCcEvent>, core::MidiCcEvent{ 0, 20, 127 } }
+    };
+    const auto isReversing = [](std::span<const core::MidiInputEvent> events) {
+        core::KickEngine engine;
+        engine.prepare(48000.0);
+        core::EngineSettings settings{};
+        std::vector<float> output(128, 0.0f);
+        float* channel = output.data();
+        engine.process(settings, core::Transport{ 120.0, 0.0, 4.0, true }, {},
+                       &channel, 1, static_cast<int>(output.size()), {}, events);
+        return engine.isVoiceReversing();
+    };
+
+    REQUIRE(isReversing(enableThenNote));
+    REQUIRE_FALSE(isReversing(noteThenEnable));
+}

@@ -59,8 +59,7 @@ OpenEdmKickProcessor::OpenEdmKickProcessor()
 void OpenEdmKickProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
     const std::scoped_lock lock(stateMutex_);
     engine_.prepare(sampleRate);
-    midiScratch_.reserve(static_cast<size_t>(std::max(64, samplesPerBlock)));
-    midiCcScratch_.reserve(static_cast<size_t>(std::max(64, samplesPerBlock)));
+    midiEventScratch_.reserve(static_cast<size_t>(std::max(64, samplesPerBlock)));
 }
 
 bool OpenEdmKickProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const {
@@ -213,15 +212,14 @@ void OpenEdmKickProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
         return core::Transport{ bpm, *position->getPpqPosition(), beatsPerBar, true };
     }();
 
-    midiScratch_.clear();
-    midiCcScratch_.clear();
+    midiEventScratch_.clear();
     const int lastSample = std::max(0, buffer.getNumSamples() - 1);
     std::ranges::for_each(midi, [&](const juce::MidiMessageMetadata& metadata) {
         const auto message = metadata.getMessage();
         const int sample = std::clamp(metadata.samplePosition, 0, lastSample);
         if (message.isNoteOn() && message.getFloatVelocity() > 0.0f) {
             const int note = message.getNoteNumber();
-            midiScratch_.push_back({ sample, note, message.getFloatVelocity(), false });
+            midiEventScratch_.emplace_back(core::MidiTrigger{ sample, note, message.getFloatVelocity(), false });
             displayMidiNote.store(note, std::memory_order_relaxed);
             displayMidiHz.store(core::noteFrequencyHz(note), std::memory_order_relaxed);
             return;
@@ -230,15 +228,15 @@ void OpenEdmKickProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
         const int controller = message.getControllerNumber();
         if (controller != 7 && controller != 11 && controller != 20 && controller != 21 && controller != 22 && controller != 74
             && controller != 120 && controller != 121 && controller != 123) return;
-        midiCcScratch_.push_back({ sample, controller, message.getControllerValue() });
+        midiEventScratch_.emplace_back(core::MidiCcEvent{ sample, controller, message.getControllerValue() });
     });
 
     if (auditionPending_.exchange(false))
-        midiScratch_.push_back({ 0, core::kDefaultMidiNote, 1.0f, true });
+        midiEventScratch_.emplace_back(core::MidiTrigger{ 0, core::kDefaultMidiNote, 1.0f, true });
 
     buffer.clear();
-    engine_.process(settings, transport, midiScratch_, buffer.getArrayOfWritePointers(),
-                    buffer.getNumChannels(), buffer.getNumSamples(), midiCcScratch_);
+    engine_.process(settings, transport, {}, buffer.getArrayOfWritePointers(),
+                    buffer.getNumChannels(), buffer.getNumSamples(), {}, midiEventScratch_);
     displayPeak.store(engine_.currentPeak());
     displayAutoPhase.store(engine_.currentAutoPhase());
     displayBeatPhase.store(engine_.currentBeatPhase());
