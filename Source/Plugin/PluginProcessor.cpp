@@ -59,7 +59,7 @@ OpenEdmKickProcessor::OpenEdmKickProcessor()
 void OpenEdmKickProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
     const std::scoped_lock lock(stateMutex_);
     engine_.prepare(sampleRate);
-    midiEventScratch_.reserve(static_cast<size_t>(std::max(64, samplesPerBlock)));
+    midiEventScratch_.reserve(2 * static_cast<size_t>(std::max(64, samplesPerBlock)));
 }
 
 bool OpenEdmKickProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const {

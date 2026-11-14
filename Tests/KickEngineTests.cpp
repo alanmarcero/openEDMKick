@@ -8,7 +8,7 @@
 #include <cmath>
 #include <numeric>
 #include <ranges>
-#include <ranges>
+#include <utility>
 
 using Catch::Matchers::WithinAbs;
 namespace core = openedmkick::core;
@@ -381,4 +381,28 @@ TEST_CASE("Same-sample MIDI CC and note events keep their input order", "[engine
 
     REQUIRE(isReversing(enableThenNote));
     REQUIRE_FALSE(isReversing(noteThenEnable));
+}
+
+TEST_CASE("Same-sample controllers are applied before Auto Mode triggers", "[engine][midi][auto]") {
+    const auto renderAutoHit = [](int controller) {
+        core::KickEngine engine;
+        engine.prepare(48000.0);
+        engine.sequencer().setNotesForSlot(0, { { 0, 4, 1.0f, false } });
+        core::EngineSettings settings{};
+        settings.autoEnabled = true;
+        settings.autoSlots[0].bars = 1;
+        const std::array<core::MidiInputEvent, 1> events{
+            core::MidiInputEvent{ std::in_place_type<core::MidiCcEvent>, core::MidiCcEvent{ 0, controller, 127 } }
+        };
+        std::vector<float> output(128, 0.0f);
+        float* channel = output.data();
+        engine.process(settings, core::Transport{ 120.0, 0.0, 4.0, true }, {},
+                       &channel, 1, static_cast<int>(output.size()), {}, events);
+        const double energy = std::accumulate(output.begin(), output.end(), 0.0,
+            [](double sum, float sample) { return sum + std::abs(static_cast<double>(sample)); });
+        return std::pair{ engine.isVoiceReversing(), energy };
+    };
+
+    REQUIRE(renderAutoHit(20).first);
+    REQUIRE(renderAutoHit(120).second > 0.0);
 }

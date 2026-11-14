@@ -187,8 +187,23 @@ void KickEngine::process(
             triggerNote(settings, ppq, bpm, beatsPerBar, note, trigger.velocity, -1.0f, false);
         };
 
+        const float savedMidiVolume = midiVolume_;
+        const float savedMidiExpression = midiExpression_;
+        const float savedMidiBrightness = midiBrightness_;
+        const bool savedReverseCcEnabled = reverseCcEnabled_;
+        const bool savedHighPassCcEnabled = highPassCcEnabled_;
+        const bool savedLowPassCcEnabled = lowPassCcEnabled_;
+
         if (midiEvents.empty()) {
             std::ranges::for_each(controlChanges, applyControlChange);
+        }
+        if (!midiEvents.empty()) {
+            std::ranges::for_each(midiEvents, [&](const MidiInputEvent& inputEvent) {
+                std::visit([&](const auto& event) {
+                    if constexpr (std::is_same_v<std::decay_t<decltype(event)>, MidiCcEvent>)
+                        applyControlChange(event);
+                }, inputEvent);
+            });
         }
 
         if (autoActive && transport.isPlaying) {
@@ -201,11 +216,19 @@ void KickEngine::process(
 
         if (midiEvents.empty()) std::ranges::for_each(midiTriggers, triggerMidiNote);
         if (!midiEvents.empty()) {
+            midiVolume_ = savedMidiVolume;
+            midiExpression_ = savedMidiExpression;
+            midiBrightness_ = savedMidiBrightness;
+            reverseCcEnabled_ = savedReverseCcEnabled;
+            highPassCcEnabled_ = savedHighPassCcEnabled;
+            lowPassCcEnabled_ = savedLowPassCcEnabled;
             std::ranges::for_each(midiEvents, [&](const MidiInputEvent& inputEvent) {
                 std::visit([&](const auto& event) {
                     if (event.sampleOffset != sample) return;
                     using Event = std::decay_t<decltype(event)>;
-                    if constexpr (std::is_same_v<Event, MidiCcEvent>) applyControlChange(event);
+                    if constexpr (std::is_same_v<Event, MidiCcEvent>) {
+                        if (event.controller != 120) applyControlChange(event);
+                    }
                     if constexpr (std::is_same_v<Event, MidiTrigger>) triggerMidiNote(event);
                 }, inputEvent);
             });
