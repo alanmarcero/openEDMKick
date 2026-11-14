@@ -23,6 +23,10 @@ const Formatter kFormatMs = [](float ms, int) {
     return (ms < 10.0f ? juce::String(ms, 1) : juce::String(juce::roundToInt(ms))) + " ms";
 };
 const Formatter kFormatDb = [](float db, int) { return juce::String(db, 1) + " dB"; };
+const Formatter kFormatSemitones = [](float semitones, int) {
+    const int value = juce::roundToInt(semitones);
+    return (value > 0 ? "+" : "") + juce::String(value) + " st";
+};
 const Formatter kFormatBpm = [](float bpm, int) { return juce::String(bpm, 1) + " BPM"; };
 const Formatter kFormatHighPass = [](float hz, int) { return hz <= 20.5f ? juce::String("Off") : formatHz(hz); };
 const Formatter kFormatLowPass = [](float hz, int) { return hz >= 19900.0f ? juce::String("Off") : formatHz(hz); };
@@ -58,6 +62,11 @@ juce::String autoSlotId(int slot, const juce::String& baseId) {
     if (slot <= 0) return baseId;
     const auto slotChar = static_cast<juce::juce_wchar>('a' + std::clamp(slot, 0, 3));
     return "auto_" + juce::String::charToString(slotChar) + "_" + baseId.substring(5);
+}
+
+juce::String layerId(int layer, const juce::String& baseId) {
+    const auto slotChar = static_cast<juce::juce_wchar>('a' + std::clamp(layer, 0, 3));
+    return "layer_" + juce::String::charToString(slotChar) + "_" + baseId;
 }
 
 double beatsPerBarForSignature(int index) noexcept {
@@ -108,6 +117,28 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout() {
     addFloat(layout, kLowCutHz, "Low Cut", skewedRange(10.0f, 90.0f, 25.0f), 25.0f, kFormatHz);
     addFloat(layout, kClip, "Clip", { 0.0f, 1.0f }, 0.45f, kFormatPercent);
 
+    const std::array<float, 4> layerEnabled{ 1.0f, 0.0f, 0.0f, 0.0f };
+    const std::array<float, 4> layerSound{ 0.0f, 1.0f, 2.0f, 3.0f };
+    const std::array<float, 4> layerGain{ 1.0f, 0.65f, 0.5f, 0.35f };
+    const std::array<float, 4> layerTranspose{ 0.0f, 12.0f, 0.0f, 0.0f };
+    const std::array<float, 4> layerDecay{ 300.0f, 220.0f, 140.0f, 90.0f };
+    std::ranges::for_each(std::views::iota(0, core::kNumSoundLayers), [&](int layerIndex) {
+        const auto id = [layerIndex](const char* key) { return layerId(layerIndex, key); };
+        const auto suffix = juce::String::charToString(static_cast<juce::juce_wchar>('A' + layerIndex));
+        addBool(layout, id(kLayerEnabled), "Layer " + suffix + " On", layerEnabled[static_cast<size_t>(layerIndex)] > 0.5f);
+        addChoice(layout, id(kLayerSound), "Layer " + suffix + " Sound", { "Kick", "Snare", "Clap", "Hat" },
+                  static_cast<int>(layerSound[static_cast<size_t>(layerIndex)]));
+        addFloat(layout, id(kLayerGain), "Layer " + suffix + " Level", { 0.0f, 1.0f }, layerGain[static_cast<size_t>(layerIndex)], kFormatPercent);
+        addFloat(layout, id(kLayerTranspose), "Layer " + suffix + " Pitch", { -24.0f, 24.0f, 1.0f },
+                 layerTranspose[static_cast<size_t>(layerIndex)], kFormatSemitones);
+        addFloat(layout, id(kLayerDecay), "Layer " + suffix + " Decay", skewedRange(5.0f, 1500.0f, 220.0f),
+                 layerDecay[static_cast<size_t>(layerIndex)], kFormatMs);
+        addFloat(layout, id(kLayerHighPass), "Layer " + suffix + " High Pass", skewedRange(20.0f, 8000.0f, 250.0f),
+                 20.0f, kFormatHighPass);
+        addFloat(layout, id(kLayerLowPass), "Layer " + suffix + " Low Pass", skewedRange(40.0f, 20000.0f, 2500.0f),
+                 20000.0f, kFormatLowPass);
+    });
+
     addBool(layout, kClockSync, "Host Sync", true);
     addFloat(layout, kTempoBpm, "Tempo", { 40.0f, 240.0f }, 128.0f, kFormatBpm);
     addChoice(layout, kTimeSignature, "Time Signature",
@@ -140,6 +171,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout() {
     addFloat(layout, kPumpMix, "Pump Mix", { 0.0f, 1.0f }, 0.0f, kFormatPercent);
     addFloat(layout, kHighPass, "High Pass", skewedRange(20.0f, 8000.0f, 250.0f), 20.0f, kFormatHighPass);
     addFloat(layout, kLowPass, "Low Pass", skewedRange(40.0f, 20000.0f, 2500.0f), 20000.0f, kFormatLowPass);
+    addBool(layout, kHighPassSyncEnabled, "High Pass Sync", false);
+    addChoice(layout, kHighPassSyncRate, "High Pass Sync Rate", syncDivisions, 2);
+    addBool(layout, kLowPassSyncEnabled, "Low Pass Sync", false);
+    addChoice(layout, kLowPassSyncRate, "Low Pass Sync Rate", syncDivisions, 2);
     addFloat(layout, kOutput, "Output", { -24.0f, 12.0f }, 0.0f, kFormatDb);
     addBool(layout, kLimiter, "Limiter", true);
     addFloat(layout, kCeiling, "Ceiling", { -18.0f, 0.0f }, -0.3f, kFormatDb);

@@ -8,6 +8,7 @@
 #include <cmath>
 #include <numeric>
 #include <ranges>
+#include <ranges>
 
 using Catch::Matchers::WithinAbs;
 namespace core = openedmkick::core;
@@ -271,4 +272,89 @@ TEST_CASE("MIDI note-on follows the exact note and octave", "[engine][midi]") {
     const double difference = std::inner_product(a3.begin(), a3.end(), a4.begin(), 0.0,
         std::plus<>(), [](float a, float b) { return std::abs(static_cast<double>(a - b)); });
     REQUIRE(difference > 100.0);
+}
+
+TEST_CASE("MIDI velocity gives soft and hard kick hits a useful level range", "[engine][midi][velocity]") {
+    const auto renderPeak = [](float velocity) {
+        core::KickEngine engine;
+        engine.prepare(48000.0);
+        core::EngineSettings settings{};
+        settings.synth.sweepOctaves = 0.0f;
+        settings.synth.snapOctaves = 0.0f;
+        settings.synth.bodyTone = 0.0f;
+        settings.synth.knockDb = 0.0f;
+        settings.synth.subLevel = 0.0f;
+        settings.synth.clickLevel = 0.0f;
+        settings.synth.drive = 0.0f;
+        settings.synth.clip = 0.0f;
+        settings.synth.holdMs = 0.0f;
+        settings.synth.decayMs = 120.0f;
+        settings.effects.limiterEnabled = false;
+        settings.effects.drive = 0.0f;
+        const std::array<core::MidiTrigger, 1> trigger{ { { 0, 36, velocity, false } } };
+        std::vector<float> output(8192, 0.0f);
+        float* channel = output.data();
+        engine.process(settings, core::Transport{ 120.0, 0.0, 4.0, true }, trigger,
+                       &channel, 1, static_cast<int>(output.size()));
+        float peak = 0.0f;
+        std::ranges::for_each(output, [&](float sample) { peak = std::max(peak, std::abs(sample)); });
+        return peak;
+    };
+
+    const float soft = renderPeak(0.25f);
+    const float hard = renderPeak(1.0f);
+    REQUIRE(soft > 0.0f);
+    REQUIRE(hard > soft * 3.0f);
+}
+
+TEST_CASE("MIDI CC and automation activate host-synced filter sweeps", "[engine][midi][effects]") {
+    const auto render = [](bool highPassAutomation, bool lowPassAutomation, int ccNumber) {
+        core::KickEngine engine;
+        engine.prepare(48000.0);
+        core::EngineSettings settings{};
+        settings.synth.decayMs = 360.0f;
+        settings.effects.drive = 0.0f;
+        settings.effects.limiterEnabled = false;
+        settings.effects.highPassSyncEnabled = highPassAutomation;
+        settings.effects.lowPassSyncEnabled = lowPassAutomation;
+        const std::array<core::MidiTrigger, 1> trigger{ { { 0, 48, 1.0f, false } } };
+        const std::array<core::MidiCcEvent, 1> control{ { { 0, ccNumber, 127 } } };
+        std::vector<float> output(8192, 0.0f);
+        float* channel = output.data();
+        std::span<const core::MidiCcEvent> cc;
+        if (ccNumber > 0) cc = control;
+        engine.process(settings, core::Transport{ 120.0, 0.0, 4.0, true }, trigger,
+                       &channel, 1, static_cast<int>(output.size()), cc);
+        return output;
+    };
+    const auto difference = [](const std::vector<float>& a, const std::vector<float>& b) {
+        return std::inner_product(a.begin(), a.end(), b.begin(), 0.0,
+            std::plus<>(), [](float left, float right) { return std::abs(static_cast<double>(left - right)); });
+    };
+
+    const auto dry = render(false, false, 0);
+    REQUIRE(difference(dry, render(true, false, 0)) > 10.0);
+    REQUIRE(difference(dry, render(false, false, 21)) > 10.0);
+    REQUIRE(difference(dry, render(false, true, 0)) > 10.0);
+    REQUIRE(difference(dry, render(false, false, 22)) > 10.0);
+}
+
+TEST_CASE("MIDI CC20 and Reverse Mode automation activate synced reverse hits", "[engine][midi][effects]") {
+    const auto reversing = [](core::ReverseSyncMode mode, int ccValue) {
+        core::KickEngine engine;
+        engine.prepare(48000.0);
+        core::EngineSettings settings{};
+        settings.effects.reverseMode = mode;
+        const std::array<core::MidiTrigger, 1> trigger{ { { 0, 36, 1.0f, false } } };
+        const std::array<core::MidiCcEvent, 1> control{ { { 0, 20, ccValue } } };
+        std::vector<float> output(128, 0.0f);
+        float* channel = output.data();
+        engine.process(settings, core::Transport{ 120.0, 0.0, 4.0, true }, trigger,
+                       &channel, 1, static_cast<int>(output.size()), control);
+        return engine.isVoiceReversing();
+    };
+
+    REQUIRE(reversing(core::ReverseSyncMode::Off, 127));
+    REQUIRE_FALSE(reversing(core::ReverseSyncMode::Off, 0));
+    REQUIRE(reversing(core::ReverseSyncMode::BeatEnd, 0));
 }

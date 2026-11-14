@@ -49,10 +49,20 @@ struct EffectSettings {
     float ceilingGain = 0.966f;
     float highPassHz = ToneFilter::kHighPassBypassHz;
     float lowPassHz = ToneFilter::kLowPassBypassHz;
+    bool highPassSyncEnabled = false;
+    int highPassSyncDivision = 2;
+    bool lowPassSyncEnabled = false;
+    int lowPassSyncDivision = 2;
 };
 
 struct EngineSettings {
     KickSettings synth{};
+    std::array<DrumLayerSettings, kNumSoundLayers> layers{{
+        { true, DrumSoundType::kick, 1.0f, 0.0f, 300.0f },
+        { false, DrumSoundType::snare, 0.65f, 12.0f, 220.0f },
+        { false, DrumSoundType::clap, 0.5f, 0.0f, 140.0f },
+        { false, DrumSoundType::hat, 0.35f, 0.0f, 90.0f }
+    }};
     bool autoEnabled = false;
     bool autoBypass = false;
     int activeAutoSlot = 0; // 0=A, 1=B, 2=C, 3=D
@@ -83,7 +93,7 @@ public:
     [[nodiscard]] float currentPeak() const noexcept { return currentPeak_; }
     [[nodiscard]] float currentAutoPhase() const noexcept { return sequencer_.currentWindowPhase(); }
     [[nodiscard]] float currentBeatPhase() const noexcept { return currentBeatPhase_; }
-    [[nodiscard]] bool isVoiceReversing() const noexcept { return reverseVoice_.isActive(); }
+    [[nodiscard]] bool isVoiceReversing() const noexcept;
     [[nodiscard]] uint32_t triggerSerial() const noexcept { return triggerSerial_; }
 
 private:
@@ -102,8 +112,8 @@ private:
     float currentPeak_ = 0.0f;
     float currentBeatPhase_ = 0.0f;
 
-    KickVoice forwardVoice_;
-    KickVoice reverseVoice_;
+    std::array<KickVoice, kNumSoundLayers> forwardVoices_;
+    std::array<KickVoice, kNumSoundLayers> reverseVoices_;
     AutoSequencer sequencer_;
     BitCrusher crusher_;
     BeatStutter stutter_;
@@ -117,6 +127,9 @@ private:
     float midiVolume_ = 1.0f;
     float midiExpression_ = 1.0f;
     float midiBrightness_ = 1.0f;
+    bool reverseCcEnabled_ = false;
+    bool highPassCcEnabled_ = false;
+    bool lowPassCcEnabled_ = false;
     uint32_t triggerSerial_ = 0;
     bool reverseArmed_ = false;
     double reverseStartPpq_ = 0.0;

@@ -75,7 +75,7 @@ void KickWaveformView::paint(juce::Graphics& g) {
                title.removeFromLeft(180), juce::Justification::centredLeft);
     g.setColour(theme::kTextDim);
     g.setFont(juce::FontOptions(9.5f));
-    g.drawText("Incoming note sets the kick root and octave", title, juce::Justification::centredRight);
+    g.drawText("MIDI pitch with layer transposition", title, juce::Justification::centredRight);
 
     auto plot = getLocalBounds().reduced(16, 10).withTrimmedTop(30).toFloat();
     g.setColour(theme::kInk.withAlpha(0.76f));
@@ -208,6 +208,99 @@ void KickSynthPanel::resized() {
     placeRow(transient, 1, 2, { &clickType_, &clickMs_ });
     placeRow(tail, 0, 2, { &hold_, &decay_, &clip_ });
     placeRow(tail, 1, 2, { &attack_, &decayShape_, &lowCut_ });
+}
+
+LayerPage::LayerPage(OpenEdmKickProcessor& processor, int layer)
+    : layer_(std::clamp(layer, 0, core::kNumSoundLayers - 1)),
+      enabled_(processor.parameters, params::layerId(layer_, params::kLayerEnabled), "Layer on", theme::kViolet),
+      sound_(processor.parameters, params::layerId(layer_, params::kLayerSound), "Sound", theme::kCoral),
+      level_(processor.parameters, params::layerId(layer_, params::kLayerGain), "Level", theme::kBrass),
+      pitch_(processor.parameters, params::layerId(layer_, params::kLayerTranspose), "Pitch", theme::kViolet),
+      decay_(processor.parameters, params::layerId(layer_, params::kLayerDecay), "Decay", theme::kBrass),
+      highPass_(processor.parameters, params::layerId(layer_, params::kLayerHighPass), "High pass", theme::kCoral),
+      lowPass_(processor.parameters, params::layerId(layer_, params::kLayerLowPass), "Low pass", theme::kCoral) {
+    std::ranges::for_each(std::array<juce::Component*, 7>{
+        &enabled_, &sound_, &level_, &pitch_, &decay_, &highPass_, &lowPass_},
+        [this](juce::Component* component) { addAndMakeVisible(component); });
+    enabled_.setTooltip("Include this sound layer in every kick hit.");
+    sound_.setTooltip("Choose a synthesized kick, snare, clap, or hi-hat voice.");
+    level_.setTooltip("Set this layer's mix level.");
+    pitch_.setTooltip("Transpose the layer in semitones. Hats use this to tune their metal partials.");
+    decay_.setTooltip("Set this layer's one-shot length. Kick layers scale their main kick decay by this value.");
+    highPass_.setTooltip("Filter this layer before it is mixed with the other layers.");
+    lowPass_.setTooltip("Filter this layer before it is mixed with the other layers.");
+}
+
+void LayerPage::paint(juce::Graphics& g) {
+    auto bounds = getLocalBounds();
+    drawSmallLabel(g, bounds.removeFromTop(20),
+                   "Layer " + juce::String::charToString(static_cast<juce::juce_wchar>('A' + layer_))
+                       + " · filtered before the layers are mixed",
+                   theme::kTextDim);
+    auto area = bounds.withTrimmedTop(6);
+    const int sourceHeight = 152;
+    const int shapeHeight = 170;
+    drawCard(g, area.removeFromTop(sourceHeight), "Voice and level", theme::kViolet);
+    area.removeFromTop(10);
+    drawCard(g, area.removeFromTop(shapeHeight), "Pitch and tail", theme::kBrass);
+    area.removeFromTop(10);
+    drawCard(g, area, "Independent layer filters", theme::kCoral);
+}
+
+void LayerPage::resized() {
+    auto area = getLocalBounds().withTrimmedTop(27);
+    auto source = area.removeFromTop(152).reduced(14, 36);
+    layoutRow(source, { &enabled_, &sound_, &level_ }, 12);
+    area.removeFromTop(10);
+    auto shape = area.removeFromTop(170).reduced(14, 36);
+    layoutRow(shape, { &pitch_, &decay_ }, 12);
+    area.removeFromTop(10);
+    auto filters = area.reduced(14, 36);
+    layoutRow(filters, { &highPass_, &lowPass_ }, 12);
+}
+
+LayerPanel::LayerPanel(OpenEdmKickProcessor& processor) {
+    std::ranges::for_each(std::views::iota(0, core::kNumSoundLayers), [&](int layer) {
+        const auto index = static_cast<size_t>(layer);
+        pages_[index] = std::make_unique<LayerPage>(processor, layer);
+        addAndMakeVisible(*pages_[index]);
+        auto& tab = tabs_[index];
+        const auto letter = juce::String::charToString(static_cast<juce::juce_wchar>('A' + layer));
+        tab.setButtonText("LAYER " + letter);
+        tab.setComponentID("layer_tab_" + letter.toLowerCase());
+        tab.setClickingTogglesState(false);
+        tab.setColour(juce::TextButton::buttonOnColourId, theme::kViolet);
+        tab.onClick = [this, layer] { selectLayer(layer); };
+        addAndMakeVisible(tab);
+    });
+    selectLayer(0);
+}
+
+void LayerPanel::selectLayer(int layer) {
+    selectedLayer_ = std::clamp(layer, 0, core::kNumSoundLayers - 1);
+    std::ranges::for_each(std::views::iota(0, core::kNumSoundLayers), [&](int index) {
+        const auto selected = index == selectedLayer_;
+        tabs_[static_cast<size_t>(index)].setToggleState(selected, juce::dontSendNotification);
+        pages_[static_cast<size_t>(index)]->setVisible(selected);
+    });
+    resized();
+    repaint();
+}
+
+void LayerPanel::paint(juce::Graphics& g) {
+    drawSmallLabel(g, getLocalBounds().removeFromTop(20), "Build one sound from four independently filtered voices",
+                   theme::kTextDim);
+}
+
+void LayerPanel::resized() {
+    auto area = getLocalBounds().withTrimmedTop(24);
+    auto tabs = area.removeFromTop(36);
+    std::ranges::for_each(tabs_, [&](juce::TextButton& tab) {
+        tab.setBounds(tabs.removeFromLeft(118).withHeight(32));
+        tabs.removeFromLeft(8);
+    });
+    area.removeFromTop(8);
+    pages_[static_cast<size_t>(selectedLayer_)]->setBounds(area);
 }
 
 PianoRollView::PianoRollView(OpenEdmKickProcessor& processor) : processor_(processor) {
@@ -411,16 +504,24 @@ EffectsPanel::EffectsPanel(OpenEdmKickProcessor& processor)
       pumpMix_(processor.parameters, params::kPumpMix, "Filter depth", theme::kViolet),
       highPass_(processor.parameters, params::kHighPass, "High pass", theme::kBrass),
       lowPass_(processor.parameters, params::kLowPass, "Low pass", theme::kBrass),
+      highPassSync_(processor.parameters, params::kHighPassSyncEnabled, "HP sync", theme::kCoral),
+      highPassSyncRate_(processor.parameters, params::kHighPassSyncRate, "HP rate", theme::kCoral),
+      lowPassSync_(processor.parameters, params::kLowPassSyncEnabled, "LP sync", theme::kViolet),
+      lowPassSyncRate_(processor.parameters, params::kLowPassSyncRate, "LP rate", theme::kViolet),
       output_(processor.parameters, params::kOutput, "Output", theme::kBrass),
       ceiling_(processor.parameters, params::kCeiling, "Ceiling", theme::kBrass),
       limiter_(processor.parameters, params::kLimiter, "Limiter", theme::kBrass),
       masterBypass_(processor.parameters, params::kMasterBypass, "Bypass all", theme::kCoral),
       meter_(processor) {
-    for (juce::Component* component : std::array<juce::Component*, 19>{
-             &reverseMode_, &reverseMix_, &drive_, &crushRate_, &crushBits_, &crushMix_,
-             &stutterRate_, &stutterMix_, &gateRate_, &gateMix_, &pumpRate_, &pumpMix_,
-             &highPass_, &lowPass_, &output_, &ceiling_, &limiter_, &masterBypass_, &meter_})
-        addAndMakeVisible(component);
+    std::ranges::for_each(std::array<juce::Component*, 23>{
+        &reverseMode_, &reverseMix_, &drive_, &crushRate_, &crushBits_, &crushMix_,
+        &stutterRate_, &stutterMix_, &gateRate_, &gateMix_, &pumpRate_, &pumpMix_,
+        &highPass_, &lowPass_, &highPassSync_, &highPassSyncRate_, &lowPassSync_, &lowPassSyncRate_,
+        &output_, &ceiling_, &limiter_, &masterBypass_, &meter_},
+        [this](juce::Component* component) { addAndMakeVisible(component); });
+    reverseMode_.setTooltip("Host-synced reverse mode. MIDI CC20 enables or disables reverse hits.");
+    highPassSync_.setTooltip("Sweep the high-pass filter in sync with the host. MIDI CC21 activates it.");
+    lowPassSync_.setTooltip("Sweep the low-pass filter in sync with the host. MIDI CC22 activates it.");
     setAdvancedMode(false);
 }
 
@@ -428,6 +529,7 @@ void EffectsPanel::setAdvancedMode(bool advanced) {
     advancedMode_ = advanced;
     setControlsVisible({ &crushRate_, &crushBits_, &crushMix_, &stutterRate_, &stutterMix_, &gateRate_, &gateMix_,
                  &pumpRate_, &pumpMix_, &highPass_, &lowPass_, &ceiling_ }, advanced);
+    setControlsVisible({ &highPassSync_, &highPassSyncRate_, &lowPassSync_, &lowPassSyncRate_ }, true);
     resized();
     repaint();
 }
@@ -442,6 +544,10 @@ void EffectsPanel::paint(juce::Graphics& g) {
     drawCard(g, { area.getX() + cardWidth + gap, area.getY(), cardWidth, cardHeight }, "Texture", theme::kBrass);
     drawCard(g, { area.getX(), area.getY() + cardHeight + gap, cardWidth, cardHeight }, "Rhythm", theme::kViolet);
     drawCard(g, { area.getX() + cardWidth + gap, area.getY() + cardHeight + gap, cardWidth, cardHeight }, "Tone and output", theme::kBrass);
+    g.setColour(theme::kTextDim);
+    g.setFont(juce::FontOptions(8.5f, juce::Font::bold));
+    g.drawText("CC20 REVERSE   ·   CC21 HP   ·   CC22 LP", 18, getHeight() - 18, 340, 13,
+               juce::Justification::centredLeft);
 }
 
 void EffectsPanel::resized() {
@@ -461,9 +567,16 @@ void EffectsPanel::resized() {
     placeRow(rhythm, 0, 3, { &stutterRate_, &stutterMix_ });
     placeRow(rhythm, 1, 3, { &gateRate_, &gateMix_ });
     placeRow(rhythm, 2, 3, { &pumpRate_, &pumpMix_ });
-    placeRow(tone, 0, 3, { &highPass_, &lowPass_ });
-    placeRow(tone, 1, 3, { &output_, &ceiling_ });
-    placeRow(tone, 2, 3, { &limiter_ });
+    if (advancedMode_) {
+        placeRow(tone, 0, 4, { &highPass_, &lowPass_ });
+        placeRow(tone, 1, 4, { &highPassSync_, &highPassSyncRate_, &lowPassSync_ });
+        placeRow(tone, 2, 4, { &lowPassSyncRate_, &output_, &ceiling_ });
+        placeRow(tone, 3, 4, { &limiter_ });
+    }
+    if (!advancedMode_) {
+        placeRow(tone, 0, 4, { &highPassSync_, &highPassSyncRate_, &lowPassSync_, &lowPassSyncRate_ });
+        placeRow(tone, 1, 3, { &output_, &ceiling_, &limiter_ });
+    }
 
     if (!advancedMode_) {
         reverseMode_.setVisible(true); reverseMix_.setVisible(true); drive_.setVisible(true);

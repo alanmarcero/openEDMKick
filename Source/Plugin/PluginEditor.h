@@ -17,7 +17,7 @@ public:
     [[nodiscard]] bool isAdvancedView() const noexcept { return synthPanel_.isAdvancedMode(); }
 
 private:
-    enum class Page { kick, pattern, effects };
+    enum class Page { kick, layers, pattern, effects };
     void timerCallback() override;
     void audioProcessorChanged(juce::AudioProcessor* processor, const ChangeDetails& details) override;
     void audioProcessorParameterChanged(juce::AudioProcessor* processor, int parameterIndex, float newValue) override;
@@ -31,9 +31,11 @@ private:
     juce::TextButton nextPresetBtn_{">"};
     juce::TextButton viewToggleBtn_{"ADVANCED"};
     juce::TextButton kickTab_{"KICK"};
+    juce::TextButton layersTab_{"LAYERS"};
     juce::TextButton patternTab_{"PATTERN"};
     juce::TextButton effectsTab_{"FX"};
     openedmkick::ui::KickSynthPanel synthPanel_;
+    openedmkick::ui::LayerPanel layerPanel_;
     openedmkick::ui::AutoPianoRollPanel autoPanel_;
     openedmkick::ui::EffectsPanel effectsPanel_;
     juce::TooltipWindow tooltipWindow_;

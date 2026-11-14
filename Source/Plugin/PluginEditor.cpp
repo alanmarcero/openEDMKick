@@ -4,6 +4,8 @@
 #include "Presets.h"
 #include "Theme.h"
 
+#include <ranges>
+
 namespace {
 
 namespace theme = openedmkick::theme;
@@ -26,6 +28,7 @@ OpenEdmKickEditor::OpenEdmKickEditor(OpenEdmKickProcessor& processorToEdit)
     : AudioProcessorEditor(processorToEdit),
       processor_(processorToEdit),
       synthPanel_(processorToEdit),
+      layerPanel_(processorToEdit),
       autoPanel_(processorToEdit),
       effectsPanel_(processorToEdit),
       tooltipWindow_(this, 650) {
@@ -67,15 +70,18 @@ OpenEdmKickEditor::OpenEdmKickEditor(OpenEdmKickProcessor& processorToEdit)
     viewToggleBtn_.setTooltip("Show the essential controls or every sound design control.");
     viewToggleBtn_.onClick = [this] { setAdvancedView(!isAdvancedView()); };
     styleTab(kickTab_, "page_kick");
+    styleTab(layersTab_, "page_layers");
     styleTab(patternTab_, "page_pattern");
     styleTab(effectsTab_, "page_fx");
     kickTab_.onClick = [this] { setPage(Page::kick); };
+    layersTab_.onClick = [this] { setPage(Page::layers); };
     patternTab_.onClick = [this] { setPage(Page::pattern); };
     effectsTab_.onClick = [this] { setPage(Page::effects); };
 
-    for (juce::Component* component : std::array<juce::Component*, 10>{
-             &presetBox_, &prevPresetBtn_, &nextPresetBtn_, &viewToggleBtn_, &kickTab_, &patternTab_, &effectsTab_,
-             &synthPanel_, &autoPanel_, &effectsPanel_}) addAndMakeVisible(component);
+    std::ranges::for_each(std::array<juce::Component*, 12>{
+        &presetBox_, &prevPresetBtn_, &nextPresetBtn_, &viewToggleBtn_, &kickTab_, &layersTab_,
+        &patternTab_, &effectsTab_, &synthPanel_, &layerPanel_, &autoPanel_, &effectsPanel_},
+        [this](juce::Component* component) { addAndMakeVisible(component); });
 
     processor_.addListener(this);
     setPage(Page::kick);
@@ -119,9 +125,11 @@ void OpenEdmKickEditor::setAdvancedView(bool advanced) {
 void OpenEdmKickEditor::setPage(Page page) {
     page_ = page;
     synthPanel_.setVisible(page == Page::kick);
+    layerPanel_.setVisible(page == Page::layers);
     autoPanel_.setVisible(page == Page::pattern);
     effectsPanel_.setVisible(page == Page::effects);
     kickTab_.setToggleState(page == Page::kick, juce::dontSendNotification);
+    layersTab_.setToggleState(page == Page::layers, juce::dontSendNotification);
     patternTab_.setToggleState(page == Page::pattern, juce::dontSendNotification);
     effectsTab_.setToggleState(page == Page::effects, juce::dontSendNotification);
     resized(); repaint();
@@ -151,7 +159,7 @@ void OpenEdmKickEditor::paint(juce::Graphics& g) {
     g.drawText("TRANCE KICK SYNTHESIS  /  MIDI TRACKING", 22, 39, 300, 14, juce::Justification::centredLeft);
     g.setColour(theme::kBrass);
     g.setFont(juce::FontOptions(9.0f, juce::Font::bold));
-    g.drawText("V3  ·  NOTE IN, KICK OUT", 330, 17, 180, 20, juce::Justification::centredLeft);
+    g.drawText("V3.1  ·  FOUR LAYERS, ONE HIT", 330, 17, 220, 20, juce::Justification::centredLeft);
 }
 
 void OpenEdmKickEditor::resized() {
@@ -168,15 +176,13 @@ void OpenEdmKickEditor::resized() {
     bounds.removeFromTop(8);
     auto tabs = bounds.removeFromTop(38);
     kickTab_.setBounds(tabs.removeFromLeft(132).withHeight(32)); tabs.removeFromLeft(6);
+    layersTab_.setBounds(tabs.removeFromLeft(110).withHeight(32)); tabs.removeFromLeft(6);
     patternTab_.setBounds(tabs.removeFromLeft(132).withHeight(32)); tabs.removeFromLeft(6);
     effectsTab_.setBounds(tabs.removeFromLeft(92).withHeight(32));
     bounds.removeFromTop(10);
 
-    if (page_ == Page::kick) {
-        synthPanel_.setBounds(bounds);
-    } else if (page_ == Page::pattern) {
-        autoPanel_.setBounds(bounds);
-    } else {
-        effectsPanel_.setBounds(bounds);
-    }
+    synthPanel_.setBounds(bounds);
+    layerPanel_.setBounds(bounds);
+    autoPanel_.setBounds(bounds);
+    effectsPanel_.setBounds(bounds);
 }

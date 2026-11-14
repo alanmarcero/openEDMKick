@@ -8,6 +8,8 @@
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 #include <cmath>
 #include <cstdlib>
+#include <numeric>
+#include <ranges>
 #include <ranges>
 #include <string>
 #include <vector>
@@ -155,6 +157,63 @@ TEST_CASE("MIDI input tracks pitch and octave, including notes from other channe
     processor.processBlock(buffer, midi);
     REQUIRE(processor.currentMidiNote() == 57);
     REQUIRE_THAT(processor.displayMidiHz.load(), WithinAbs(220.0f, 0.001f));
+}
+
+TEST_CASE("Layer and host-sync FX controls are automatable and saved with the session", "[plugin][parameters]") {
+    OpenEdmKickProcessor processor;
+    const std::array<juce::String, 11> ids{
+        "layer_a_enabled", "layer_a_sound", "layer_a_gain", "layer_a_transpose", "layer_a_decay",
+        "layer_a_hp", "layer_a_lp", "hp_sync_on", "hp_sync_rate", "lp_sync_on", "lp_sync_rate"
+    };
+    std::ranges::for_each(ids, [&](const juce::String& id) {
+        auto* parameter = processor.parameters.getParameter(id);
+        REQUIRE(parameter != nullptr);
+        REQUIRE(parameter->isAutomatable());
+    });
+    REQUIRE(processor.currentLayerSettings()[0].enabled);
+    REQUIRE_FALSE(processor.currentLayerSettings()[1].enabled);
+    REQUIRE(processor.parameters.getParameter("layer_b_sound")->getNumSteps() == 4);
+
+    setParam(processor, "layer_d_enabled", 1.0f);
+    setParam(processor, "layer_d_sound", 3.0f);
+    setParam(processor, "layer_d_hp", 1800.0f);
+    setParam(processor, "hp_sync_on", 1.0f);
+    setParam(processor, "lp_sync_rate", 4.0f);
+    juce::MemoryBlock saved;
+    processor.getStateInformation(saved);
+
+    OpenEdmKickProcessor restored;
+    restored.setStateInformation(saved.getData(), static_cast<int>(saved.getSize()));
+    const auto layer = restored.currentLayerSettings()[3];
+    REQUIRE(layer.enabled);
+    REQUIRE(layer.sound == openedmkick::core::DrumSoundType::hat);
+    REQUIRE_THAT(layer.highPassHz, WithinAbs(1800.0f, 1.0f));
+    REQUIRE_THAT(restored.parameters.getRawParameterValue("hp_sync_on")->load(), WithinAbs(1.0f, 0.001f));
+    REQUIRE_THAT(restored.parameters.getRawParameterValue("lp_sync_rate")->load(), WithinAbs(4.0f, 0.001f));
+}
+
+TEST_CASE("MIDI CC21 activates the host-synced high-pass in the plug-in", "[plugin][midi][effects]") {
+    const auto render = [](bool sendCc) {
+        OpenEdmKickProcessor processor;
+        processor.prepareToPlay(48000.0, 8192);
+        setParam(processor, "limiter", 0.0f);
+        setParam(processor, "drive", 0.0f);
+        juce::AudioBuffer<float> buffer(2, 8192);
+        juce::MidiBuffer midi;
+        midi.addEvent(juce::MidiMessage::noteOn(1, 48, 1.0f), 0);
+        if (sendCc) midi.addEvent(juce::MidiMessage::controllerEvent(1, 21, 127), 0);
+        processor.processBlock(buffer, midi);
+        std::vector<float> result(static_cast<size_t>(buffer.getNumSamples()));
+        std::ranges::for_each(std::views::iota(0, buffer.getNumSamples()), [&](int sample) {
+            result[static_cast<size_t>(sample)] = buffer.getSample(0, sample);
+        });
+        return result;
+    };
+    const auto dry = render(false);
+    const auto synced = render(true);
+    const double difference = std::inner_product(dry.begin(), dry.end(), synced.begin(), 0.0,
+        std::plus<>(), [](float left, float right) { return std::abs(static_cast<double>(left - right)); });
+    REQUIRE(difference > 10.0);
 }
 
 TEST_CASE("V3 factory bank contains the new kick and fill catalogs", "[plugin][presets]") {
