@@ -7,6 +7,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 #include <cmath>
+#include <chrono>
 #include <cstdlib>
 #include <numeric>
 #include <new>
@@ -376,8 +377,12 @@ TEST_CASE("Publishing layer lanes and processing dense MIDI allocates no callbac
         midi.addEvent(juce::MidiMessage::controllerEvent(1, 7, event % 128), 0);
     size_t allocations = 0;
     callbackAllocations = &allocations;
+    const auto started = std::chrono::steady_clock::now();
     processor.processBlock(buffer, midi);
+    const auto elapsed = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count();
     callbackAllocations = nullptr;
+    CAPTURE(elapsed);
+    REQUIRE(elapsed < 250.0);
     REQUIRE(allocations == 0);
     REQUIRE(std::isfinite(buffer.getSample(0, 31)));
 }
@@ -405,4 +410,18 @@ TEST_CASE("Layer editor lays out additive controls on each layer page", "[layer-
     REQUIRE(zone->getHeight() > 40);
     REQUIRE(solo->getHeight() > 20);
     REQUIRE(pan->getWidth() > 60);
+}
+
+TEST_CASE("Audition remains at sample zero before later MIDI controller events", "[layer-improvements][midi]") {
+    OpenEdmKickProcessor processor;
+    processor.prepareToPlay(48000, 256);
+    setParam(processor, "limiter", 0);
+    processor.triggerAudition();
+    juce::AudioBuffer<float> buffer(2, 256);
+    juce::MidiBuffer midi;
+    midi.addEvent(juce::MidiMessage::controllerEvent(1, 7, 0), 128);
+    processor.processBlock(buffer, midi);
+    REQUIRE(processor.displayTriggerCount.load() == 1);
+    REQUIRE(buffer.getMagnitude(0, 128) > 0.01f);
+    REQUIRE_THAT(buffer.getMagnitude(128, 128), WithinAbs(0.0f, 0.00001f));
 }

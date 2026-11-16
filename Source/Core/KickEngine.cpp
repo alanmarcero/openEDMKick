@@ -144,6 +144,15 @@ void KickEngine::process(
         return kSyncDivisionBeats[static_cast<size_t>(std::clamp(index, 0, static_cast<int>(kSyncDivisionBeats.size()) - 1))];
     };
     float peak = 0.0f;
+    size_t midiCursor = 0;
+    size_t ccCursor = 0;
+    size_t noteCursor = 0;
+    const auto eventOffset = [](const MidiInputEvent& event) noexcept {
+        return std::visit([](const auto& value) { return value.sampleOffset; }, event);
+    };
+    int nextMidiSample = midiEvents.empty() ? numSamples : eventOffset(midiEvents.front());
+    int nextCcSample = controlChanges.empty() ? numSamples : controlChanges.front().sampleOffset;
+    int nextNoteSample = midiTriggers.empty() ? numSamples : midiTriggers.front().sampleOffset;
 
     for (int sample = 0; sample < numSamples; ++sample) {
         const double ppq = blockPpq + static_cast<double>(sample) * ppqPerSample;
@@ -198,11 +207,22 @@ void KickEngine::process(
         const bool savedHighPassCcEnabled = highPassCcEnabled_;
         const bool savedLowPassCcEnabled = lowPassCcEnabled_;
 
-        if (midiEvents.empty()) {
-            std::ranges::for_each(controlChanges, applyControlChange);
+        const size_t midiBegin = midiCursor;
+        while (midiCursor < midiEvents.size() && nextMidiSample <= sample) {
+            ++midiCursor;
+            if (midiCursor < midiEvents.size()) nextMidiSample = eventOffset(midiEvents[midiCursor]);
         }
-        if (!midiEvents.empty()) {
-            std::ranges::for_each(midiEvents, [&](const MidiInputEvent& inputEvent) {
+        const auto sampleMidiEvents = midiEvents.subspan(midiBegin, midiCursor - midiBegin);
+        if (midiEvents.empty()) {
+            while (ccCursor < controlChanges.size() && nextCcSample <= sample) {
+                applyControlChange(controlChanges[ccCursor]);
+                ++ccCursor;
+                if (ccCursor < controlChanges.size()) nextCcSample = controlChanges[ccCursor].sampleOffset;
+            }
+        }
+        if (!sampleMidiEvents.empty()) {
+            // Auto Mode sees all controllers at this sample; incoming notes retain their original CC order below.
+            std::ranges::for_each(sampleMidiEvents, [&](const MidiInputEvent& inputEvent) {
                 std::visit([&](const auto& event) {
                     if constexpr (std::is_same_v<std::decay_t<decltype(event)>, MidiCcEvent>)
                         applyControlChange(event);
@@ -224,15 +244,21 @@ void KickEngine::process(
             }
         }
 
-        if (midiEvents.empty()) std::ranges::for_each(midiTriggers, triggerMidiNote);
-        if (!midiEvents.empty()) {
+        if (midiEvents.empty()) {
+            while (noteCursor < midiTriggers.size() && nextNoteSample <= sample) {
+                triggerMidiNote(midiTriggers[noteCursor]);
+                ++noteCursor;
+                if (noteCursor < midiTriggers.size()) nextNoteSample = midiTriggers[noteCursor].sampleOffset;
+            }
+        }
+        if (!sampleMidiEvents.empty()) {
             midiVolume_ = savedMidiVolume;
             midiExpression_ = savedMidiExpression;
             midiBrightness_ = savedMidiBrightness;
             reverseCcEnabled_ = savedReverseCcEnabled;
             highPassCcEnabled_ = savedHighPassCcEnabled;
             lowPassCcEnabled_ = savedLowPassCcEnabled;
-            std::ranges::for_each(midiEvents, [&](const MidiInputEvent& inputEvent) {
+            std::ranges::for_each(sampleMidiEvents, [&](const MidiInputEvent& inputEvent) {
                 std::visit([&](const auto& event) {
                     if (event.sampleOffset != sample) return;
                     using Event = std::decay_t<decltype(event)>;

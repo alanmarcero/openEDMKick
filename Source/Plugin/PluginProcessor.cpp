@@ -283,8 +283,13 @@ void OpenEdmKickProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
         midiEventScratch_.emplace_back(core::MidiCcEvent{ sample, controller, message.getControllerValue() });
     });
 
-    if (auditionPending_.exchange(false))
-        midiEventScratch_.emplace_back(core::MidiTrigger{ 0, core::kDefaultMidiNote, 1.0f, true });
+    if (auditionPending_.exchange(false)) {
+        const auto afterSampleZero = std::upper_bound(midiEventScratch_.begin(), midiEventScratch_.end(), 0,
+            [](int sample, const core::MidiInputEvent& input) {
+                return sample < std::visit([](const auto& event) { return event.sampleOffset; }, input);
+            });
+        midiEventScratch_.insert(afterSampleZero, core::MidiTrigger{ 0, core::kDefaultMidiNote, 1.0f, true });
+    }
 
     buffer.clear();
     engine_.process(settings, transport, {}, buffer.getArrayOfWritePointers(),

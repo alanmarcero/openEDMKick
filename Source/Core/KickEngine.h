@@ -81,6 +81,7 @@ public:
     void prepare(double sampleRate);
     void reset() noexcept;
 
+    // Each input span must be sorted by sampleOffset, retaining input order for ties.
     void process(
         const EngineSettings& settings,
         const Transport& transport,
