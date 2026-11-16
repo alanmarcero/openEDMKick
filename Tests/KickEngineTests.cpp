@@ -6,6 +6,7 @@
 #include <functional>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 #include <cmath>
+#include <chrono>
 #include <numeric>
 #include <ranges>
 #include <utility>
@@ -381,6 +382,15 @@ TEST_CASE("Same-sample MIDI CC and note events keep their input order", "[engine
 
     REQUIRE(isReversing(enableThenNote));
     REQUIRE_FALSE(isReversing(noteThenEnable));
+
+    const std::array<core::MidiInputEvent, 2> earlyEnableThenNote{
+        core::MidiCcEvent{16, 20, 127}, core::MidiTrigger{32, 36, 1.0f, false}
+    };
+    const std::array<core::MidiInputEvent, 2> earlyNoteThenEnable{
+        core::MidiTrigger{16, 36, 1.0f, false}, core::MidiCcEvent{32, 20, 127}
+    };
+    REQUIRE(isReversing(earlyEnableThenNote));
+    REQUIRE_FALSE(isReversing(earlyNoteThenEnable));
 }
 
 TEST_CASE("Same-sample controllers are applied before Auto Mode triggers", "[engine][midi][auto]") {
@@ -524,4 +534,40 @@ TEST_CASE("Hat tone scale changes its filtered metal and noise layer", "[layer-i
     settings.layers[0].toneScale = 0.3f;
     const auto dark = renderImprovedLayers(settings);
     REQUIRE(layerEnergy(dark[0]) != layerEnergy(original[0]));
+}
+
+TEST_CASE("Dense sorted MIDI traversal scales independently of block length", "[engine][midi][realtime]") {
+    core::KickEngine engine;
+    engine.prepare(48000);
+    core::EngineSettings settings;
+    const std::vector<core::MidiInputEvent> events(65535, core::MidiCcEvent{0, 7, 127});
+    std::array<float, 8192> output{};
+    float* channel = output.data();
+    const auto started = std::chrono::steady_clock::now();
+    engine.process(settings, {120, 0.0, 4, true}, {}, &channel, 1, static_cast<int>(output.size()), {}, events);
+    const auto elapsed = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count();
+    CAPTURE(elapsed);
+    REQUIRE(elapsed < 250.0);
+    REQUIRE(std::all_of(output.begin(), output.end(), [](float sample) { return sample == 0; }));
+}
+
+TEST_CASE("Separate MIDI spans preserve offsets and controller semantics", "[engine][midi]") {
+    const std::array<core::MidiTrigger, 2> notes{{{0, 36, 0.8f}, {48, 48, 0.6f}}};
+    const std::array<core::MidiCcEvent, 4> controllers{{{16, 7, 32}, {32, 121, 127}, {48, 11, 50}, {64, 120, 0}}};
+    const std::array<core::MidiInputEvent, 6> ordered{
+        notes[0], controllers[0], controllers[1], controllers[2], notes[1], controllers[3]
+    };
+    core::KickEngine separateEngine, orderedEngine;
+    separateEngine.prepare(48000);
+    orderedEngine.prepare(48000);
+    core::EngineSettings settings;
+    std::array<float, 128> separate{}, combined{};
+    float* separateChannel = separate.data();
+    float* orderedChannel = combined.data();
+    separateEngine.process(settings, {120, 0.0, 4, true}, notes, &separateChannel, 1, 128, controllers);
+    orderedEngine.process(settings, {120, 0.0, 4, true}, {}, &orderedChannel, 1, 128, {}, ordered);
+    REQUIRE(separate == combined);
+    REQUIRE(std::any_of(separate.begin(), separate.begin() + 64, [](float sample) { return sample != 0; }));
+    REQUIRE(std::all_of(separate.begin() + 64, separate.end(), [](float sample) { return sample == 0; }));
+    REQUIRE(separateEngine.triggerSerial() == 2);
 }
