@@ -1,4 +1,4 @@
-# Native editor screenshots
+# openKicker v3.2.0 native editor screenshots
 
 The four images are rendered by the compiled native JUCE editor at 1100 × 940. They show Advanced view with graphite panels, mint/amber controls, per-parameter padlocks, section locks, and visible current MIDI assignments.
 
