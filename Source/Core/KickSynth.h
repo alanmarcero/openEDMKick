@@ -76,6 +76,11 @@ struct KickSettings {
     // Voice output.
     float lowCutHz = 25.0f;       // 10..90
     float clip = 0.45f;           // 0..1
+    bool ampEnabled = false;
+    float ampAttackMs = 0.0f;
+    float ampDecayMs = 100.0f;
+    float ampSustain = 0.8f;
+    float ampReleaseMs = 300.0f;
 
 };
 
@@ -114,6 +119,9 @@ public:
                const DrumLayerSettings& layer = {}, float gainScale = 1.0f) noexcept;
     void startReverse(const KickSettings& settings, int midiNote, float velocity, int durationSamples,
                       const DrumLayerSettings& layer = {}, float gainScale = 1.0f) noexcept;
+    void retimeReverse(int remainingSamples) noexcept;
+    void release() noexcept;
+    [[nodiscard]] double remainingSeconds() const noexcept;
     void choke() noexcept;
     void reset() noexcept;
 
@@ -123,6 +131,7 @@ public:
 private:
     void startState(const KickSettings& settings, int midiNote, float velocity,
                     const DrumLayerSettings& layer, float gainScale) noexcept;
+    [[nodiscard]] float ampLevel() const noexcept;
     [[nodiscard]] float renderHostSample() noexcept;
     [[nodiscard]] float renderOversampled() noexcept;
     [[nodiscard]] float renderClick(float timeMs) noexcept;
@@ -138,20 +147,25 @@ private:
     float gain_ = 1.0f;
     float velocity_ = 1.0f;
     float noteHz_ = 43.65f;
+    float clickFrequencyHz_ = 3500;
     float previousSample_ = 0.0f;
     double phase_ = 0.0;
     double subPhase_ = 0.0;
     double clickPhase_ = 0.0;
     int64_t osIndex_ = 0;
+    int64_t ampIndex_ = 0;
+    int64_t releaseStart_ = -1;
+    int64_t releaseLength_ = 0;
+    float releaseLevel_ = 0;
     int64_t hostIndex_ = 0;
     int64_t hostLength_ = 0;
     int64_t chokeRemaining_ = -1;
     int64_t chokeLength_ = 1;
     bool reversing_ = false;
     int reverseSamplesRemaining_ = 0;
-    double reverseReadPosition_ = 0.0;
-    double reverseReadStep_ = 1.0;
-    std::vector<float> reverseBuffer_;
+    double reverseSourcePosition_ = 0;
+    double reverseSourceStep_ = 1;
+    double phaseDirection_ = 1;
 
     dsp::Biquad knock_;
     dsp::Biquad tone_;

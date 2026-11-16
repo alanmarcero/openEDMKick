@@ -4,15 +4,15 @@
 
 namespace openedmkick::theme {
 
-inline const juce::Colour kInk{ 0xff171521 };
-inline const juce::Colour kSteel{ 0xff292736 };
-inline const juce::Colour kEdge{ 0xff454253 };
-inline const juce::Colour kTrack{ 0xff514e60 };
-inline const juce::Colour kText{ 0xffe9e6ef };
-inline const juce::Colour kTextDim{ 0xffaaa6b7 };
-inline const juce::Colour kViolet{ 0xffa98bff };
-inline const juce::Colour kCoral{ 0xffff705e };
-inline const juce::Colour kBrass{ 0xffe9b94d };
+inline const juce::Colour kInk{ 0xff0D1317 };
+inline const juce::Colour kSteel{ 0xff152026 };
+inline const juce::Colour kEdge{ 0xff283842 };
+inline const juce::Colour kTrack{ 0xff283842 };
+inline const juce::Colour kText{ 0xffE6F0F5 };
+inline const juce::Colour kTextDim{ 0xff869CA8 };
+inline const juce::Colour kViolet{ 0xff48F0C8 };
+inline const juce::Colour kCoral{ 0xffFFBE3B };
+inline const juce::Colour kBrass{ 0xffFFBE3B };
 
 // Semantic aliases used by shared JUCE drawing helpers.
 inline const juce::Colour kBackground = kInk;

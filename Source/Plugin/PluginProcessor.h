@@ -1,6 +1,7 @@
 #pragma once
 
 #include "KickEngine.h"
+#include "ParameterRouting.h"
 #include <array>
 #include <atomic>
 #include <mutex>
@@ -14,6 +15,7 @@ public:
     void releaseResources() override {}
     bool isBusesLayoutSupported(const BusesLayout& layouts) const override;
     void processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi) override;
+    void processBlockBypassed(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi) override;
 
     juce::AudioProcessorEditor* createEditor() override;
     bool hasEditor() const override { return true; }
@@ -21,7 +23,7 @@ public:
     bool acceptsMidi() const override { return true; }
     bool producesMidi() const override { return false; }
     bool isMidiEffect() const override { return false; }
-    double getTailLengthSeconds() const override { return 0.0; }
+    double getTailLengthSeconds() const override { return displayTailSeconds_.load(); }
     juce::AudioProcessorParameter* getBypassParameter() const override;
 
     int getNumPrograms() override;
@@ -48,6 +50,7 @@ public:
     void triggerAudition() noexcept { auditionPending_.store(true); }
 
     juce::AudioProcessorValueTreeState parameters;
+    ParameterRouting& routing() noexcept { return routing_; }
 
     std::atomic<float> displayPeak{ 0.0f };
     std::atomic<float> displayAutoPhase{ 0.0f };
@@ -60,10 +63,13 @@ public:
     std::atomic<uint32_t> displayTriggerCount{ 0 };
 
 private:
+    openedmkick::core::EngineSettings currentEngineSettings() const noexcept;
     void syncSequencerPresets(
         const std::array<openedmkick::core::AutoSlotSettings, openedmkick::core::kNumAutoSlots>& slots);
 
     void syncEditorSequencer() const;
+    openedmkick::core::AutoSlotSettings hostAutoSlotSettings(int) const;
+    void adoptDisplayedPattern();
     void publishPatterns();
     struct PatternSnapshot {
         openedmkick::core::AutoSequencer sequencer;
@@ -156,13 +162,35 @@ private:
         std::atomic<float>* limiter;
         std::atomic<float>* ceiling;
         std::atomic<float>* masterBypass;
+        std::atomic<float>* ampEnabled;
+        std::atomic<float>* ampAttackMs;
+        std::atomic<float>* ampDecayMs;
+        std::atomic<float>* ampSustain;
+        std::atomic<float>* ampReleaseMs;
+        std::atomic<float>* reverseEnabled;
+        std::atomic<float>* crushEnabled;
+        std::atomic<float>* stutterEnabled;
+        std::atomic<float>* gateEnabled;
+        std::atomic<float>* midiVolume;
+        std::atomic<float>* midiExpression;
+        std::atomic<float>* midiBrightness;
+        std::atomic<float>* highPassMidi;
+        std::atomic<float>* lowPassMidi;
     };
 
     static constexpr size_t kMaxMidiEvents = 65536;
     static_assert(std::atomic<int>::is_always_lock_free);
+    std::atomic<double> displayTailSeconds_{0};
+    ParameterRouting routing_;
     ParameterValues values_;
     openedmkick::core::KickEngine engine_;
     mutable std::mutex stateMutex_;
+    openedmkick::core::AutoSequencer audioBaseline_;
+    std::array<int, 4> baselinePresets_{0, 1, 2, 3};
+    std::array<int, 4> baselineBars_{4, 4, 4, 4};
+    std::array<bool, 4> usesBaseline_{};
+    std::array<std::atomic<float>*, 4> hostFillParams_{};
+    std::array<std::atomic<float>*, 4> hostBarParams_{};
     mutable openedmkick::core::AutoSequencer editorSequencer_;
     mutable std::array<int, openedmkick::core::kNumAutoSlots> editorPresets_{ -1, -1, -1, -1 };
     mutable std::array<int, openedmkick::core::kNumAutoSlots> editorBars_{};

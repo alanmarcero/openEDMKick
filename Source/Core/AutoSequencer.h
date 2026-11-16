@@ -106,6 +106,8 @@ public:
     void loadPresetIntoSlot(int slot, int presetIndex, int bars);
     bool toggleNoteAt(int slot, int step64, int length64, int totalBars, int layer = -1, int ratchets = 1);
     void swapSlotPattern(int slot, AutoSequencer& other) noexcept;
+    // The prepared source owns this slot and must outlive the reader; updates occur at block boundaries.
+    void referenceSlotPattern(int slot, const AutoSequencer& source) noexcept;
     void cycleRatchetsAt(int slot, int step64, int layer);
     static constexpr int kMaxPatternSteps = 64 * kStepsPerBar64;
     static constexpr size_t kMaxPatternNotes = 5 * kMaxPatternSteps;
@@ -134,6 +136,7 @@ private:
         bool wraps;
     };
     void rebuildSchedule(int slot);
+    std::array<const AutoSequencer*, kNumAutoSlots> patternSources_{};
     std::array<std::vector<PianoRollNote>, kNumAutoSlots> slotNotes_;
     std::array<std::vector<ScheduledHit>, kNumAutoSlots> scheduledHits_;
     double lastSamplePpq_ = -1.0;

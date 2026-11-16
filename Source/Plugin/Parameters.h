@@ -53,6 +53,21 @@ inline constexpr const char* kLayerSolo = "solo";
 inline constexpr const char* kLayerPan = "pan";
 inline constexpr const char* kLayerPolarity = "polarity";
 
+inline constexpr const char* kAmpEnabled = "amp_enabled";
+inline constexpr const char* kAmpAttack = "amp_attack_ms";
+inline constexpr const char* kAmpDecay = "amp_decay_ms";
+inline constexpr const char* kAmpSustain = "amp_sustain";
+inline constexpr const char* kAmpRelease = "amp_release_ms";
+inline constexpr const char* kReverseEnabled = "reverse_on";
+inline constexpr const char* kCrushEnabled = "crush_on";
+inline constexpr const char* kStutterEnabled = "stutter_on";
+inline constexpr const char* kGateEnabled = "gate_on";
+inline constexpr const char* kHighPassMidi = "hp_midi_on";
+inline constexpr const char* kLowPassMidi = "lp_midi_on";
+inline constexpr const char* kMidiVolume = "midi_volume";
+inline constexpr const char* kMidiExpression = "midi_expression";
+inline constexpr const char* kMidiBrightness = "midi_brightness";
+
 inline constexpr const char* kClockSync = "clock_sync";
 inline constexpr const char* kTempoBpm = "tempo_bpm";
 inline constexpr const char* kTimeSignature = "time_sig";

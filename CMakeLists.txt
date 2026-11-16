@@ -53,6 +53,7 @@ if(OEK_BUILD_PLUGIN)
         Source/Plugin/Parameters.cpp
         Source/Plugin/Presets.cpp
         Source/Plugin/EdmLookAndFeel.cpp
+        Source/Plugin/ParameterRouting.cpp
         Source/Plugin/Controls.cpp
         Source/Plugin/Panels.cpp
         Source/Plugin/PluginProcessor.cpp
@@ -105,5 +106,9 @@ if(OEK_BUILD_TESTS)
         target_compile_definitions(openedmkick_plugin_tests PRIVATE $<TARGET_PROPERTY:OpenEDMKick,COMPILE_DEFINITIONS>)
         target_link_libraries(openedmkick_plugin_tests PRIVATE OpenEDMKick juce::juce_audio_utils Catch2::Catch2WithMain)
         catch_discover_tests(openedmkick_plugin_tests)
+        add_custom_target(openedmkick_screenshots
+            COMMAND ${CMAKE_COMMAND} -E env OEK_CAPTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/assets
+                $<TARGET_FILE:openedmkick_plugin_tests> "[capture]"
+            DEPENDS openedmkick_plugin_tests VERBATIM)
     endif()
 endif()

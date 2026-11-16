@@ -43,3 +43,20 @@ Solo, linear pan, and polarity operate per layer before the stereo mix. Center p
 ## Session state
 
 The processor keeps the openKicker plug-in identity and v3 factory bank. Layer settings and host-sync parameters are saved with the session and are available for automation. New layer parameters append to the existing parameter list with AU version hint 3. All four scenes' custom lane notes and ratchets are stored in a separate LayerPatterns state child. Editor edits publish precompiled schedules through an atomic triple buffer; the callback swaps pattern storage without taking the editor mutex. Supported MIDI input is bounded to 65,535 events plus an audition per callback; excess input is ignored. Older sessions retain matching parameter values and use defaults for the added layer and sync controls.
+
+
+## Full ADSR and note tracking
+
+Full ADSR is opt-in with 0–10-second attack/decay, 0–1 sustain, and 0–20-second release. Eight fixed MIDI slots retain note/channel ownership; one-shot Auto Mode and audition use a separate slot. Matching note-offs enter release at their sample offset. Enabling ADSR preserves existing one-shot hits, and disabling it releases held gated voices. Release also advances while output is bypassed. Host tail reporting follows remaining release and repeat-window time, plus a finite shared-filter/sample-hold allowance. Native host bypass still consumes MIDI note-offs and advances releases while muting the output.
+
+C2 is the synthesis frequency reference. Main/layer transpose, knock, transient tone, metal partials, and tuned body/noise/tail filters follow MIDI pitch with Nyquist safety clamps. White noise generation remains broadband. The disabled ADSR path retains the reference one-shot sound.
+
+## Performance FX and parameter routing
+
+Default activation bindings are Reverse CC20, HP CC21, LP CC22, Crush CC23, Stutter CC24, Chopper CC25, Volume CC7, Expression CC11, and Brightness CC74. HP/LP MIDI activation is distinct from each automated sync switch. Crush/Stutter/Chopper activation uses configured nonzero Mix/Depth or full activation at zero; automated amounts remain independent when MIDI activation is off.
+
+Reverse setup uses a fixed 128-point phase integration and then renders backward source time per sample, with a 3 ms end fade. There is no full-hit rendering or reverse sample buffer in note-on handling. This preserves the rising reverse character while intentionally changing sample-exact filtered/noise reversal. Reverse is retimed when tempo changes and stops at its PPQ target; performance reverse and stutter use the next quarter-note boundary, including a full beat for on-beat notes.
+
+The router has stable parameter-ID metadata and fixed per-parameter atomic value mirrors. Incoming CCs update mirrors/DSP without APVTS or host-notification writes. The engine saves/restores current-sample mirrors around the controller prepass so Auto Mode sees current CC state while incoming notes preserve original order. Limiter/ceiling changes apply per sample. Existing sorted event cursors remain linear in event count. Temporary sequencer CC choices do not overwrite stored custom-note patterns.
+
+Per-parameter/section locks are consulted only during factory recall. Full state restore replaces project values and routing metadata directly. User controls use ParameterAttachment callbacks with silent UI mirror updates, so editing back to an unchanged host value still clears a CC override.

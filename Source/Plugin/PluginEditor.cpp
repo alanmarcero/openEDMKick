@@ -159,7 +159,7 @@ void OpenEdmKickEditor::paint(juce::Graphics& g) {
     g.drawText("TRANCE KICK SYNTHESIS  /  MIDI TRACKING", 22, 39, 300, 14, juce::Justification::centredLeft);
     g.setColour(theme::kBrass);
     g.setFont(juce::FontOptions(9.0f, juce::Font::bold));
-    g.drawText("V3.1  ·  FOUR LAYERS, ONE HIT", 330, 17, 220, 20, juce::Justification::centredLeft);
+    g.drawText("FOUR LAYERS / ADSR / GLITCH", 330, 17, 220, 20, juce::Justification::centredLeft);
 }
 
 void OpenEdmKickEditor::resized() {
