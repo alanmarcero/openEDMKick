@@ -40,6 +40,19 @@ inline constexpr const char* kLayerDecay = "decay";
 inline constexpr const char* kLayerHighPass = "hp";
 inline constexpr const char* kLayerLowPass = "lp";
 
+inline constexpr const char* kLayerVelocityCurve = "velocity_curve";
+inline constexpr const char* kLayerVelocityTimbre = "velocity_timbre";
+inline constexpr const char* kLayerKeyLow = "key_low";
+inline constexpr const char* kLayerKeyHigh = "key_high";
+inline constexpr const char* kLayerVelocityLow = "velocity_low";
+inline constexpr const char* kLayerVelocityHigh = "velocity_high";
+inline constexpr const char* kLayerDriveOffset = "drive_offset";
+inline constexpr const char* kLayerToneScale = "tone_scale";
+inline constexpr const char* kLayerSweepScale = "sweep_scale";
+inline constexpr const char* kLayerSolo = "solo";
+inline constexpr const char* kLayerPan = "pan";
+inline constexpr const char* kLayerPolarity = "polarity";
+
 inline constexpr const char* kClockSync = "clock_sync";
 inline constexpr const char* kTempoBpm = "tempo_bpm";
 inline constexpr const char* kTimeSignature = "time_sig";

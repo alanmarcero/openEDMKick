@@ -90,3 +90,63 @@ TEST_CASE("Piano roll note toggle adds and removes kick hits at 1/64 resolution"
     REQUIRE(!seq.toggleNoteAt(0, 63, 1, 1));
     REQUIRE(seq.notesForSlot(0).empty());
 }
+
+TEST_CASE("Layer lanes schedule simultaneous hits and sample accurate ratchets", "[layer-improvements]") {
+    openedmkick::core::AutoSequencer sequencer;
+    sequencer.setNotesForSlot(0, {{0, 4, 0.8f, false, 0, 4}, {0, 4, 0.3f, false, 2, 1}});
+    openedmkick::core::AutoSlotSettings settings;
+    settings.bars = 1;
+    const auto first = sequencer.stepSample(0, settings, 300, 120, 4, 48000, true, 0);
+    REQUIRE(first.layerMask == 5);
+    REQUIRE(first.layerVelocities[0] == 0.8f);
+    REQUIRE(first.layerVelocities[2] == 0.3f);
+    const auto between = sequencer.stepSample(0, settings, 300, 120, 4, 48000, true, 0.03);
+    REQUIRE_FALSE(between.triggered);
+    const auto repeat = sequencer.stepSample(0, settings, 300, 120, 4, 48000, true, 0.0625);
+    REQUIRE(repeat.layerMask == 1);
+    REQUIRE(repeat.layerVelocities[0] == 0.8f);
+    const auto noDuplicate = sequencer.stepSample(0, settings, 300, 120, 4, 48000, true, 0.06251);
+    REQUIRE_FALSE(noDuplicate.triggered);
+}
+
+TEST_CASE("Legacy lane wraps tail spacing at the scene boundary", "[layer-improvements]") {
+    openedmkick::core::AutoSequencer sequencer;
+    sequencer.setNotesForSlot(0, {{0, 1, 1, false}, {63, 1, 1, false}});
+    openedmkick::core::AutoSlotSettings settings;
+    settings.bars = 1;
+    const auto last = sequencer.stepSample(0, settings, 300, 120, 4, 48000, true, 63.0 / 16);
+    REQUIRE(last.stepDurationBeats == 1.0 / 16);
+}
+
+TEST_CASE("Triplet ratchets keep exact sample timing", "[layer-improvements]") {
+    openedmkick::core::AutoSequencer sequencer;
+    sequencer.setNotesForSlot(0, {{0, 4, 1, false, 1, 3}});
+    openedmkick::core::AutoSlotSettings settings;
+    settings.bars = 1;
+    std::vector<int> positions;
+    for (int sample = 0; sample < 6000; ++sample) {
+        const auto hit = sequencer.stepSample(0, settings, 300, 120, 4, 48000, true, static_cast<double>(sample) / 24000);
+        if (hit.triggered) positions.push_back(sample);
+    }
+    REQUIRE(positions == std::vector<int>{0, 2000, 4000});
+}
+
+TEST_CASE("Explicit layer hits override a shared hit's velocity", "[layer-improvements]") {
+    openedmkick::core::AutoSequencer sequencer;
+    sequencer.setNotesForSlot(0, {{0, 4, 0.2f, false, 2, 1}, {0, 4, 1, false, -1, 1}});
+    openedmkick::core::AutoSlotSettings settings;
+    const auto hit = sequencer.stepSample(0, settings, 300, 120, 4, 48000, true, 0);
+    REQUIRE(hit.layerMask == 15);
+    REQUIRE(hit.layerVelocities[0] == 1);
+    REQUIRE(hit.layerVelocities[2] == 0.2f);
+}
+
+TEST_CASE("Simultaneous shared and layer notes retain the next hit's tail spacing", "[layer-improvements]") {
+    openedmkick::core::AutoSequencer sequencer;
+    sequencer.setNotesForSlot(0, {{0, 4, 1, false, -1}, {0, 4, 0.2f, false, 2}, {4, 4, 1, false, -1}});
+    openedmkick::core::AutoSlotSettings settings;
+    settings.bars = 1;
+    settings.tailShorten = 1;
+    const auto hit = sequencer.stepSample(0, settings, 300, 120, 4, 48000, true, 0);
+    REQUIRE(hit.layerTailMs[0] == openedmkick::core::computeAutoEffectiveTailMs(300, 1, 125));
+}

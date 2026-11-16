@@ -14,6 +14,8 @@ constexpr int kVersion = 1;
 
 const Formatter kFormatHz = [](float hz, int) { return formatHz(hz); };
 const Formatter kFormatOctaves = [](float value, int) { return juce::String(value, 1) + " oct"; };
+const Formatter kFormatNumber = [](float value, int) { return juce::String(value, 2); };
+const Formatter kFormatMidi = [](float value, int) { return juce::String(juce::roundToInt(value)); };
 const Formatter kFormatPercent = [](float value, int) { return juce::String(juce::roundToInt(value * 100.0f)) + "%"; };
 const Formatter kFormatBipolar = [](float value, int) {
     const int percent = juce::roundToInt(value * 100.0f);
@@ -51,9 +53,9 @@ void addChoice(Layout& layout, const juce::String& id, const juce::String& name,
         juce::ParameterID{ id, version }, name, choices, defaultIndex));
 }
 
-void addBool(Layout& layout, const juce::String& id, const juce::String& name, bool defaultValue) {
+void addBool(Layout& layout, const juce::String& id, const juce::String& name, bool defaultValue, int version = kVersion) {
     layout.add(std::make_unique<juce::AudioParameterBool>(
-        juce::ParameterID{ id, kVersion }, name, defaultValue));
+        juce::ParameterID{ id, version }, name, defaultValue));
 }
 
 } // namespace
@@ -179,6 +181,22 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout() {
     addBool(layout, kLimiter, "Limiter", true);
     addFloat(layout, kCeiling, "Ceiling", { -18.0f, 0.0f }, -0.3f, kFormatDb);
     addBool(layout, kMasterBypass, "Master Bypass", false);
+    // Append controls to preserve the host's existing parameter order.
+    for (int layer = 0; layer < core::kNumSoundLayers; ++layer) {
+        const auto prefix = "Layer " + juce::String::charToString(static_cast<juce::juce_wchar>('A' + layer)) + " ";
+        addFloat(layout, layerId(layer, kLayerVelocityCurve), prefix + "Velocity curve", { 0.1f, 4.0f }, 1.45f, kFormatNumber, 3);
+        addFloat(layout, layerId(layer, kLayerVelocityTimbre), prefix + "Velocity timbre", { 0.0f, 1.0f }, 1.0f, kFormatPercent, 3);
+        addFloat(layout, layerId(layer, kLayerKeyLow), prefix + "Key low", { 0.0f, 127.0f, 1.0f }, 0.0f, kFormatMidi, 3);
+        addFloat(layout, layerId(layer, kLayerKeyHigh), prefix + "Key high", { 0.0f, 127.0f, 1.0f }, 127.0f, kFormatMidi, 3);
+        addFloat(layout, layerId(layer, kLayerVelocityLow), prefix + "Velocity low", { 1.0f, 127.0f, 1.0f }, 1.0f, kFormatMidi, 3);
+        addFloat(layout, layerId(layer, kLayerVelocityHigh), prefix + "Velocity high", { 1.0f, 127.0f, 1.0f }, 127.0f, kFormatMidi, 3);
+        addFloat(layout, layerId(layer, kLayerDriveOffset), prefix + "Drive offset", { -1.0f, 1.0f }, 0.0f, kFormatPercent, 3);
+        addFloat(layout, layerId(layer, kLayerToneScale), prefix + "Tone scale", { 0.1f, 2.0f }, 1.0f, kFormatPercent, 3);
+        addFloat(layout, layerId(layer, kLayerSweepScale), prefix + "Sweep scale", { 0.0f, 2.0f }, 1.0f, kFormatPercent, 3);
+        addBool(layout, layerId(layer, kLayerSolo), prefix + "Solo", false, 3);
+        addFloat(layout, layerId(layer, kLayerPan), prefix + "Pan", { -1.0f, 1.0f }, 0.0f, kFormatPercent, 3);
+        addBool(layout, layerId(layer, kLayerPolarity), prefix + "Invert", false, 3);
+    }
     return layout;
 }
 

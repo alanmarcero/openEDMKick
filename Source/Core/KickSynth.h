@@ -27,6 +27,18 @@ struct DrumLayerSettings {
     float decayMs = 300.0f;
     float highPassHz = ToneFilter::kHighPassBypassHz;
     float lowPassHz = ToneFilter::kLowPassBypassHz;
+    float velocityCurve = 1.45f;
+    float velocityTimbre = 1.0f;
+    int keyLow = 0;
+    int keyHigh = 127;
+    int velocityLow = 1;
+    int velocityHigh = 127;
+    float driveOffset = 0.0f;
+    float toneScale = 1.0f;
+    float sweepScale = 1.0f;
+    bool solo = false;
+    float pan = 0.0f;
+    bool invertPolarity = false;
 };
 
 // Every control that shapes a single hit. Root pitch always comes from MIDI.

@@ -109,7 +109,7 @@ private:
         int midiNote,
         float velocity,
         float effectiveTailMs,
-        bool reverseCue) noexcept;
+        bool reverseCue, int onlyLayer = -1) noexcept;
 
     double sampleRate_ = 48000.0;
     double fallbackPpq_ = 0.0;
@@ -119,10 +119,10 @@ private:
     std::array<KickVoice, kNumSoundLayers> forwardVoices_;
     std::array<KickVoice, kNumSoundLayers> reverseVoices_;
     AutoSequencer sequencer_;
-    BitCrusher crusher_;
-    BeatStutter stutter_;
-    SyncFilterPump filterPump_;
-    ToneFilter toneFilter_;
+    std::array<BitCrusher, 2> crusher_;
+    std::array<BeatStutter, 2> stutter_;
+    std::array<SyncFilterPump, 2> filterPump_;
+    std::array<ToneFilter, 2> toneFilter_;
     PeakLimiter limiter_;
     float smoothedHighPassHz_ = ToneFilter::kHighPassBypassHz;
     float smoothedLowPassHz_ = ToneFilter::kLowPassBypassHz;

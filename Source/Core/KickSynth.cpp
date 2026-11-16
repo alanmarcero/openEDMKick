@@ -110,6 +110,13 @@ void KickVoice::startState(const KickSettings& settings, int midiNote, float vel
                            const DrumLayerSettings& layer, float gainScale) noexcept {
     settings_ = settings;
     layer_ = layer;
+    settings_.drive = std::clamp(settings_.drive + finiteClamp(layer.driveOffset, 0, -1, 1), 0.0f, 1.0f);
+    const float toneScale = finiteClamp(layer.toneScale, 1, 0.1f, 2);
+    settings_.toneHz *= toneScale;
+    settings_.clickHz *= toneScale;
+    const float sweepScale = finiteClamp(layer.sweepScale, 1, 0, 2);
+    settings_.sweepOctaves *= sweepScale;
+    settings_.snapOctaves *= sweepScale;
     if (layer_.sound == DrumSoundType::kick) {
         const float layerDecay = finiteClamp(layer_.decayMs, 300.0f, 5.0f, 1500.0f);
         settings_.decayMs = finiteClamp(settings_.decayMs, 300.0f, 1.0f, 1500.0f) * (layerDecay / 300.0f);
@@ -118,9 +125,10 @@ void KickVoice::startState(const KickSettings& settings, int midiNote, float vel
     active_ = true;
     reversing_ = false;
     reverseSamplesRemaining_ = 0;
-    velocity_ = finiteClamp(velocity, 1.0f, 0.0f, 1.0f);
+    const float hitVelocity = finiteClamp(velocity, 1.0f, 0.0f, 1.0f);
+    velocity_ = 1.0f - finiteClamp(layer.velocityTimbre, 1, 0, 1) * (1.0f - hitVelocity);
     const float layerGain = finiteClamp(layer_.gain, 1.0f, 0.0f, 1.0f);
-    gain_ = std::pow(velocity_, 1.45f) * layerGain * finiteClamp(gainScale, 1.0f, 0.0f, 1.0f);
+    gain_ = std::pow(hitVelocity, finiteClamp(layer.velocityCurve, 1.45f, 0.1f, 4)) * layerGain * finiteClamp(gainScale, 1.0f, 0.0f, 1.0f);
     const float transpose = finiteClamp(layer_.transposeSemitones, 0.0f, -24.0f, 24.0f);
     noteHz_ = noteFrequencyHz(midiNote) * std::exp2(transpose / 12.0f);
     if (layer_.sound == DrumSoundType::hat) noteHz_ = 6500.0f * std::exp2(transpose / 12.0f);
@@ -305,6 +313,11 @@ float KickVoice::renderOversampled() noexcept {
     }
     if (layer_.sound != DrumSoundType::kick) {
         sample = renderDrumLayer(timeMs);
+        const float driveOffset = finiteClamp(layer_.driveOffset, 0, -1, 1);
+        if (std::abs(driveOffset) > 0.0001f) {
+            const float gain = std::exp2(driveOffset * 3.0f);
+            sample = std::tanh(sample * gain) / std::max(1.0f, gain * 0.4f);
+        }
         sample = tone_.process(sample);
         sample = lowCut_.process(sample);
         phase_ += static_cast<double>(noteHz_) / osRate_;
@@ -379,10 +392,12 @@ std::vector<float> renderLayeredKick(const KickSettings& settings,
                                     double sampleRate, int midiNote) {
     std::array<KickVoice, kNumSoundLayers> voices;
     float lengthMs = hitLengthMs(settings);
+    const bool anySolo = std::ranges::any_of(layers, [](const auto& layer) { return layer.enabled && layer.solo; });
     std::ranges::for_each(std::views::iota(size_t{ 0 }, voices.size()), [&](size_t index) {
         voices[index].prepare(sampleRate);
         const auto& layer = layers[index];
-        if (!layer.enabled || layer.gain <= 0.0001f) return;
+        if (!layer.enabled || layer.gain <= 0.0001f || (anySolo && !layer.solo)) return;
+        if (midiNote < layer.keyLow || midiNote > layer.keyHigh || layer.velocityHigh < 127) return;
         voices[index].start(settings, midiNote, 1.0f, layer);
         float layerLength = finiteClamp(layer.decayMs, 180.0f, 5.0f, 1500.0f);
         if (layer.sound == DrumSoundType::kick)
@@ -394,7 +409,12 @@ std::vector<float> renderLayeredKick(const KickSettings& settings,
     samples.reserve(static_cast<size_t>(std::ceil(sampleRate * lengthMs * 0.001f)));
     while (std::ranges::any_of(voices, [](const KickVoice& voice) { return voice.isActive(); })) {
         float sample = 0.0f;
-        std::ranges::for_each(voices, [&](KickVoice& voice) { sample += voice.nextSample(); });
+        for (size_t index = 0; index < voices.size(); ++index) {
+            const auto& layer = layers[index];
+            const float polarity = layer.invertPolarity ? -1.0f : 1.0f;
+            const float pan = finiteClamp(layer.pan, 0, -1, 1);
+            sample += voices[index].nextSample() * polarity * (1.0f - std::abs(pan) * 0.5f);
+        }
         samples.push_back(std::isfinite(sample) ? sample : 0.0f);
     }
     return samples;

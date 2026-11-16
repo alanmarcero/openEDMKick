@@ -406,3 +406,122 @@ TEST_CASE("Same-sample controllers are applied before Auto Mode triggers", "[eng
     REQUIRE(renderAutoHit(20).first);
     REQUIRE(renderAutoHit(120).second > 0.0);
 }
+
+namespace {
+std::array<std::vector<float>, 2> renderImprovedLayers(core::EngineSettings settings, int note = 36, float velocity = 0.5f) {
+    core::KickEngine engine;
+    engine.prepare(48000);
+    settings.effects.drive = 0;
+    settings.effects.limiterEnabled = false;
+    std::array<std::vector<float>, 2> audio{std::vector<float>(4096), std::vector<float>(4096)};
+    float* channels[]{audio[0].data(), audio[1].data()};
+    const std::array<core::MidiTrigger, 1> midi{{{0, note, velocity}}};
+    engine.process(settings, {120, 0.0, 4, true}, midi, channels, 2, 4096);
+    return audio;
+}
+double layerEnergy(const std::vector<float>& audio) {
+    return std::inner_product(audio.begin(), audio.end(), audio.begin(), 0.0);
+}
+}
+
+TEST_CASE("Layer velocity curve and timbre response are independent", "[layer-improvements]") {
+    core::EngineSettings settings;
+    const auto original = renderImprovedLayers(settings);
+    settings.layers[0].velocityCurve = 0.3f;
+    const auto loud = renderImprovedLayers(settings);
+    REQUIRE(layerEnergy(loud[0]) > layerEnergy(original[0]) * 1.5);
+    settings.layers[0].velocityCurve = 1.45f;
+    settings.layers[0].velocityTimbre = 0;
+    const auto fixedTimbre = renderImprovedLayers(settings);
+    REQUIRE(fixedTimbre[0] != original[0]);
+}
+
+TEST_CASE("Layer MIDI zones include boundaries and reject outside hits", "[layer-improvements]") {
+    core::EngineSettings settings;
+    settings.layers[0].keyLow = 36;
+    settings.layers[0].keyHigh = 36;
+    settings.layers[0].velocityLow = 64;
+    settings.layers[0].velocityHigh = 96;
+    REQUIRE(layerEnergy(renderImprovedLayers(settings, 36, 64.0f / 127)[0]) > 0);
+    REQUIRE(layerEnergy(renderImprovedLayers(settings, 35, 64.0f / 127)[0]) == 0);
+    REQUIRE(layerEnergy(renderImprovedLayers(settings, 36, 63.0f / 127)[0]) == 0);
+    REQUIRE(layerEnergy(renderImprovedLayers(settings, 36, 97.0f / 127)[0]) == 0);
+}
+
+TEST_CASE("Layer synthesis offsets leave other layers independent", "[layer-improvements]") {
+    core::EngineSettings settings;
+    const auto original = renderImprovedLayers(settings);
+    settings.layers[1].driveOffset = 0.4f;
+    settings.layers[1].toneScale = 0.2f;
+    settings.layers[1].sweepScale = 0;
+    REQUIRE(renderImprovedLayers(settings) == original);
+    settings.layers[0].driveOffset = 0.4f;
+    settings.layers[0].toneScale = 0.2f;
+    settings.layers[0].sweepScale = 0;
+    REQUIRE(renderImprovedLayers(settings) != original);
+}
+
+TEST_CASE("Layer solo pan and polarity act before the stereo effects", "[layer-improvements]") {
+    core::EngineSettings settings;
+    settings.layers[0].pan = -1;
+    const auto left = renderImprovedLayers(settings);
+    REQUIRE(layerEnergy(left[0]) > 0);
+    REQUIRE(layerEnergy(left[1]) == 0);
+    settings.layers[0].invertPolarity = true;
+    const auto inverted = renderImprovedLayers(settings);
+    REQUIRE_THAT(inverted[0][300], WithinAbs(-left[0][300], 1e-6));
+    settings.layers[1].enabled = true;
+    settings.layers[1].solo = true;
+    const auto solo = renderImprovedLayers(settings);
+    settings.layers[0].enabled = false;
+    REQUIRE(renderImprovedLayers(settings) == solo);
+}
+
+TEST_CASE("Snare drive offset changes its own synthesized signal", "[layer-improvements]") {
+    core::EngineSettings settings;
+    settings.layers[0].sound = core::DrumSoundType::snare;
+    const double original = layerEnergy(renderImprovedLayers(settings)[0]);
+    settings.layers[0].driveOffset = 0.7f;
+    REQUIRE(layerEnergy(renderImprovedLayers(settings)[0]) != original);
+}
+
+TEST_CASE("Layer sequencer routing only starts the addressed voice", "[layer-improvements]") {
+    core::KickEngine engine;
+    engine.prepare(48000);
+    engine.sequencer().setNotesForSlot(0, {{0, 4, 1.0f, false, 1, 1}});
+    core::EngineSettings settings;
+    settings.autoEnabled = true;
+    settings.layers[1].enabled = true;
+    settings.layers[1].pan = 1;
+    settings.effects.limiterEnabled = false;
+    settings.effects.drive = 0;
+    std::array<float, 4096> left{}, right{};
+    float* channels[]{left.data(), right.data()};
+    engine.process(settings, {120, 0.0, 4, true}, {}, channels, 2, 4096);
+    REQUIRE(std::all_of(left.begin(), left.end(), [](float sample) { return sample == 0; }));
+    REQUIRE(std::any_of(right.begin(), right.end(), [](float sample) { return sample != 0; }));
+    REQUIRE(engine.triggerSerial() == 1);
+}
+
+TEST_CASE("Layer waveform preview observes solo zones and polarity", "[layer-improvements]") {
+    core::EngineSettings settings;
+    settings.layers[1] = settings.layers[0];
+    settings.layers[1].invertPolarity = true;
+    const auto cancelled = core::renderLayeredKick(settings.synth, settings.layers, 48000, 36);
+    REQUIRE(layerEnergy(cancelled) == 0);
+    settings.layers[0].solo = true;
+    const auto solo = core::renderLayeredKick(settings.synth, settings.layers, 48000, 36);
+    REQUIRE(layerEnergy(solo) > 0);
+    settings.layers[0].keyHigh = 35;
+    const auto outsideZone = core::renderLayeredKick(settings.synth, settings.layers, 48000, 36);
+    REQUIRE(layerEnergy(outsideZone) == 0);
+}
+
+TEST_CASE("Hat tone scale changes its filtered metal and noise layer", "[layer-improvements]") {
+    core::EngineSettings settings;
+    settings.layers[0].sound = core::DrumSoundType::hat;
+    const auto original = renderImprovedLayers(settings);
+    settings.layers[0].toneScale = 0.3f;
+    const auto dark = renderImprovedLayers(settings);
+    REQUIRE(layerEnergy(dark[0]) != layerEnergy(original[0]));
+}
