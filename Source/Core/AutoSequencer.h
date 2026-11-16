@@ -2,6 +2,7 @@
 
 #include <array>
 #include <string_view>
+#include <span>
 #include <vector>
 
 namespace openedmkick::core {
@@ -53,6 +54,8 @@ struct PianoRollNote {
     int length64 = 4;       // Gate length in 1/64-note steps (>= 1)
     float velocity = 1.0f;  // 0..1
     bool reverseCue = false;
+    int layer = -1; // -1 retains the shared lane in older patterns.
+    int ratchets = 1;
 
     bool operator==(const PianoRollNote&) const noexcept = default;
 };
@@ -74,6 +77,10 @@ struct AutoTriggerEvent {
     float effectiveTailMs = -1.0f;
     bool reverseCue = false;
     double stepDurationBeats = 1.0;
+    unsigned layerMask = 0;
+    std::array<float, 4> layerVelocities{};
+    std::array<float, 4> layerTailMs{};
+    std::array<bool, 4> layerReverseCue{};
 };
 
 // Generates the factory EDM kick fill and build-up piano roll patterns scaled to the selected bar count.
@@ -95,8 +102,13 @@ public:
 
     [[nodiscard]] const std::vector<PianoRollNote>& notesForSlot(int slot) const noexcept;
     void setNotesForSlot(int slot, std::vector<PianoRollNote> notes);
+    void copyNotesForSlot(int slot, std::span<const PianoRollNote> notes);
     void loadPresetIntoSlot(int slot, int presetIndex, int bars);
-    bool toggleNoteAt(int slot, int step64, int length64, int totalBars);
+    bool toggleNoteAt(int slot, int step64, int length64, int totalBars, int layer = -1, int ratchets = 1);
+    void swapSlotPattern(int slot, AutoSequencer& other) noexcept;
+    void cycleRatchetsAt(int slot, int step64, int layer);
+    static constexpr int kMaxPatternSteps = 64 * kStepsPerBar64;
+    static constexpr size_t kMaxPatternNotes = 5 * kMaxPatternSteps;
 
     // Advances the clock by one sample and returns a trigger event if a piano roll note starts on this sample.
     [[nodiscard]] AutoTriggerEvent stepSample(
@@ -113,7 +125,19 @@ public:
     [[nodiscard]] int currentStep64() const noexcept { return lastStep64_; }
 
 private:
+    struct ScheduledHit {
+        double step64;
+        double spacing64;
+        float velocity;
+        int layer;
+        bool reverseCue;
+        bool wraps;
+    };
+    void rebuildSchedule(int slot);
     std::array<std::vector<PianoRollNote>, kNumAutoSlots> slotNotes_;
+    std::array<std::vector<ScheduledHit>, kNumAutoSlots> scheduledHits_;
+    double lastSamplePpq_ = -1.0;
+    double lastWindowBeats_ = 0.0;
     std::array<int, kNumAutoSlots> loadedPreset_{ -1, -1, -1, -1 };
     std::array<int, kNumAutoSlots> loadedBars_{ 0, 0, 0, 0 };
     double internalPpq_ = 0.0;

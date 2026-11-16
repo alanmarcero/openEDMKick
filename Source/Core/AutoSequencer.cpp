@@ -119,7 +119,9 @@ float computeAutoEffectiveTailMs(float baseTailMs, float tailShorten, double ste
 }
 
 AutoSequencer::AutoSequencer() {
-    for (auto& notes : slotNotes_) notes.reserve(kStepsPerBar64 * 64u);
+    for (auto& notes : slotNotes_) notes.reserve(kMaxPatternNotes);
+    // Factory patterns contain at most one unratcheted hit per cell; custom growth happens in editor snapshots.
+    for (auto& hits : scheduledHits_) hits.reserve(kMaxPatternSteps);
     for (int slot = 0; slot < kNumAutoSlots; ++slot) {
         loadPresetIntoSlot(slot, slot, 4);
     }
@@ -127,6 +129,7 @@ AutoSequencer::AutoSequencer() {
 
 void AutoSequencer::reset() noexcept {
     internalPpq_ = 0.0;
+    lastSamplePpq_ = -1.0;
     lastStep64_ = -1;
     lastSlot_ = -1;
     windowPhase_ = 0.0f;
@@ -144,10 +147,24 @@ void AutoSequencer::setNotesForSlot(int slot, std::vector<PianoRollNote> notes) 
     if (slot < 0 || slot >= kNumAutoSlots) {
         return;
     }
-    std::ranges::sort(notes, {}, &PianoRollNote::step64);
+    copyNotesForSlot(slot, notes);
+}
+
+void AutoSequencer::copyNotesForSlot(int slot, std::span<const PianoRollNote> notes) {
+    if (slot < 0 || slot >= kNumAutoSlots) return;
     auto& slotNotes = slotNotes_[static_cast<size_t>(slot)];
-    slotNotes.assign(notes.begin(), notes.end());
+    const auto count = std::min(notes.size(), kMaxPatternNotes);
+    slotNotes.assign(notes.begin(), notes.begin() + static_cast<std::ptrdiff_t>(count));
+    for (auto& note : slotNotes) {
+        note.step64 = std::clamp(note.step64, 0, kMaxPatternSteps - 1);
+        note.length64 = std::clamp(note.length64, 1, 64);
+        note.layer = std::clamp(note.layer, -1, 3);
+        note.ratchets = std::clamp(note.ratchets, 1, 8);
+        note.velocity = clampUnit(note.velocity);
+    }
+    std::ranges::sort(slotNotes, {}, &PianoRollNote::step64);
     loadedPreset_[static_cast<size_t>(slot)] = -1;
+    rebuildSchedule(slot);
 }
 
 void AutoSequencer::loadPresetIntoSlot(int slot, int presetIndex, int bars) {
@@ -169,9 +186,10 @@ void AutoSequencer::loadPresetIntoSlot(int slot, int presetIndex, int bars) {
     }
     loadedPreset_[index] = safePreset;
     loadedBars_[index] = safeBars;
+    rebuildSchedule(slot);
 }
 
-bool AutoSequencer::toggleNoteAt(int slot, int step64, int length64, int totalBars) {
+bool AutoSequencer::toggleNoteAt(int slot, int step64, int length64, int totalBars, int layer, int ratchets) {
     if (slot < 0 || slot >= kNumAutoSlots) {
         return false;
     }
@@ -181,18 +199,79 @@ bool AutoSequencer::toggleNoteAt(int slot, int step64, int length64, int totalBa
     }
     auto& notes = slotNotes_[static_cast<size_t>(slot)];
     const int safeLength = std::clamp(length64, 1, 64);
-    const auto found = std::ranges::find_if(notes, [step64](const auto& note) {
-        return note.step64 == step64;
+    const auto found = std::ranges::find_if(notes, [step64, layer](const auto& note) {
+        return note.step64 == step64 && note.layer == layer;
     });
     if (found != notes.end()) {
         notes.erase(found);
         loadedPreset_[static_cast<size_t>(slot)] = -1;
+        rebuildSchedule(slot);
         return false;
     }
-    notes.push_back({step64, safeLength, 1.0f, false});
+    if (notes.size() >= kMaxPatternNotes) return false;
+    notes.push_back({step64, safeLength, 1.0f, false, std::clamp(layer, -1, 3), std::clamp(ratchets, 1, 8)});
     std::ranges::sort(notes, {}, &PianoRollNote::step64);
     loadedPreset_[static_cast<size_t>(slot)] = -1;
+    rebuildSchedule(slot);
     return true;
+}
+
+void AutoSequencer::swapSlotPattern(int slot, AutoSequencer& other) noexcept {
+    if (slot < 0 || slot >= kNumAutoSlots) return;
+    const auto index = static_cast<size_t>(slot);
+    slotNotes_[index].swap(other.slotNotes_[index]);
+    scheduledHits_[index].swap(other.scheduledHits_[index]);
+}
+
+void AutoSequencer::cycleRatchetsAt(int slot, int step64, int layer) {
+    if (slot < 0 || slot >= kNumAutoSlots) return;
+    auto& notes = slotNotes_[static_cast<size_t>(slot)];
+    const auto found = std::ranges::find_if(notes, [=](const auto& note) {
+        return note.step64 == step64 && note.layer == layer;
+    });
+    if (found == notes.end()) return;
+    found->ratchets = found->ratchets % 8 + 1;
+    rebuildSchedule(slot);
+}
+
+void AutoSequencer::rebuildSchedule(int slot) {
+    auto& hits = scheduledHits_[static_cast<size_t>(slot)];
+    const auto& notes = slotNotes_[static_cast<size_t>(slot)];
+    hits.clear();
+    std::array<int, 5> firstStep{};
+    firstStep.fill(kMaxPatternSteps);
+    for (const auto& note : notes) {
+        const auto lane = static_cast<size_t>(note.layer + 1);
+        firstStep[lane] = std::min(firstStep[lane], note.step64);
+    }
+    std::array<int, 5> nextStep;
+    for (size_t lane = 0; lane < firstStep.size(); ++lane) nextStep[lane] = kMaxPatternSteps + firstStep[lane];
+    int groupStep = -1;
+    std::array<bool, 5> groupLanes{};
+    for (auto note = notes.rbegin(); note != notes.rend(); ++note) {
+        if (note->step64 != groupStep) {
+            for (size_t lane = 0; lane < groupLanes.size(); ++lane)
+                if (groupLanes[lane]) nextStep[lane] = groupStep;
+            groupLanes.fill(false);
+            groupStep = note->step64;
+        }
+        int next = nextStep[0];
+        if (note->layer >= 0) next = std::min(next, nextStep[static_cast<size_t>(note->layer + 1)]);
+        if (note->layer < 0) next = *std::min_element(nextStep.begin(), nextStep.end());
+        const int ratchets = std::clamp(note->ratchets, 1, 8);
+        double spacing = static_cast<double>(note->length64) / ratchets;
+        if (ratchets == 1) spacing = std::clamp(next - note->step64, 1, 64);
+        if (ratchets == 1 && next >= kMaxPatternSteps) spacing = next - note->step64;
+        for (int repeat = 0; repeat < ratchets; ++repeat) {
+            hits.push_back({note->step64 + static_cast<double>(repeat * note->length64) / ratchets,
+                            spacing, note->velocity, note->layer, note->reverseCue, ratchets == 1 && next >= kMaxPatternSteps});
+        }
+        groupLanes[static_cast<size_t>(note->layer + 1)] = true;
+    }
+    std::ranges::sort(hits, [](const auto& left, const auto& right) {
+        if (left.step64 != right.step64) return left.step64 < right.step64;
+        return left.layer < right.layer;
+    });
 }
 
 AutoTriggerEvent AutoSequencer::stepSample(
@@ -223,29 +302,44 @@ AutoTriggerEvent AutoSequencer::stepSample(
     windowPhase_ = static_cast<float>(cycle / windowBeats);
     const int totalSteps = bars * kStepsPerBar64;
     const int step = std::clamp(static_cast<int>(std::floor(windowPhase_ * totalSteps + 1.0e-8)), 0, totalSteps - 1);
-    if (slot != lastSlot_) {
-        lastSlot_ = slot;
-        lastStep64_ = -1;
-    }
-    if (step == lastStep64_) {
-        return event;
-    }
+    const double ppqPerSample = safeBpm / (60.0 * safeRate);
+    const double previousPpq = lastSamplePpq_;
+    const bool sameSlot = slot == lastSlot_;
+    const bool repeatedPosition = slot == lastSlot_ && samplePpq == lastSamplePpq_ && windowBeats == lastWindowBeats_;
+    lastSlot_ = slot;
     lastStep64_ = step;
+    lastSamplePpq_ = samplePpq;
+    lastWindowBeats_ = windowBeats;
+    if (repeatedPosition) return event;
 
-    const auto& notes = slotNotes_[static_cast<size_t>(slot)];
-    const auto found = std::ranges::find_if(notes, [step](const auto& note) { return note.step64 == step; });
-    if (found == notes.end()) {
-        return event;
+    const double position64 = cycle * totalSteps / windowBeats;
+    const double sampleWidth64 = ppqPerSample * totalSteps / windowBeats;
+    const auto& hits = scheduledHits_[static_cast<size_t>(slot)];
+    const auto first = std::lower_bound(hits.begin(), hits.end(), position64 - sampleWidth64 + 1e-8,
+        [](const auto& hit, double position) { return hit.step64 < position; });
+    for (auto found = first; found != hits.end() && found->step64 <= position64 + 1e-8; ++found) {
+        if (found->step64 >= totalSteps) continue;
+        const double hitPpq = samplePpq - cycle + found->step64 * windowBeats / totalSteps;
+        if (sameSlot && previousPpq <= samplePpq && samplePpq - previousPpq <= 2 * ppqPerSample
+            && hitPpq <= previousPpq + 1e-10) continue;
+        double spacing64 = found->spacing64;
+        if (found->wraps) spacing64 += totalSteps - kMaxPatternSteps;
+        if (found->wraps) spacing64 = std::clamp(spacing64, 1.0, 64.0);
+        const double spacingBeats = spacing64 * windowBeats / totalSteps;
+        const float tail = computeAutoEffectiveTailMs(baseTailMs, settings.tailShorten, spacingBeats * 60000.0 / safeBpm);
+        event.triggered = true;
+        event.velocity = clampUnit(found->velocity);
+        event.effectiveTailMs = tail;
+        event.reverseCue = found->reverseCue;
+        event.stepDurationBeats = spacingBeats;
+        for (int layer = 0; layer < 4; ++layer) {
+            if (found->layer >= 0 && found->layer != layer) continue;
+            event.layerMask |= 1u << layer;
+            event.layerVelocities[static_cast<size_t>(layer)] = event.velocity;
+            event.layerTailMs[static_cast<size_t>(layer)] = tail;
+            event.layerReverseCue[static_cast<size_t>(layer)] = found->reverseCue;
+        }
     }
-    const auto next = std::next(found);
-    const int nextStep = next != notes.end() ? next->step64 : totalSteps + notes.front().step64;
-    const int spacing64 = std::clamp(nextStep - found->step64, 1, kStepsPerBar64);
-    const double stepSpacingMs = (static_cast<double>(spacing64) / kStepsPerBeat64) * 60000.0 / safeBpm;
-    event.triggered = true;
-    event.velocity = clampUnit(found->velocity);
-    event.effectiveTailMs = computeAutoEffectiveTailMs(baseTailMs, settings.tailShorten, stepSpacingMs);
-    event.reverseCue = found->reverseCue;
-    event.stepDurationBeats = static_cast<double>(spacing64) / kStepsPerBeat64;
     return event;
 }
 

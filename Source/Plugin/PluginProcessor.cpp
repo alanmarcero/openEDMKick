@@ -26,7 +26,13 @@ OpenEdmKickProcessor::OpenEdmKickProcessor()
               return LayerParams{ layerRaw(params::kLayerEnabled), layerRaw(params::kLayerSound),
                                   layerRaw(params::kLayerGain), layerRaw(params::kLayerTranspose),
                                   layerRaw(params::kLayerDecay), layerRaw(params::kLayerHighPass),
-                                  layerRaw(params::kLayerLowPass) };
+                                  layerRaw(params::kLayerLowPass),
+                                  layerRaw(params::kLayerVelocityCurve), layerRaw(params::kLayerVelocityTimbre),
+                                  layerRaw(params::kLayerKeyLow), layerRaw(params::kLayerKeyHigh),
+                                  layerRaw(params::kLayerVelocityLow), layerRaw(params::kLayerVelocityHigh),
+                                  layerRaw(params::kLayerDriveOffset), layerRaw(params::kLayerToneScale),
+                                  layerRaw(params::kLayerSweepScale), layerRaw(params::kLayerSolo),
+                                  layerRaw(params::kLayerPan), layerRaw(params::kLayerPolarity) };
           };
           return ParameterValues{
               raw(params::kSweepOctaves), raw(params::kSweepMs), raw(params::kSweepShape),
@@ -59,7 +65,8 @@ OpenEdmKickProcessor::OpenEdmKickProcessor()
 void OpenEdmKickProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
     const std::scoped_lock lock(stateMutex_);
     engine_.prepare(sampleRate);
-    midiEventScratch_.reserve(2 * static_cast<size_t>(std::max(64, samplesPerBlock)));
+    midiEventScratch_.reserve(kMaxMidiEvents);
+    juce::ignoreUnused(samplesPerBlock);
 }
 
 bool OpenEdmKickProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const {
@@ -94,7 +101,12 @@ std::array<core::DrumLayerSettings, core::kNumSoundLayers> OpenEdmKickProcessor:
             layer.enabled->load() > 0.5f,
             static_cast<core::DrumSoundType>(std::clamp(static_cast<int>(layer.sound->load()), 0, 3)),
             layer.gain->load(), layer.transpose->load(), layer.decay->load(),
-            layer.highPass->load(), layer.lowPass->load()
+            layer.highPass->load(), layer.lowPass->load(),
+            layer.velocityCurve->load(), layer.velocityTimbre->load(),
+            static_cast<int>(layer.keyLow->load()), static_cast<int>(layer.keyHigh->load()),
+            static_cast<int>(layer.velocityLow->load()), static_cast<int>(layer.velocityHigh->load()),
+            layer.driveOffset->load(), layer.toneScale->load(), layer.sweepScale->load(),
+            layer.solo->load() > 0.5f, layer.pan->load(), layer.invertPolarity->load() > 0.5f
         };
     });
     return result;
@@ -133,13 +145,44 @@ std::vector<float> OpenEdmKickProcessor::previewKickWaveform() const {
 
 std::vector<core::PianoRollNote> OpenEdmKickProcessor::currentPianoRollNotes() const {
     const std::scoped_lock lock(stateMutex_);
-    return engine_.sequencer().notesForSlot(currentAutoSlot());
+    syncEditorSequencer();
+    return editorSequencer_.notesForSlot(currentAutoSlot());
 }
 
-void OpenEdmKickProcessor::togglePianoRollNote(int step64, int length64) {
+void OpenEdmKickProcessor::syncEditorSequencer() const {
+    for (int slot = 0; slot < core::kNumAutoSlots; ++slot) {
+        const auto index = static_cast<size_t>(slot);
+        const auto settings = autoSlotSettings(slot);
+        if (editorPresets_[index] == settings.fillPreset && editorBars_[index] == settings.bars) continue;
+        editorSequencer_.loadPresetIntoSlot(slot, settings.fillPreset, settings.bars);
+        editorPresets_[index] = settings.fillPreset;
+        editorBars_[index] = settings.bars;
+    }
+}
+
+void OpenEdmKickProcessor::publishPatterns() {
+    auto& snapshot = patternSnapshots_[static_cast<size_t>(writePattern_)];
+    for (int slot = 0; slot < core::kNumAutoSlots; ++slot)
+        snapshot.sequencer.copyNotesForSlot(slot, editorSequencer_.notesForSlot(slot));
+    snapshot.presets = editorPresets_;
+    snapshot.bars = editorBars_;
+    // The dirty bit transfers ownership; the producer never writes the reader's buffer.
+    writePattern_ = middlePattern_.exchange(writePattern_ | 4, std::memory_order_acq_rel) & 3;
+}
+
+void OpenEdmKickProcessor::togglePianoRollNote(int step64, int length64, int layer, int ratchets) {
     const std::scoped_lock lock(stateMutex_);
+    syncEditorSequencer();
     const int slot = currentAutoSlot();
-    engine_.sequencer().toggleNoteAt(slot, step64, length64, autoSlotSettings(slot).bars);
+    editorSequencer_.toggleNoteAt(slot, step64, length64, autoSlotSettings(slot).bars, layer, ratchets);
+    publishPatterns();
+}
+
+void OpenEdmKickProcessor::cyclePianoRollRatchets(int step64, int layer) {
+    const std::scoped_lock lock(stateMutex_);
+    syncEditorSequencer();
+    editorSequencer_.cycleRatchetsAt(currentAutoSlot(), step64, layer);
+    publishPatterns();
 }
 
 void OpenEdmKickProcessor::syncSequencerPresets(
@@ -160,7 +203,6 @@ juce::AudioProcessorParameter* OpenEdmKickProcessor::getBypassParameter() const 
 
 void OpenEdmKickProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi) {
     juce::ScopedNoDenormals noDenormals;
-    const std::scoped_lock lock(stateMutex_);
     const auto isOn = [](const std::atomic<float>* value) { return value->load() > 0.5f; };
     const auto choice = [](const std::atomic<float>* value) { return static_cast<int>(value->load()); };
 
@@ -168,6 +210,15 @@ void OpenEdmKickProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
         autoSlotSettings(0), autoSlotSettings(1), autoSlotSettings(2), autoSlotSettings(3)
     };
     syncSequencerPresets(slotSettings);
+    if ((middlePattern_.load(std::memory_order_acquire) & 4) != 0) {
+        readPattern_ = middlePattern_.exchange(readPattern_, std::memory_order_acq_rel) & 3;
+        auto& snapshot = patternSnapshots_[static_cast<size_t>(readPattern_)];
+        for (int slot = 0; slot < core::kNumAutoSlots; ++slot) {
+            const auto index = static_cast<size_t>(slot);
+            if (snapshot.presets[index] != slotSettings[index].fillPreset || snapshot.bars[index] != slotSettings[index].bars) continue;
+            engine_.sequencer().swapSlotPattern(slot, snapshot.sequencer);
+        }
+    }
 
     core::EngineSettings settings{};
     settings.synth = currentSynthSettings();
@@ -215,6 +266,7 @@ void OpenEdmKickProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
     midiEventScratch_.clear();
     const int lastSample = std::max(0, buffer.getNumSamples() - 1);
     std::ranges::for_each(midi, [&](const juce::MidiMessageMetadata& metadata) {
+        if (midiEventScratch_.size() >= kMaxMidiEvents - 1) return;
         const auto message = metadata.getMessage();
         const int sample = std::clamp(metadata.samplePosition, 0, lastSample);
         if (message.isNoteOn() && message.getFloatVelocity() > 0.0f) {
@@ -280,6 +332,25 @@ void OpenEdmKickProcessor::getStateInformation(juce::MemoryBlock& destData) {
     state.setProperty("program", currentProgram_, nullptr);
     state.setProperty("presetCatalogVersion", 3, nullptr);
     state.setProperty("programCustom", restoredCustomState_.load(), nullptr);
+    syncEditorSequencer();
+    juce::ValueTree patterns("LayerPatterns");
+    for (int slot = 0; slot < core::kNumAutoSlots; ++slot) {
+        juce::ValueTree pattern("Pattern");
+        pattern.setProperty("slot", slot, nullptr);
+        for (const auto& note : editorSequencer_.notesForSlot(slot)) {
+            juce::ValueTree hit("Hit");
+            hit.setProperty("step", note.step64, nullptr);
+            hit.setProperty("length", note.length64, nullptr);
+            hit.setProperty("velocity", note.velocity, nullptr);
+            hit.setProperty("reverse", note.reverseCue, nullptr);
+            hit.setProperty("layer", note.layer, nullptr);
+            hit.setProperty("ratchets", note.ratchets, nullptr);
+            pattern.appendChild(hit, nullptr);
+        }
+        patterns.appendChild(pattern, nullptr);
+    }
+    state.removeChild(state.getChildWithName("LayerPatterns"), nullptr);
+    state.appendChild(patterns, nullptr);
     const auto xml = state.createXml();
     copyXmlToBinary(*xml, destData);
 }
@@ -306,7 +377,22 @@ void OpenEdmKickProcessor::setStateInformation(const void* data, int sizeInBytes
         !hasV3Catalog || static_cast<bool>(state.getProperty("programCustom", false)));
     parameters.replaceState(state);
     const std::scoped_lock lock(stateMutex_);
-    lastSlotPreset_.fill(-1);
+    editorPresets_.fill(-1);
+    syncEditorSequencer();
+    const auto patterns = state.getChildWithName("LayerPatterns");
+    for (const auto pattern : patterns) {
+        const int slot = pattern.getProperty("slot", -1);
+        if (slot < 0 || slot >= core::kNumAutoSlots) continue;
+        std::vector<core::PianoRollNote> notes;
+        for (const auto hit : pattern) {
+            if (notes.size() >= core::AutoSequencer::kMaxPatternNotes) break;
+            notes.push_back({hit.getProperty("step", 0), hit.getProperty("length", 1),
+                hit.getProperty("velocity", 1.0f), hit.getProperty("reverse", false),
+                hit.getProperty("layer", -1), hit.getProperty("ratchets", 1)});
+        }
+        editorSequencer_.setNotesForSlot(slot, std::move(notes));
+    }
+    publishPatterns();
 }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter() {

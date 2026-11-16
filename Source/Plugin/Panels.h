@@ -72,6 +72,8 @@ private:
     Knob decay_;
     Knob highPass_;
     Knob lowPass_;
+    std::array<std::unique_ptr<Knob>, 10> layerKnobs_;
+    std::array<std::unique_ptr<Toggle>, 2> layerToggles_;
 };
 
 class LayerPanel final : public juce::Component {

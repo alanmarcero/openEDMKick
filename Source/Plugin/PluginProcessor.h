@@ -43,7 +43,8 @@ public:
     [[nodiscard]] int currentMidiNote() const noexcept { return displayMidiNote.load(); }
     [[nodiscard]] std::vector<float> previewKickWaveform() const;
     [[nodiscard]] std::vector<openedmkick::core::PianoRollNote> currentPianoRollNotes() const;
-    void togglePianoRollNote(int step64, int length64);
+    void togglePianoRollNote(int step64, int length64, int layer = -1, int ratchets = 1);
+    void cyclePianoRollRatchets(int step64, int layer);
     void triggerAudition() noexcept { auditionPending_.store(true); }
 
     juce::AudioProcessorValueTreeState parameters;
@@ -62,6 +63,14 @@ private:
     void syncSequencerPresets(
         const std::array<openedmkick::core::AutoSlotSettings, openedmkick::core::kNumAutoSlots>& slots);
 
+    void syncEditorSequencer() const;
+    void publishPatterns();
+    struct PatternSnapshot {
+        openedmkick::core::AutoSequencer sequencer;
+        std::array<int, openedmkick::core::kNumAutoSlots> presets{};
+        std::array<int, openedmkick::core::kNumAutoSlots> bars{};
+    };
+
     struct AutoSlotParams {
         std::atomic<float>* bars;
         std::atomic<float>* fillPreset;
@@ -78,6 +87,18 @@ private:
         std::atomic<float>* decay;
         std::atomic<float>* highPass;
         std::atomic<float>* lowPass;
+        std::atomic<float>* velocityCurve;
+        std::atomic<float>* velocityTimbre;
+        std::atomic<float>* keyLow;
+        std::atomic<float>* keyHigh;
+        std::atomic<float>* velocityLow;
+        std::atomic<float>* velocityHigh;
+        std::atomic<float>* driveOffset;
+        std::atomic<float>* toneScale;
+        std::atomic<float>* sweepScale;
+        std::atomic<float>* solo;
+        std::atomic<float>* pan;
+        std::atomic<float>* invertPolarity;
     };
 
     struct ParameterValues {
@@ -137,9 +158,18 @@ private:
         std::atomic<float>* masterBypass;
     };
 
+    static constexpr size_t kMaxMidiEvents = 65536;
+    static_assert(std::atomic<int>::is_always_lock_free);
     ParameterValues values_;
     openedmkick::core::KickEngine engine_;
     mutable std::mutex stateMutex_;
+    mutable openedmkick::core::AutoSequencer editorSequencer_;
+    mutable std::array<int, openedmkick::core::kNumAutoSlots> editorPresets_{ -1, -1, -1, -1 };
+    mutable std::array<int, openedmkick::core::kNumAutoSlots> editorBars_{};
+    std::array<PatternSnapshot, 3> patternSnapshots_;
+    std::atomic<int> middlePattern_{1};
+    int writePattern_ = 0;
+    int readPattern_ = 2;
     std::array<int, openedmkick::core::kNumAutoSlots> lastSlotPreset_{ -1, -1, -1, -1 };
     std::array<int, openedmkick::core::kNumAutoSlots> lastSlotBars_{ 0, 0, 0, 0 };
     std::atomic<bool> auditionPending_{ false };

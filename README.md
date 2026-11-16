@@ -18,13 +18,17 @@ openKicker is a MIDI-tuned kick and layered drum synthesizer. Version 3.1 adds f
 
 The **Layers** workspace has four pages, A through D. Each layer can be enabled or muted and set to Kick, Snare, Clap, or Hat. Set the level, pitch, decay, high-pass, and low-pass on each page. The filters run on their own layer before the voices are mixed into one hit. Layer A starts as an enabled kick; B, C, and D start muted with Snare, Clap, and Hat selected.
 
-All enabled layers respond to the same MIDI note and velocity. The pitch control transposes its layer. Kick layers use the main kick synthesis controls; their layer decay scales the main decay time.
+Each layer has inclusive MIDI key and velocity limits. Reversed limits reject all notes. Velocity curve sets the amplitude exponent (0.1–4, with the original 1.45 response as default); Velocity timbre blends between fixed full-hit tone and velocity-sensitive drive/transients. These settings act independently on each layer.
+
+The pitch control transposes its layer. Tone scale shifts its body/transient filter frequencies. Drive offset adds to the main kick drive, and shapes snare, clap, and hat voices independently. Sweep scale adjusts a kick layer's pitch dive and snap. Neutral offsets retain the main synthesis settings; layer decay still scales the main kick decay.
+
+Solo auditions enabled layers; multiple solos can play together. Pan places each layer before the stereo FX, and Invert reverses its polarity. Center pan preserves the original dual-mono level. Mono output averages the stereo layer mix.
 
 ## MIDI
 
 The kick voice follows the incoming note's equal-tempered pitch, including its octave. For example, MIDI A4 (note 69) plays at 440 Hz; A3 (note 57) plays at 220 Hz. The layer pitch control transposes that note for an individual layer. Note-off does not stop a one-shot. An audition click plays C2.
 
-Velocity shapes the hit level and kick drive, so soft hits have less weight and hard hits gain extra bite. MIDI input is omni-channel. CC20–22 activate host-synced FX; each stays active until its controller receives a value below 64. Performance CC values are not saved. The corresponding plug-in controls are available for automation:
+Velocity shapes the hit level and kick drive, so soft hits have less weight and hard hits gain extra bite. MIDI input is omni-channel. The callback accepts up to 65,535 supported MIDI events plus one audition per block; excess events are ignored to keep storage bounded. CC20–22 activate host-synced FX; each stays active until its controller receives a value below 64. Performance CC values are not saved. The corresponding plug-in controls are available for automation:
 
 | CC | Name | Effect |
 | --- | --- | --- |
@@ -40,7 +44,7 @@ Velocity shapes the hit level and kick drive, so soft hits have less weight and 
 
 ## Pattern sequencer
 
-Four independent pattern scenes, A/B/C/D, each hold a one-lane kick sequence with separate length, fill, grid, tail trim, and bitcrush ramp. The piano roll edits trigger placement and velocity without changing pitch. Each Auto Mode trigger plays every enabled layer at the step velocity. Internally generated hits use C2; incoming MIDI notes still trigger at their exact pitch. The 28 trance fills and every preset have been authored for the current kick engine.
+Four independent pattern scenes, A/B/C/D, have separate length, fill, grid, tail trim, and bitcrush ramp. Each piano roll contains an **ALL** lane plus separate **A–D layer lanes**. Factory patterns and older sessions use ALL, triggering every enabled layer at the step velocity. Click a layer lane to add or remove a hit for that layer only; Shift-click an existing hit to cycle its ratchets from 1 to 8. Ratchets divide the hit's grid length evenly, including triplets. Explicit layer hits take priority over simultaneous ALL hits for the same layer. Lane edits and ratchets are saved with the session. Changing a scene's fill or length reloads its factory pattern. Internally generated hits use C2; incoming MIDI notes still trigger at their exact pitch. The 28 trance fills and every preset have been authored for the current kick engine.
 
 Auto Mode follows host tempo, meter, and playhead, or runs from its own tempo and time signature. Tail trim shortens fast rolls in Auto Mode. It does not change incoming MIDI hits.
 
@@ -59,6 +63,8 @@ The project uses C++20 and JUCE 8.0.9. It builds VST3, AU, LV2, and Standalone f
 ```sh
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --target OpenEDMKick_Standalone --config Release --parallel
+cmake --build build --config Release --parallel
+ctest --test-dir build -C Release --output-on-failure
 ```
 
 ## Source layout

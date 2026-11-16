@@ -22,7 +22,7 @@ void KickEngine::prepare(double sampleRate) {
     sampleRate_ = std::max(8000.0, sampleRate);
     std::ranges::for_each(forwardVoices_, [this](KickVoice& voice) { voice.prepare(sampleRate_); });
     std::ranges::for_each(reverseVoices_, [this](KickVoice& voice) { voice.prepare(sampleRate_); });
-    stutter_.prepare(sampleRate_);
+    for (auto& effect : stutter_) effect.prepare(sampleRate_);
     limiter_.prepare(sampleRate_);
     toneSmooth_ = static_cast<float>(1.0 - std::exp(-1.0 / (0.012 * sampleRate_)));
     reset();
@@ -34,10 +34,10 @@ void KickEngine::reset() noexcept {
     std::ranges::for_each(forwardVoices_, [](KickVoice& voice) { voice.reset(); });
     std::ranges::for_each(reverseVoices_, [](KickVoice& voice) { voice.reset(); });
     sequencer_.reset();
-    crusher_.reset();
-    stutter_.reset();
-    filterPump_.reset();
-    toneFilter_.reset();
+    for (auto& effect : crusher_) effect.reset();
+    for (auto& effect : stutter_) effect.reset();
+    for (auto& effect : filterPump_) effect.reset();
+    for (auto& effect : toneFilter_) effect.reset();
     limiter_.reset();
     smoothedHighPassHz_ = ToneFilter::kHighPassBypassHz;
     smoothedLowPassHz_ = ToneFilter::kLowPassBypassHz;
@@ -61,8 +61,7 @@ void KickEngine::triggerNote(
     int midiNote,
     float velocity,
     float effectiveTailMs,
-    bool reverseCue) noexcept {
-    ++triggerSerial_;
+    bool reverseCue, int onlyLayer) noexcept {
     velocity = unit(velocity);
     KickSettings voiceSettings = settings.synth;
     if (effectiveTailMs > 0.0f) {
@@ -88,12 +87,16 @@ void KickEngine::triggerNote(
     const float forwardLevel = reverse && length > 0 ? 1.0f - reverseLevel : 1.0f;
 
     std::ranges::for_each(std::views::iota(size_t{ 0 }, static_cast<size_t>(kNumSoundLayers)), [&](size_t i) {
+        if (onlyLayer >= 0 && i != static_cast<size_t>(onlyLayer)) return;
         const auto& layer = settings.layers[i];
         if (!layer.enabled || layer.gain <= 0.0001f) {
             forwardVoices_[i].reset();
             reverseVoices_[i].reset();
             return;
         }
+        const int midiVelocity = std::clamp(static_cast<int>(std::lround(velocity * 127.0f)), 1, 127);
+        if (midiNote < layer.keyLow || midiNote > layer.keyHigh
+            || midiVelocity < layer.velocityLow || midiVelocity > layer.velocityHigh) return;
         if (reverseLevel > 0.001f) {
             reverseVoices_[i].startReverse(voiceSettings, midiNote, velocity, length, layer, reverseLevel);
         }
@@ -184,6 +187,7 @@ void KickEngine::process(
         const auto triggerMidiNote = [&](const MidiTrigger& trigger) {
             if (trigger.sampleOffset != sample || trigger.velocity <= 0.0f) return;
             const int note = trigger.audition ? kDefaultMidiNote : trigger.noteNumber;
+            ++triggerSerial_;
             triggerNote(settings, ppq, bpm, beatsPerBar, note, trigger.velocity, -1.0f, false);
         };
 
@@ -209,9 +213,15 @@ void KickEngine::process(
         if (autoActive && transport.isPlaying) {
             const auto event = sequencer_.stepSample(slot, autoSettings, hitLengthMs(settings.synth),
                 bpm, beatsPerBar, sampleRate_, hasHostPpq, ppq);
-            if (event.triggered)
-                triggerNote(settings, ppq, bpm, beatsPerBar, kDefaultMidiNote, event.velocity,
-                            event.effectiveTailMs, event.reverseCue);
+            if (event.triggered) {
+                ++triggerSerial_;
+                for (int layer = 0; layer < kNumSoundLayers; ++layer) {
+                    if ((event.layerMask & (1u << layer)) == 0) continue;
+                    const auto index = static_cast<size_t>(layer);
+                    triggerNote(settings, ppq, bpm, beatsPerBar, kDefaultMidiNote, event.layerVelocities[index],
+                                event.layerTailMs[index], event.layerReverseCue[index], layer);
+                }
+            }
         }
 
         if (midiEvents.empty()) std::ranges::for_each(midiTriggers, triggerMidiNote);
@@ -234,22 +244,17 @@ void KickEngine::process(
             });
         }
 
-        float raw = 0.0f;
-        std::ranges::for_each(std::views::iota(size_t{ 0 }, static_cast<size_t>(kNumSoundLayers)), [&](size_t i) {
-            raw += forwardVoices_[i].nextSample() + reverseVoices_[i].nextSample();
-        });
-        const float driven = saturate(raw, settings.effects.drive);
-        const float ramp = autoActive ? unit(autoSettings.crushSweep) * sequencer_.currentWindowPhase() : 0.0f;
-        const float crushMix = std::clamp(unit(settings.effects.crushMix) + ramp, 0.0f, 1.0f);
-        const float crushed = crusher_.process(driven, settings.effects.crushRateHz, settings.effects.crushBits, sampleRate_);
-        const float postCrush = driven + crushMix * (crushed - driven);
-        const float repeated = stutter_.process(postCrush, ppq, division(settings.effects.stutterDivision), bpm, sampleRate_);
-        const float postRepeat = postCrush + unit(settings.effects.stutterMix) * (repeated - postCrush);
-        const float pumped = filterPump_.process(postRepeat, ppq, division(settings.effects.pumpDivision),
-                                                  settings.effects.pumpMix, sampleRate_);
-        const float gated = pumped * TempoGate::gainAt(ppq, division(settings.effects.gateDivision), settings.effects.gateMix);
-        float out = gated * settings.effects.outputGain * midiVolume_ * midiExpression_;
-
+        std::array<float, 2> raw{};
+        const bool anySolo = std::ranges::any_of(settings.layers, [](const auto& layer) { return layer.enabled && layer.solo; });
+        for (size_t i = 0; i < kNumSoundLayers; ++i) {
+            const float voice = forwardVoices_[i].nextSample() + reverseVoices_[i].nextSample();
+            const auto& layer = settings.layers[i];
+            if (!layer.enabled || (anySolo && !layer.solo)) continue;
+            const float signedVoice = layer.invertPolarity ? -voice : voice;
+            const float pan = std::clamp(std::isfinite(layer.pan) ? layer.pan : 0.0f, -1.0f, 1.0f);
+            raw[0] += signedVoice * (1.0f - std::max(0.0f, pan));
+            raw[1] += signedVoice * (1.0f + std::min(0.0f, pan));
+        }
         const bool highPassSync = settings.effects.highPassSyncEnabled || highPassCcEnabled_;
         const bool lowPassSync = settings.effects.lowPassSyncEnabled || lowPassCcEnabled_;
         const auto syncMotion = [&](int rateIndex) noexcept {
@@ -280,10 +285,25 @@ void KickEngine::process(
             smoothedLowPassHz_ += toneSmooth_ * (lowPassTarget - smoothedLowPassHz_);
         }
         const float brightnessMax = 40.0f + midiBrightness_ * (ToneFilter::kLowPassBypassHz - 40.0f);
-        out = toneFilter_.process(out, smoothedHighPassHz_, std::min(smoothedLowPassHz_, brightnessMax), sampleRate_);
-        if (!std::isfinite(out)) out = 0.0f;
-        peak = std::max(peak, std::abs(out));
-        for (int channel = 0; channel < numChannels; ++channel) channels[channel][sample] = out;
+        for (size_t side = 0; side < static_cast<size_t>(std::min(2, numChannels)); ++side) {
+            const float input = numChannels == 1 ? (raw[0] + raw[1]) * 0.5f : raw[side];
+            const float driven = saturate(input, settings.effects.drive);
+            const float ramp = autoActive ? unit(autoSettings.crushSweep) * sequencer_.currentWindowPhase() : 0.0f;
+            const float crushMix = std::clamp(unit(settings.effects.crushMix) + ramp, 0.0f, 1.0f);
+            const float crushed = crusher_[side].process(driven, settings.effects.crushRateHz, settings.effects.crushBits, sampleRate_);
+            const float postCrush = driven + crushMix * (crushed - driven);
+            const float repeated = stutter_[side].process(postCrush, ppq, division(settings.effects.stutterDivision), bpm, sampleRate_);
+            const float postRepeat = postCrush + unit(settings.effects.stutterMix) * (repeated - postCrush);
+            const float pumped = filterPump_[side].process(postRepeat, ppq, division(settings.effects.pumpDivision),
+                                                      settings.effects.pumpMix, sampleRate_);
+            const float gated = pumped * TempoGate::gainAt(ppq, division(settings.effects.gateDivision), settings.effects.gateMix);
+            float out = gated * settings.effects.outputGain * midiVolume_ * midiExpression_;
+
+            out = toneFilter_[side].process(out, smoothedHighPassHz_, std::min(smoothedLowPassHz_, brightnessMax), sampleRate_);
+            if (!std::isfinite(out)) out = 0.0f;
+            peak = std::max(peak, std::abs(out));
+            channels[side][sample] = out;
+        }
     }
 
     if (transport.isPlaying) fallbackPpq_ = blockPpq + static_cast<double>(numSamples) * ppqPerSample;

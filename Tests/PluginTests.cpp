@@ -9,10 +9,24 @@
 #include <cmath>
 #include <cstdlib>
 #include <numeric>
+#include <new>
 #include <ranges>
 #include <ranges>
 #include <string>
 #include <vector>
+
+namespace {
+thread_local size_t* callbackAllocations = nullptr;
+}
+
+void* operator new(std::size_t bytes) {
+    if (callbackAllocations != nullptr) ++*callbackAllocations;
+    if (auto* memory = std::malloc(std::max<size_t>(bytes, 1))) return memory;
+    throw std::bad_alloc();
+}
+void* operator new[](std::size_t bytes) { return ::operator new(bytes); }
+void operator delete(void* memory) noexcept { std::free(memory); }
+void operator delete[](void* memory) noexcept { std::free(memory); }
 
 namespace {
 class TestPlayHead final : public juce::AudioPlayHead {
@@ -262,4 +276,133 @@ TEST_CASE("All 48 trance kick presets load and report valid program names", "[pl
     std::ranges::sort(names);
     REQUIRE(std::ranges::adjacent_find(names) == names.end());
     REQUIRE(presets.size() == 48u);
+}
+
+TEST_CASE("New layer controls automate and restore independently", "[layer-improvements]") {
+    OpenEdmKickProcessor processor;
+    setParam(processor, "layer_a_velocity_curve", 0.5f);
+    REQUIRE(processor.parameters.getParameter("layer_a_velocity_curve")->getVersionHint() == 3);
+    setParam(processor, "layer_a_velocity_timbre", 0.2f);
+    setParam(processor, "layer_a_key_low", 36);
+    setParam(processor, "layer_a_key_high", 48);
+    setParam(processor, "layer_a_velocity_low", 32);
+    setParam(processor, "layer_a_velocity_high", 96);
+    setParam(processor, "layer_a_drive_offset", 0.3f);
+    setParam(processor, "layer_a_tone_scale", 0.4f);
+    setParam(processor, "layer_a_sweep_scale", 0.6f);
+    setParam(processor, "layer_a_solo", 1);
+    setParam(processor, "layer_a_pan", -0.7f);
+    setParam(processor, "layer_a_polarity", 1);
+    juce::MemoryBlock state;
+    processor.getStateInformation(state);
+    OpenEdmKickProcessor restored;
+    restored.setStateInformation(state.getData(), static_cast<int>(state.getSize()));
+    const auto layers = restored.currentLayerSettings();
+    REQUIRE_THAT(layers[0].velocityCurve, WithinAbs(0.5f, 0.001));
+    REQUIRE_THAT(layers[0].velocityTimbre, WithinAbs(0.2f, 0.001));
+    REQUIRE(layers[0].keyLow == 36);
+    REQUIRE(layers[0].keyHigh == 48);
+    REQUIRE(layers[0].velocityLow == 32);
+    REQUIRE(layers[0].velocityHigh == 96);
+    REQUIRE_THAT(layers[0].driveOffset, WithinAbs(0.3f, 0.001));
+    REQUIRE_THAT(layers[0].toneScale, WithinAbs(0.4f, 0.001));
+    REQUIRE_THAT(layers[0].sweepScale, WithinAbs(0.6f, 0.001));
+    REQUIRE(layers[0].solo);
+    REQUIRE(layers[0].invertPolarity);
+    REQUIRE_THAT(layers[0].pan, WithinAbs(-0.7f, 0.001));
+    REQUIRE(layers[1].keyLow == 0);
+    REQUIRE_THAT(layers[1].pan, WithinAbs(0.0f, 0.00001f));
+}
+
+TEST_CASE("Layer lane notes and ratchets survive session recall", "[layer-improvements]") {
+    OpenEdmKickProcessor processor;
+    processor.prepareToPlay(48000, 512);
+    processor.togglePianoRollNote(7, 4, 2, 3);
+    const auto before = processor.currentPianoRollNotes();
+    const auto found = std::ranges::find_if(before, [](const auto& note) { return note.step64 == 7 && note.layer == 2; });
+    REQUIRE(found != before.end());
+    REQUIRE(found->ratchets == 3);
+    juce::MemoryBlock saved;
+    processor.getStateInformation(saved);
+    OpenEdmKickProcessor restored;
+    restored.setStateInformation(saved.getData(), static_cast<int>(saved.getSize()));
+    const auto sameNote = [](const auto& left, const auto& right) {
+        return left.step64 == right.step64 && left.length64 == right.length64
+            && std::abs(left.velocity - right.velocity) < 0.00001f && left.reverseCue == right.reverseCue
+            && left.layer == right.layer && left.ratchets == right.ratchets;
+    };
+    REQUIRE(std::ranges::equal(restored.currentPianoRollNotes(), before, sameNote));
+    restored.prepareToPlay(48000, 512);
+    juce::AudioBuffer<float> audio(2, 512);
+    juce::MidiBuffer midi;
+    restored.processBlock(audio, midi);
+    REQUIRE(std::ranges::equal(restored.currentPianoRollNotes(), before, sameNote));
+}
+
+TEST_CASE("Older state fills additive layer controls with neutral defaults", "[layer-improvements]") {
+    OpenEdmKickProcessor processor;
+    setParam(processor, "layer_a_pan", 1);
+    auto state = processor.parameters.copyState();
+    const auto isNewControl = [](const juce::String& id) {
+        return id.startsWith("layer_") && (id.endsWith("velocity_curve") || id.endsWith("velocity_timbre")
+            || id.endsWith("key_low") || id.endsWith("key_high") || id.endsWith("velocity_low")
+            || id.endsWith("velocity_high") || id.endsWith("drive_offset") || id.endsWith("tone_scale")
+            || id.endsWith("sweep_scale") || id.endsWith("solo") || id.endsWith("pan") || id.endsWith("polarity"));
+    };
+    for (int index = state.getNumChildren() - 1; index >= 0; --index)
+        if (isNewControl(state.getChild(index).getProperty("id").toString())) state.removeChild(index, nullptr);
+    juce::MemoryBlock saved;
+    juce::AudioProcessor::copyXmlToBinary(*state.createXml(), saved);
+    processor.setStateInformation(saved.getData(), static_cast<int>(saved.getSize()));
+    const auto layer = processor.currentLayerSettings()[0];
+    REQUIRE_THAT(layer.velocityCurve, WithinAbs(1.45f, 0.001f));
+    REQUIRE_THAT(layer.velocityTimbre, WithinAbs(1.0f, 0.001f));
+    REQUIRE_THAT(layer.pan, WithinAbs(0.0f, 0.001f));
+    REQUIRE(layer.keyLow == 0);
+    REQUIRE(layer.keyHigh == 127);
+    REQUIRE_FALSE(layer.solo);
+    REQUIRE_FALSE(layer.invertPolarity);
+}
+
+TEST_CASE("Publishing layer lanes and processing dense MIDI allocates no callback storage", "[layer-improvements][realtime]") {
+    OpenEdmKickProcessor processor;
+    processor.prepareToPlay(48000, 32);
+    processor.togglePianoRollNote(4, 4, 3, 8);
+    setParam(processor, "auto_bars", 6);
+    setParam(processor, "auto_fill", 20);
+    juce::AudioBuffer<float> buffer(2, 32);
+    juce::MidiBuffer midi;
+    for (int event = 0; event < 70000; ++event)
+        midi.addEvent(juce::MidiMessage::controllerEvent(1, 7, event % 128), 0);
+    size_t allocations = 0;
+    callbackAllocations = &allocations;
+    processor.processBlock(buffer, midi);
+    callbackAllocations = nullptr;
+    REQUIRE(allocations == 0);
+    REQUIRE(std::isfinite(buffer.getSample(0, 31)));
+}
+
+TEST_CASE("Layer editor lays out additive controls on each layer page", "[layer-improvements][ui]") {
+    juce::ScopedJuceInitialiser_GUI gui;
+    OpenEdmKickProcessor processor;
+    openedmkick::ui::LayerPage page(processor, 0);
+    page.setSize(1000, 600);
+    const auto find = [](auto&& self, juce::Component& parent, const juce::String& id) -> juce::Component* {
+        if (parent.getComponentID() == id) return &parent;
+        for (auto* child : parent.getChildren())
+            if (auto* found = self(self, *child, id)) return found;
+        return nullptr;
+    };
+    auto* velocity = find(find, page, "layer_a_velocity_curve");
+    auto* zone = find(find, page, "layer_a_key_low");
+    auto* solo = find(find, page, "layer_a_solo");
+    auto* pan = find(find, page, "layer_a_pan");
+    REQUIRE(velocity != nullptr);
+    REQUIRE(zone != nullptr);
+    REQUIRE(solo != nullptr);
+    REQUIRE(pan != nullptr);
+    REQUIRE(velocity->getWidth() > 60);
+    REQUIRE(zone->getHeight() > 40);
+    REQUIRE(solo->getHeight() > 20);
+    REQUIRE(pan->getWidth() > 60);
 }

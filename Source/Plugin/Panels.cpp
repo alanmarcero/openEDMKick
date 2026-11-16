@@ -222,6 +222,30 @@ LayerPage::LayerPage(OpenEdmKickProcessor& processor, int layer)
     std::ranges::for_each(std::array<juce::Component*, 7>{
         &enabled_, &sound_, &level_, &pitch_, &decay_, &highPass_, &lowPass_},
         [this](juce::Component* component) { addAndMakeVisible(component); });
+    layerKnobs_[0] = std::make_unique<Knob>(processor.parameters, params::layerId(layer_, params::kLayerVelocityCurve), "Velocity curve", theme::kBrass);
+    addAndMakeVisible(*layerKnobs_[0]);
+    layerKnobs_[1] = std::make_unique<Knob>(processor.parameters, params::layerId(layer_, params::kLayerVelocityTimbre), "Velocity timbre", theme::kBrass);
+    addAndMakeVisible(*layerKnobs_[1]);
+    layerKnobs_[2] = std::make_unique<Knob>(processor.parameters, params::layerId(layer_, params::kLayerKeyLow), "Key low", theme::kBrass);
+    addAndMakeVisible(*layerKnobs_[2]);
+    layerKnobs_[3] = std::make_unique<Knob>(processor.parameters, params::layerId(layer_, params::kLayerKeyHigh), "Key high", theme::kBrass);
+    addAndMakeVisible(*layerKnobs_[3]);
+    layerKnobs_[4] = std::make_unique<Knob>(processor.parameters, params::layerId(layer_, params::kLayerVelocityLow), "Velocity low", theme::kBrass);
+    addAndMakeVisible(*layerKnobs_[4]);
+    layerKnobs_[5] = std::make_unique<Knob>(processor.parameters, params::layerId(layer_, params::kLayerVelocityHigh), "Velocity high", theme::kBrass);
+    addAndMakeVisible(*layerKnobs_[5]);
+    layerKnobs_[6] = std::make_unique<Knob>(processor.parameters, params::layerId(layer_, params::kLayerDriveOffset), "Drive offset", theme::kBrass);
+    addAndMakeVisible(*layerKnobs_[6]);
+    layerKnobs_[7] = std::make_unique<Knob>(processor.parameters, params::layerId(layer_, params::kLayerToneScale), "Tone scale", theme::kBrass);
+    addAndMakeVisible(*layerKnobs_[7]);
+    layerKnobs_[8] = std::make_unique<Knob>(processor.parameters, params::layerId(layer_, params::kLayerSweepScale), "Sweep scale", theme::kBrass);
+    addAndMakeVisible(*layerKnobs_[8]);
+    layerKnobs_[9] = std::make_unique<Knob>(processor.parameters, params::layerId(layer_, params::kLayerPan), "Pan", theme::kBrass);
+    addAndMakeVisible(*layerKnobs_[9]);
+    layerToggles_[0] = std::make_unique<Toggle>(processor.parameters, params::layerId(layer_, params::kLayerSolo), "Solo", theme::kViolet);
+    addAndMakeVisible(*layerToggles_[0]);
+    layerToggles_[1] = std::make_unique<Toggle>(processor.parameters, params::layerId(layer_, params::kLayerPolarity), "Invert", theme::kViolet);
+    addAndMakeVisible(*layerToggles_[1]);
     enabled_.setTooltip("Include this sound layer in every kick hit.");
     sound_.setTooltip("Choose a synthesized kick, snare, clap, or hi-hat voice.");
     level_.setTooltip("Set this layer's mix level.");
@@ -232,31 +256,18 @@ LayerPage::LayerPage(OpenEdmKickProcessor& processor, int layer)
 }
 
 void LayerPage::paint(juce::Graphics& g) {
-    auto bounds = getLocalBounds();
-    drawSmallLabel(g, bounds.removeFromTop(20),
-                   "Layer " + juce::String::charToString(static_cast<juce::juce_wchar>('A' + layer_))
-                       + " · filtered before the layers are mixed",
-                   theme::kTextDim);
-    auto area = bounds.withTrimmedTop(6);
-    const int sourceHeight = 152;
-    const int shapeHeight = 170;
-    drawCard(g, area.removeFromTop(sourceHeight), "Voice and level", theme::kViolet);
-    area.removeFromTop(10);
-    drawCard(g, area.removeFromTop(shapeHeight), "Pitch and tail", theme::kBrass);
-    area.removeFromTop(10);
-    drawCard(g, area, "Independent layer filters", theme::kCoral);
+    drawSmallLabel(g, getLocalBounds().removeFromTop(20),
+        "Layer " + juce::String::charToString(static_cast<juce::juce_wchar>('A' + layer_))
+        + " · key/velocity limits are inclusive · solo respects Layer on", theme::kTextDim);
 }
 
 void LayerPage::resized() {
-    auto area = getLocalBounds().withTrimmedTop(27);
-    auto source = area.removeFromTop(152).reduced(14, 36);
-    layoutRow(source, { &enabled_, &sound_, &level_ }, 12);
-    area.removeFromTop(10);
-    auto shape = area.removeFromTop(170).reduced(14, 36);
-    layoutRow(shape, { &pitch_, &decay_ }, 12);
-    area.removeFromTop(10);
-    auto filters = area.reduced(14, 36);
-    layoutRow(filters, { &highPass_, &lowPass_ }, 12);
+    auto area = getLocalBounds().withTrimmedTop(26).reduced(10, 0);
+    const int rowHeight = area.getHeight() / 4;
+    layoutRow(area.removeFromTop(rowHeight), { &enabled_, &sound_, &level_, layerToggles_[0].get(), layerToggles_[1].get() }, 10);
+    layoutRow(area.removeFromTop(rowHeight), { &pitch_, &decay_, &highPass_, &lowPass_, layerKnobs_[9].get() }, 10);
+    layoutRow(area.removeFromTop(rowHeight), { layerKnobs_[0].get(), layerKnobs_[1].get(), layerKnobs_[6].get(), layerKnobs_[7].get(), layerKnobs_[8].get() }, 10);
+    layoutRow(area, { layerKnobs_[2].get(), layerKnobs_[3].get(), layerKnobs_[4].get(), layerKnobs_[5].get() }, 10);
 }
 
 LayerPanel::LayerPanel(OpenEdmKickProcessor& processor) {
@@ -324,7 +335,7 @@ void PianoRollView::paint(juce::Graphics& g) {
 
     g.setColour(theme::kTextDim);
     g.setFont(juce::FontOptions(9.0f, juce::Font::bold));
-    g.drawText("KICK LANE · CLICK TO ADD OR REMOVE A HIT", getLocalBounds().reduced(14, 5).removeFromTop(17),
+    g.drawText("ALL / A / B / C / D · CLICK: HIT · SHIFT-CLICK: RATCHETS 1–8", getLocalBounds().reduced(14, 5).removeFromTop(17),
                juce::Justification::centredLeft);
 
     g.setColour(theme::kSteel);
@@ -343,17 +354,30 @@ void PianoRollView::paint(juce::Graphics& g) {
         }
     }
 
+    const float rowHeight = grid.getHeight() / 5.0f;
+    for (int lane = 0; lane < 5; ++lane) {
+        const float y = grid.getY() + static_cast<float>(lane) * rowHeight;
+        g.setColour(theme::kEdge);
+        g.drawHorizontalLine(juce::roundToInt(y), grid.getX(), grid.getRight());
+        g.setColour(theme::kTextDim);
+        const auto label = lane == 0 ? juce::String("ALL") : juce::String::charToString(static_cast<juce::juce_wchar>('A' + lane - 1));
+        g.drawText(label, juce::Rectangle<float>(grid.getX() + 3, y + 2, 24, 12), juce::Justification::centredLeft);
+    }
     const auto notes = processor_.currentPianoRollNotes();
     for (const auto& note : notes) {
         if (note.step64 < 0 || note.step64 >= totalSteps) continue;
         const float x = grid.getX() + grid.getWidth() * static_cast<float>(note.step64) / static_cast<float>(totalSteps);
         const float w = std::max(4.0f, grid.getWidth() * static_cast<float>(std::max(1, note.length64)) / static_cast<float>(totalSteps));
-        const float laneHeight = grid.getHeight() * 0.72f;
-        const auto hit = juce::Rectangle<float>(x + 1.0f, grid.getY() + (grid.getHeight() - laneHeight) * 0.5f,
+        const float laneHeight = rowHeight * 0.72f;
+        const auto hit = juce::Rectangle<float>(x + 1.0f, grid.getY() + static_cast<float>(std::clamp(note.layer + 1, 0, 4)) * rowHeight + (rowHeight - laneHeight) * 0.5f,
                                                  std::min(w - 1.0f, grid.getRight() - x), laneHeight);
         const auto accent = note.reverseCue ? theme::kCoral : theme::kViolet;
         g.setColour(accent.withAlpha(0.32f + note.velocity * 0.58f));
         g.fillRoundedRectangle(hit, 4.0f);
+        if (note.ratchets > 1) {
+            g.setColour(theme::kText);
+            g.drawText(juce::String(note.ratchets), hit, juce::Justification::centred);
+        }
         g.setColour(theme::kText.withAlpha(0.52f));
         g.fillRoundedRectangle(hit.withHeight(2.0f).withY(hit.getY() + 3.0f), 1.0f);
     }
@@ -372,7 +396,12 @@ void PianoRollView::mouseDown(const juce::MouseEvent& event) {
     const int gridStep = core::kGridStepSizes64[static_cast<size_t>(std::clamp(settings.gridResolution, 0, 4))];
     const float normalized = std::clamp((event.position.x - grid.getX()) / grid.getWidth(), 0.0f, 0.99999f);
     const int step = (static_cast<int>(normalized * static_cast<float>(totalSteps)) / gridStep) * gridStep;
-    processor_.togglePianoRollNote(step, gridStep);
+    const int layer = std::clamp(static_cast<int>((event.position.y - grid.getY()) * 5 / grid.getHeight()), 0, 4) - 1;
+    if (event.mods.isShiftDown()) {
+        processor_.cyclePianoRollRatchets(step, layer);
+        return;
+    }
+    processor_.togglePianoRollNote(step, gridStep, layer);
 }
 
 AutoPianoRollPanel::AutoPianoRollPanel(OpenEdmKickProcessor& processor)
