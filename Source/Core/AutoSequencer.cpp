@@ -140,7 +140,9 @@ const std::vector<PianoRollNote>& AutoSequencer::notesForSlot(int slot) const no
     if (slot < 0 || slot >= kNumAutoSlots) {
         return empty;
     }
-    return slotNotes_[static_cast<size_t>(slot)];
+    const auto index = static_cast<size_t>(slot);
+    if (patternSources_[index] != nullptr) return patternSources_[index]->slotNotes_[index];
+    return slotNotes_[index];
 }
 
 void AutoSequencer::setNotesForSlot(int slot, std::vector<PianoRollNote> notes) {
@@ -152,6 +154,7 @@ void AutoSequencer::setNotesForSlot(int slot, std::vector<PianoRollNote> notes) 
 
 void AutoSequencer::copyNotesForSlot(int slot, std::span<const PianoRollNote> notes) {
     if (slot < 0 || slot >= kNumAutoSlots) return;
+    patternSources_[static_cast<size_t>(slot)] = nullptr;
     auto& slotNotes = slotNotes_[static_cast<size_t>(slot)];
     const auto count = std::min(notes.size(), kMaxPatternNotes);
     slotNotes.assign(notes.begin(), notes.begin() + static_cast<std::ptrdiff_t>(count));
@@ -171,6 +174,7 @@ void AutoSequencer::loadPresetIntoSlot(int slot, int presetIndex, int bars) {
     if (slot < 0 || slot >= kNumAutoSlots) {
         return;
     }
+    patternSources_[static_cast<size_t>(slot)] = nullptr;
     const int safePreset = std::clamp(presetIndex, 0, kNumFillPresets - 1);
     const int safeBars = std::clamp(bars, 1, 64);
     const auto index = static_cast<size_t>(slot);
@@ -197,6 +201,7 @@ bool AutoSequencer::toggleNoteAt(int slot, int step64, int length64, int totalBa
     if (step64 < 0 || step64 >= maxStep) {
         return false;
     }
+    if (patternSources_[static_cast<size_t>(slot)] != nullptr) copyNotesForSlot(slot, notesForSlot(slot));
     auto& notes = slotNotes_[static_cast<size_t>(slot)];
     const int safeLength = std::clamp(length64, 1, 64);
     const auto found = std::ranges::find_if(notes, [step64, layer](const auto& note) {
@@ -219,12 +224,20 @@ bool AutoSequencer::toggleNoteAt(int slot, int step64, int length64, int totalBa
 void AutoSequencer::swapSlotPattern(int slot, AutoSequencer& other) noexcept {
     if (slot < 0 || slot >= kNumAutoSlots) return;
     const auto index = static_cast<size_t>(slot);
+    patternSources_[index] = nullptr;
+    other.patternSources_[index] = nullptr;
     slotNotes_[index].swap(other.slotNotes_[index]);
     scheduledHits_[index].swap(other.scheduledHits_[index]);
 }
 
+void AutoSequencer::referenceSlotPattern(int slot, const AutoSequencer& source) noexcept {
+    if (slot < 0 || slot >= kNumAutoSlots) return;
+    patternSources_[static_cast<size_t>(slot)] = &source == this ? nullptr : &source;
+}
+
 void AutoSequencer::cycleRatchetsAt(int slot, int step64, int layer) {
     if (slot < 0 || slot >= kNumAutoSlots) return;
+    if (patternSources_[static_cast<size_t>(slot)] != nullptr) copyNotesForSlot(slot, notesForSlot(slot));
     auto& notes = slotNotes_[static_cast<size_t>(slot)];
     const auto found = std::ranges::find_if(notes, [=](const auto& note) {
         return note.step64 == step64 && note.layer == layer;
@@ -314,7 +327,9 @@ AutoTriggerEvent AutoSequencer::stepSample(
 
     const double position64 = cycle * totalSteps / windowBeats;
     const double sampleWidth64 = ppqPerSample * totalSteps / windowBeats;
-    const auto& hits = scheduledHits_[static_cast<size_t>(slot)];
+    const auto sourceIndex = static_cast<size_t>(slot);
+    const auto* source = patternSources_[sourceIndex] != nullptr ? patternSources_[sourceIndex] : this;
+    const auto& hits = source->scheduledHits_[sourceIndex];
     const auto first = std::lower_bound(hits.begin(), hits.end(), position64 - sampleWidth64 + 1e-8,
         [](const auto& hit, double position) { return hit.step64 < position; });
     for (auto found = first; found != hits.end() && found->step64 <= position64 + 1e-8; ++found) {

@@ -54,6 +54,9 @@ private:
     Knob decayShape_;
     Knob lowCut_;
     Knob clip_;
+    Toggle ampEnabled_;
+    Knob ampAttack_, ampDecay_, ampSustain_, ampRelease_;
+    std::vector<std::unique_ptr<SectionLock>> sectionLocks_;
     KickWaveformView waveform_;
 };
 
@@ -64,6 +67,7 @@ public:
     void resized() override;
 
 private:
+    std::unique_ptr<SectionLock> sectionLock_;
     int layer_ = 0;
     Toggle enabled_;
     Choice sound_;
@@ -101,7 +105,7 @@ private:
     OpenEdmKickProcessor& processor_;
 };
 
-class AutoPianoRollPanel final : public juce::Component {
+class AutoPianoRollPanel final : public juce::Component, private juce::Timer {
 public:
     explicit AutoPianoRollPanel(OpenEdmKickProcessor& processor);
     void paint(juce::Graphics& g) override;
@@ -111,10 +115,13 @@ public:
     [[nodiscard]] bool isAdvancedMode() const noexcept { return advancedMode_; }
 
 private:
+    void timerCallback() override;
     void bindSlotControls();
     void syncSelectedSlot(int slot);
     OpenEdmKickProcessor& processor_;
     bool advancedMode_ = false;
+    Choice scene_;
+    std::unique_ptr<SectionLock> clockLock_, sceneLock_;
     Toggle bypass_;
     Toggle enabled_;
     Toggle clockSync_;
@@ -122,7 +129,6 @@ private:
     Choice bars_;
     Choice grid_;
     Choice fillPreset_;
-    std::array<juce::TextButton, openedmkick::core::kNumAutoSlots> slotButtons_;
     Knob tempo_;
     Knob tailShorten_;
     Knob crushSweep_;
@@ -151,6 +157,9 @@ public:
 
 private:
     bool advancedMode_ = false;
+    Toggle reverseEnabled_, crushEnabled_, stutterEnabled_, gateEnabled_, highPassMidi_, lowPassMidi_;
+    Knob midiVolume_, midiExpression_, midiBrightness_;
+    std::vector<std::unique_ptr<SectionLock>> sectionLocks_;
     Choice reverseMode_;
     Knob reverseMix_;
     Knob drive_;

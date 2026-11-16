@@ -168,13 +168,13 @@ TEST_CASE("Beat synced reverse ends on the target sample across clocks and block
             triggers.push_back(core::MidiTrigger{ 0, 60, 1.0f, false });
         }
         shifted.process(crossingSettings, core::Transport{ bpm, cursor, 4.0, true }, triggers, &pointer, 1, 1);
+        ++steps;
         if (shifted.isVoiceReversing()) {
             armed = true;
         } else if (armed) {
             break;
         }
         cursor += bpm / (60.0 * 48000.0);
-        ++steps;
     }
     double independent = 3.0;
     int independentSteps = 0;

@@ -571,3 +571,243 @@ TEST_CASE("Separate MIDI spans preserve offsets and controller semantics", "[eng
     REQUIRE(std::all_of(separate.begin() + 64, separate.end(), [](float sample) { return sample == 0; }));
     REQUIRE(separateEngine.triggerSerial() == 2);
 }
+
+TEST_CASE("Full ADSR sustains and completes a twenty second release", "[followup][adsr]") {
+    core::KickSettings settings;
+    settings.ampEnabled = true;
+    settings.ampAttackMs = settings.ampDecayMs = 0;
+    settings.ampSustain = 1;
+    settings.ampReleaseMs = 20000;
+    core::KickVoice voice;
+    voice.prepare(8000);
+    voice.start(settings, 36, 1);
+    for (int sample = 0; sample < 8000; ++sample) (void)voice.nextSample();
+    REQUIRE(voice.isActive());
+    voice.release();
+    for (int sample = 0; sample < 159999; ++sample) (void)voice.nextSample();
+    REQUIRE(voice.isActive());
+    (void)voice.nextSample();
+    REQUIRE_FALSE(voice.isActive());
+}
+
+TEST_CASE("ADSR releases match MIDI channel and true sample offsets", "[followup][adsr]") {
+    core::EngineSettings settings;
+    settings.synth.ampEnabled = true;
+    settings.synth.ampAttackMs = settings.synth.ampDecayMs = settings.synth.ampReleaseMs = 0;
+    settings.synth.ampSustain = 1;
+    settings.effects.limiterEnabled = false;
+    const std::array<core::MidiInputEvent, 3> events{
+        core::MidiTrigger{8, 36, 1, false, 1}, core::MidiTrigger{16, 36, 1, false, 2}, core::MidiNoteOff{64, 36, 1}
+    };
+    core::KickEngine engine;
+    engine.prepare(48000);
+    std::array<float, 128> audio{};
+    float* channel = audio.data();
+    engine.process(settings, {120, 0.0, 4, true}, {}, &channel, 1, 128, {}, events);
+    REQUIRE(engine.activeNoteCount() == 1);
+    const std::array<core::MidiInputEvent, 1> lastOff{core::MidiNoteOff{32, 36, 2}};
+    engine.process(settings, {120, 128.0 / 24000, 4, true}, {}, &channel, 1, 128, {}, lastOff);
+    REQUIRE(std::any_of(audio.begin(), audio.begin() + 32, [](float value) { return value != 0; }));
+    REQUIRE(std::all_of(audio.begin() + 32, audio.end(), [](float value) { return value == 0; }));
+    REQUIRE(engine.activeNoteCount() == 0);
+}
+
+TEST_CASE("CC23 bitcrush and CC25 gate affect the hit", "[followup][glitch]") {
+    const auto render = [](int controller) {
+        core::KickEngine engine;
+        engine.prepare(48000);
+        core::EngineSettings settings;
+        settings.effects.limiterEnabled = false;
+        std::vector<float> output(12000);
+        float* channel = output.data();
+        const std::array<core::MidiInputEvent, 2> events{core::MidiCcEvent{0, controller, 127}, core::MidiTrigger{0, 36, 1}};
+        engine.process(settings, {120, 0.0, 4, true}, {}, &channel, 1, 12000, {}, events);
+        return output;
+    };
+    REQUIRE(render(23) != render(0));
+    REQUIRE(render(25) != render(0));
+}
+
+TEST_CASE("Reverse and stutter activations expire at the next quarter beat", "[followup][glitch]") {
+    core::KickEngine engine;
+    engine.prepare(8000);
+    core::EngineSettings settings;
+    const std::array<core::MidiInputEvent, 3> events{core::MidiCcEvent{0, 20, 127}, core::MidiCcEvent{0, 24, 127}, core::MidiTrigger{0, 36, 1}};
+    double onset = 0;
+    int duration = 4000;
+    SECTION("exact beat gets a full quarter note") {}
+    SECTION("off beat ends on the next quarter note") { onset = 0.5; duration = 2000; }
+    std::array<float, 4000> audio{};
+    float* channel = audio.data();
+    engine.process(settings, {120, onset, 4, true}, {}, &channel, 1, duration - 1, {}, events);
+    REQUIRE(engine.isVoiceReversing());
+    REQUIRE(engine.isStuttering());
+    engine.process(settings, {120, 0.99975, 4, true}, {}, &channel, 1, 1);
+    engine.process(settings, {120, 1.0, 4, true}, {}, &channel, 1, 1);
+    REQUIRE_FALSE(engine.isVoiceReversing());
+    REQUIRE_FALSE(engine.isStuttering());
+}
+
+TEST_CASE("Hat metal and tuned noise follow a MIDI octave", "[followup][pitch]") {
+    const auto crossings = [](int note) {
+        core::KickSettings settings;
+        core::DrumLayerSettings layer;
+        layer.sound = core::DrumSoundType::hat;
+        layer.decayMs = 500;
+        core::KickVoice voice;
+        voice.prepare(48000);
+        voice.start(settings, note, 1, layer);
+        float previous = 0;
+        int count = 0;
+        for (int sample = 0; sample < 4800; ++sample) {
+            const float value = voice.nextSample();
+            if (value > 0 && previous <= 0) ++count;
+            previous = value;
+        }
+        return count;
+    };
+    REQUIRE(crossings(48) > crossings(36) * 1.5);
+}
+
+TEST_CASE("Mapped manual tempo changes advance sequencer timing at their MIDI sample", "[followup][routing][clock]") {
+    core::KickEngine engine;
+    engine.prepare(48000);
+    core::EngineSettings settings;
+    settings.autoEnabled = true;
+    settings.autoSlots[0].bars = 1;
+    settings.manualBpm = 120;
+    std::vector<float> output(24000);
+    float* channel = output.data();
+    const std::array<core::MidiInputEvent, 1> events{core::MidiCcEvent{12000, 35, 127}};
+    core::MidiRouting mapping{nullptr, [](void*, int, int, core::EngineSettings& current) noexcept { current.manualBpm = 240; }};
+    engine.process(settings, {120, 0.0, 4, true}, {}, &channel, 1, 24000, {}, events, mapping);
+    REQUIRE_THAT(engine.currentAutoPhase(), WithinAbs(0.375f, 0.0001f));
+}
+
+TEST_CASE("CC-enabled ADSR sustain survives the following audio block", "[followup][adsr][routing]") {
+    core::KickEngine engine;
+    engine.prepare(48000);
+    core::EngineSettings settings;
+    settings.synth.ampAttackMs = settings.synth.ampDecayMs = 0;
+    settings.synth.ampSustain = 1;
+    const std::array<core::MidiInputEvent, 2> events{core::MidiCcEvent{0, 35, 127}, core::MidiTrigger{0, 36, 1}};
+    core::MidiRouting mapping{nullptr, [](void*, int, int, core::EngineSettings& current) noexcept { current.synth.ampEnabled = true; }};
+    std::array<float, 128> audio{};
+    float* channel = audio.data();
+    engine.process(settings, {120, 0.0, 4, true}, {}, &channel, 1, 128, {}, events, mapping);
+    REQUIRE(engine.activeNoteCount() == 1);
+    settings.synth.ampEnabled = true;
+    engine.process(settings, {120, 128.0 / 24000, 4, true}, {}, &channel, 1, 128);
+    REQUIRE(engine.activeNoteCount() == 1);
+}
+
+TEST_CASE("Reverse follows a slower host tempo through its quarter-note boundary", "[followup][glitch]") {
+    core::KickEngine engine;
+    engine.prepare(8000);
+    core::EngineSettings settings;
+    const std::array<core::MidiInputEvent, 2> events{core::MidiCcEvent{0, 20, 127}, core::MidiTrigger{0, 36, 1}};
+    std::array<float, 4000> audio{};
+    float* channel = audio.data();
+    engine.process(settings, {120, 0.25, 4, true}, {}, &channel, 1, 1000, {}, events);
+    engine.process(settings, {60, 0.5, 4, true}, {}, &channel, 1, 3999);
+    REQUIRE(engine.isVoiceReversing());
+    engine.process(settings, {60, 0.999875, 4, true}, {}, &channel, 1, 1);
+    REQUIRE_FALSE(engine.isVoiceReversing());
+}
+
+TEST_CASE("Maximum-length layered reverse has bounded callback setup", "[followup][glitch][realtime]") {
+    core::KickEngine engine;
+    engine.prepare(192000);
+    core::EngineSettings settings;
+    settings.synth.holdMs = 400;
+    settings.synth.decayMs = 1500;
+    for (auto& layer : settings.layers) { layer.enabled = true; layer.sound = core::DrumSoundType::kick; layer.decayMs = 1500; }
+    const std::array<core::MidiInputEvent, 2> events{core::MidiCcEvent{0, 20, 127}, core::MidiTrigger{0, 36, 1}};
+    std::array<float, 64> audio{};
+    float* channel = audio.data();
+    const auto began = std::chrono::steady_clock::now();
+    engine.process(settings, {120, 0.0, 4, true}, {}, &channel, 1, 64, {}, events);
+    const auto elapsed = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - began).count();
+    CAPTURE(elapsed);
+    REQUIRE(elapsed < 100.0);
+    REQUIRE(engine.isVoiceReversing());
+}
+
+TEST_CASE("Mapped limiter ceilings do not change samples before their CC offset", "[followup][routing]") {
+    const auto render = [](bool map) {
+        core::KickEngine engine;
+        engine.prepare(48000);
+        core::EngineSettings settings;
+        settings.effects.ceilingGain = 1;
+        std::array<float, 256> audio{};
+        float* channel = audio.data();
+        const std::array<core::MidiInputEvent, 2> events{core::MidiTrigger{0, 36, 1}, core::MidiCcEvent{128, 35, 127}};
+        core::MidiRouting mapping;
+        if (map) mapping.apply = [](void*, int, int, core::EngineSettings& current) noexcept { current.effects.ceilingGain = 0.1f; };
+        engine.process(settings, {120, 0.0, 4, true}, {}, &channel, 1, 256, {}, events, mapping);
+        return audio;
+    };
+    const auto withCc = render(true);
+    const auto plain = render(false);
+    REQUIRE(std::equal(withCc.begin(), withCc.begin() + 128, plain.begin()));
+    REQUIRE(std::all_of(withCc.begin() + 128, withCc.end(), [](float value) { return std::abs(value) <= 0.100001f; }));
+}
+
+TEST_CASE("Bypassed ADSR releases still complete and report no remaining tail", "[followup][adsr]") {
+    core::KickEngine engine;
+    engine.prepare(8000);
+    core::EngineSettings settings;
+    settings.synth.ampEnabled = true;
+    settings.synth.ampAttackMs = settings.synth.ampDecayMs = 0;
+    settings.synth.ampSustain = 1;
+    settings.synth.ampReleaseMs = 1;
+    settings.masterBypass = true;
+    const std::array<core::MidiInputEvent, 2> events{core::MidiTrigger{0, 36, 1}, core::MidiNoteOff{8, 36, 1}};
+    std::array<float, 64> output{};
+    float* channel = output.data();
+    engine.process(settings, {120, 0.0, 4, true}, {}, &channel, 1, 64, {}, events);
+    REQUIRE(engine.activeNoteCount() == 0);
+    REQUIRE_THAT(static_cast<float>(engine.remainingTailSeconds()), WithinAbs(0.0f, 0.0001f));
+}
+
+TEST_CASE("Glitch MIDI activation respects a nonzero amount", "[followup][glitch]") {
+    core::EngineSettings settings;
+    settings.effects.crushEnabled = true;
+    settings.effects.crushMix = 0.25f;
+    const auto subtle = renderImprovedLayers(settings);
+    settings.effects.crushMix = 1;
+    const auto full = renderImprovedLayers(settings);
+    REQUIRE(layerEnergy(subtle[0]) != layerEnergy(full[0]));
+}
+
+TEST_CASE("Enabling ADSR after a same-sample note preserves that one-shot", "[followup][adsr][routing]") {
+    core::KickEngine engine;
+    engine.prepare(48000);
+    core::EngineSettings settings;
+    const std::array<core::MidiInputEvent, 2> events{core::MidiTrigger{0, 36, 1}, core::MidiCcEvent{0, 35, 127}};
+    core::MidiRouting mapping{nullptr,
+        [](void*, int, int, core::EngineSettings& current) noexcept { current.synth.ampEnabled = true; }, nullptr,
+        [](void*, core::EngineSettings& current) noexcept { current.synth.ampEnabled = false; }};
+    std::array<float, 128> audio{};
+    float* channel = audio.data();
+    engine.process(settings, {120, 0.0, 4, true}, {}, &channel, 1, 128, {}, events, mapping);
+    REQUIRE(engine.activeNoteCount() == 1);
+}
+
+TEST_CASE("Host tails include active filter decay and then reach zero", "[followup][adsr][tail]") {
+    core::KickEngine engine;
+    engine.prepare(8000);
+    core::EngineSettings settings;
+    settings.synth.ampEnabled = true;
+    settings.synth.ampAttackMs = settings.synth.ampDecayMs = settings.synth.ampReleaseMs = 0;
+    settings.synth.ampSustain = 1;
+    settings.effects.lowPassHz = 200;
+    const std::array<core::MidiInputEvent, 2> events{core::MidiTrigger{0, 36, 1}, core::MidiNoteOff{64, 36, 1}};
+    std::vector<float> output(8000);
+    float* channel = output.data();
+    engine.process(settings, {120, 0.0, 4, true}, {}, &channel, 1, 128, {}, events);
+    REQUIRE(engine.activeNoteCount() == 0);
+    REQUIRE(engine.remainingTailSeconds() > 0);
+    engine.process(settings, {120, 0.032, 4, true}, {}, &channel, 1, 8000);
+    REQUIRE_THAT(static_cast<float>(engine.remainingTailSeconds()), WithinAbs(0.0f, 0.0001f));
+}

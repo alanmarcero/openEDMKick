@@ -23,6 +23,7 @@ struct MidiTrigger {
     int noteNumber = 60;
     float velocity = 1.0f;
     bool audition = false;
+    int midiChannel = 1;
 };
 
 // Performance MIDI. Not stored in the session.
@@ -32,7 +33,9 @@ struct MidiCcEvent {
     int value = 0;
 };
 
-using MidiInputEvent = std::variant<MidiTrigger, MidiCcEvent>;
+struct MidiNoteOff { int sampleOffset = 0; int noteNumber = 60; int midiChannel = 1; };
+
+using MidiInputEvent = std::variant<MidiTrigger, MidiCcEvent, MidiNoteOff>;
 
 struct EffectSettings {
     ReverseSyncMode reverseMode = ReverseSyncMode::Off;
@@ -56,6 +59,15 @@ struct EffectSettings {
     int highPassSyncDivision = 2;
     bool lowPassSyncEnabled = false;
     int lowPassSyncDivision = 2;
+    bool reverseEnabled = false;
+    bool crushEnabled = false;
+    bool stutterEnabled = false;
+    bool gateEnabled = false;
+    float midiVolume = 1;
+    float midiExpression = 1;
+    float midiBrightness = 1;
+    bool highPassMidi = false;
+    bool lowPassMidi = false;
 };
 
 struct EngineSettings {
@@ -72,6 +84,16 @@ struct EngineSettings {
     std::array<AutoSlotSettings, kNumAutoSlots> autoSlots{};
     EffectSettings effects{};
     bool masterBypass = false;
+    double manualBpm = 0;
+    double manualBeatsPerBar = 0;
+};
+
+struct MidiRouting {
+    void* context = nullptr;
+    void (*apply)(void*, int, int, EngineSettings&) noexcept = nullptr;
+    void (*save)(void*) noexcept = nullptr;
+    void (*restore)(void*, EngineSettings&) noexcept = nullptr;
+    void (*beforeAuto)(void*, const EngineSettings&) noexcept = nullptr;
 };
 
 class KickEngine {
@@ -90,18 +112,23 @@ public:
         int numChannels,
         int numSamples,
         std::span<const MidiCcEvent> controlChanges = {},
-        std::span<const MidiInputEvent> midiEvents = {}) noexcept;
+        std::span<const MidiInputEvent> midiEvents = {}, MidiRouting routing = {}) noexcept;
 
     [[nodiscard]] AutoSequencer& sequencer() noexcept { return sequencer_; }
     [[nodiscard]] const AutoSequencer& sequencer() const noexcept { return sequencer_; }
 
+    [[nodiscard]] double currentBpm() const noexcept { return currentBpm_; }
     [[nodiscard]] float currentPeak() const noexcept { return currentPeak_; }
     [[nodiscard]] float currentAutoPhase() const noexcept { return sequencer_.currentWindowPhase(); }
     [[nodiscard]] float currentBeatPhase() const noexcept { return currentBeatPhase_; }
     [[nodiscard]] bool isVoiceReversing() const noexcept;
+    [[nodiscard]] bool isStuttering() const noexcept { return stutterArmed_; }
+    [[nodiscard]] int activeNoteCount() const noexcept;
+    [[nodiscard]] double remainingTailSeconds() const noexcept;
     [[nodiscard]] uint32_t triggerSerial() const noexcept { return triggerSerial_; }
 
 private:
+    void synchronizeAmpMode(bool) noexcept;
     void triggerNote(
         const EngineSettings& settings,
         double samplePpq,
@@ -110,15 +137,25 @@ private:
         int midiNote,
         float velocity,
         float effectiveTailMs,
-        bool reverseCue, int onlyLayer = -1) noexcept;
+        bool reverseCue, int onlyLayer = -1, int midiChannel = 0) noexcept;
 
     double sampleRate_ = 48000.0;
+    double currentBpm_ = 128;
+    double previousReverseBpm_ = 0;
+    double effectTailAllowance_ = 0;
+    int64_t effectTailRemaining_ = 0;
     double fallbackPpq_ = 0.0;
     float currentPeak_ = 0.0f;
     float currentBeatPhase_ = 0.0f;
 
-    std::array<KickVoice, kNumSoundLayers> forwardVoices_;
-    std::array<KickVoice, kNumSoundLayers> reverseVoices_;
+    static constexpr int kPolyphony = 9;
+    std::array<int, kPolyphony> voiceNotes_{};
+    std::array<int, kPolyphony> voiceChannels_{};
+    std::array<uint64_t, kPolyphony> voiceAges_{};
+    uint64_t voiceCounter_ = 0;
+    bool ampWasEnabled_ = false;
+    std::array<KickVoice, kNumSoundLayers * kPolyphony> forwardVoices_;
+    std::array<KickVoice, kNumSoundLayers * kPolyphony> reverseVoices_;
     AutoSequencer sequencer_;
     std::array<BitCrusher, 2> crusher_;
     std::array<BeatStutter, 2> stutter_;
@@ -136,6 +173,11 @@ private:
     bool highPassCcEnabled_ = false;
     bool lowPassCcEnabled_ = false;
     uint32_t triggerSerial_ = 0;
+    bool crushCcEnabled_ = false;
+    bool stutterCcEnabled_ = false;
+    bool gateCcEnabled_ = false;
+    bool stutterArmed_ = false;
+    double stutterEndPpq_ = 0;
     bool reverseArmed_ = false;
     double reverseStartPpq_ = 0.0;
     double reverseEndPpq_ = 0.0;

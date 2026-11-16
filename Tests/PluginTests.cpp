@@ -425,3 +425,361 @@ TEST_CASE("Audition remains at sample zero before later MIDI controller events",
     REQUIRE(buffer.getMagnitude(0, 128) > 0.01f);
     REQUIRE_THAT(buffer.getMagnitude(128, 128), WithinAbs(0.0f, 0.00001f));
 }
+
+TEST_CASE("Parameter and section locks preserve the latest edit through presets", "[routing]") {
+    OpenEdmKickProcessor processor;
+    processor.routing().setLocked("body_tone", true);
+    setParam(processor, "body_tone", 0.123f);
+    processor.setCurrentProgram(1);
+    REQUIRE_THAT(processor.currentSynthSettings().bodyTone, WithinAbs(0.123f, 0.0001f));
+    setParam(processor, "body_tone", 0.321f);
+    processor.setCurrentProgram(2);
+    REQUIRE_THAT(processor.currentSynthSettings().bodyTone, WithinAbs(0.321f, 0.0001f));
+    processor.routing().toggleSection({"body_tone", "body_drive"});
+    REQUIRE(processor.routing().isLocked("body_tone"));
+    REQUIRE(processor.routing().isLocked("body_drive"));
+    REQUIRE_FALSE(processor.routing().isLocked("clip"));
+    processor.routing().toggleSection({"body_tone", "body_drive"});
+    REQUIRE_FALSE(processor.routing().isLocked("body_tone"));
+    REQUIRE_FALSE(processor.routing().isLocked("body_drive"));
+}
+
+TEST_CASE("CC menus expose all controllers and retain factory assignments", "[routing]") {
+    OpenEdmKickProcessor processor;
+    REQUIRE(processor.routing().assignment("reverse_on") == 20);
+    REQUIRE(processor.routing().assignment("hp_midi_on") == 21);
+    REQUIRE(processor.routing().assignment("lp_midi_on") == 22);
+    REQUIRE(processor.routing().assignment("midi_volume") == 7);
+    REQUIRE(processor.routing().assignment("midi_expression") == 11);
+    REQUIRE(processor.routing().assignment("midi_brightness") == 74);
+    REQUIRE(processor.routing().assignment("body_tone") == -1);
+    const auto menu = processor.routing().midiMenu("body_tone");
+    REQUIRE(menu.getNumItems() == 130);
+    std::array<bool, 128> entries{};
+    for (juce::PopupMenu::MenuItemIterator iterator(menu); iterator.next();) {
+        const int cc = iterator.getItem().itemID - 2;
+        if (cc >= 0 && cc < 128) entries[static_cast<size_t>(cc)] = true;
+    }
+    REQUIRE(std::all_of(entries.begin(), entries.end(), [](bool present) { return present; }));
+}
+
+TEST_CASE("Routing metadata survives state restore without overriding project values", "[routing]") {
+    OpenEdmKickProcessor source;
+    setParam(source, "body_tone", 0.234f);
+    source.routing().setLocked("body_tone", true);
+    source.routing().assignCc("clip", 35);
+    juce::MemoryBlock saved;
+    source.getStateInformation(saved);
+    OpenEdmKickProcessor restored;
+    restored.routing().setLocked("body_tone", true);
+    setParam(restored, "body_tone", 0.9f);
+    restored.setStateInformation(saved.getData(), static_cast<int>(saved.getSize()));
+    REQUIRE_THAT(restored.currentSynthSettings().bodyTone, WithinAbs(0.234f, 0.0001f));
+    REQUIRE(restored.routing().isLocked("body_tone"));
+    REQUIRE(restored.routing().assignment("clip") == 35);
+}
+
+TEST_CASE("Assigned CC endpoints and discrete values reach runtime without APVTS writes", "[routing]") {
+    OpenEdmKickProcessor processor;
+    processor.prepareToPlay(48000, 64);
+    processor.routing().assignCc("clip", 35);
+    processor.routing().assignCc("click_type", 35);
+    const float hostClip = processor.parameters.getRawParameterValue("clip")->load();
+    juce::AudioBuffer<float> audio(2, 64);
+    juce::MidiBuffer midi;
+    midi.addEvent(juce::MidiMessage::controllerEvent(1, 35, 127), 16);
+    processor.processBlock(audio, midi);
+    REQUIRE_THAT(processor.routing().displayValue("clip"), WithinAbs(1.0f, 0.0001f));
+    REQUIRE_THAT(processor.routing().displayValue("click_type"), WithinAbs(3.0f, 0.0001f));
+    REQUIRE_THAT(processor.parameters.getRawParameterValue("clip")->load(), WithinAbs(hostClip, 0.0001f));
+    midi.clear();
+    midi.addEvent(juce::MidiMessage::controllerEvent(1, 35, 0), 0);
+    processor.processBlock(audio, midi);
+    REQUIRE_THAT(processor.routing().displayValue("clip"), WithinAbs(0.0f, 0.0001f));
+    REQUIRE_THAT(processor.routing().displayValue("click_type"), WithinAbs(0.0f, 0.0001f));
+}
+
+TEST_CASE("Parameter controls show MIDI mirrors without editing host automation", "[routing][ui]") {
+    juce::ScopedJuceInitialiser_GUI gui;
+    OpenEdmKickProcessor processor;
+    openedmkick::ui::Knob knob(processor.parameters, "body_tone", "Harmonics", juce::Colours::orange);
+    knob.setSize(160, 150);
+    REQUIRE(knob.findChildWithID("routing_body_tone") != nullptr);
+    processor.routing().assignCc("body_tone", 35);
+    const float saved = processor.parameters.getRawParameterValue("body_tone")->load();
+    processor.routing().applyCc(35, 127);
+    knob.refreshMidiMirror();
+    REQUIRE_THAT(static_cast<float>(knob.slider().getValue()), WithinAbs(1.0f, 0.0001f));
+    REQUIRE_THAT(processor.parameters.getRawParameterValue("body_tone")->load(), WithinAbs(saved, 0.0001f));
+}
+
+TEST_CASE("Processor ADSR note-offs retain their offsets and host tails finish", "[followup][adsr][plugin]") {
+    OpenEdmKickProcessor processor;
+    processor.prepareToPlay(8000, 128);
+    setParam(processor, "amp_enabled", 1);
+    setParam(processor, "amp_attack_ms", 0);
+    setParam(processor, "amp_decay_ms", 0);
+    setParam(processor, "amp_sustain", 1);
+    setParam(processor, "amp_release_ms", 100);
+    setParam(processor, "limiter", 0);
+    juce::AudioBuffer<float> audio(2, 128);
+    juce::MidiBuffer midi;
+    midi.addEvent(juce::MidiMessage::noteOn(2, 36, 1.0f), 8);
+    processor.processBlock(audio, midi);
+    REQUIRE(processor.getTailLengthSeconds() >= 0.099);
+    midi.clear();
+    midi.addEvent(juce::MidiMessage::noteOff(1, 36), 16);
+    processor.processBlock(audio, midi);
+    REQUIRE(processor.getTailLengthSeconds() >= 0.099);
+    midi.clear();
+    midi.addEvent(juce::MidiMessage::noteOff(2, 36), 32);
+    processor.processBlock(audio, midi);
+    REQUIRE(processor.getTailLengthSeconds() < 0.1);
+    midi.clear();
+    for (int block = 0; block < 7; ++block) processor.processBlock(audio, midi);
+    REQUIRE_THAT(static_cast<float>(processor.getTailLengthSeconds()), WithinAbs(0.0f, 0.0001f));
+}
+
+TEST_CASE("ADSR disabled retains one-shot note-off behavior", "[followup][adsr][plugin]") {
+    const auto render = [](bool sendOff) {
+        OpenEdmKickProcessor processor;
+        processor.prepareToPlay(48000, 512);
+        juce::AudioBuffer<float> audio(2, 512);
+        juce::MidiBuffer midi;
+        midi.addEvent(juce::MidiMessage::noteOn(1, 36, 1.0f), 16);
+        if (sendOff) midi.addEvent(juce::MidiMessage::noteOff(1, 36), 32);
+        processor.processBlock(audio, midi);
+        return std::vector<float>(audio.getReadPointer(0), audio.getReadPointer(0) + 512);
+    };
+    REQUIRE(render(true) == render(false));
+}
+
+TEST_CASE("Factory filter CC off preserves a host-enabled sync switch", "[routing][midi]") {
+    const auto render = [](bool ccOff) {
+        OpenEdmKickProcessor processor;
+        processor.prepareToPlay(48000, 1024);
+        setParam(processor, "hp_sync_on", 1);
+        setParam(processor, "limiter", 0);
+        juce::AudioBuffer<float> audio(2, 1024);
+        juce::MidiBuffer midi;
+        if (ccOff) midi.addEvent(juce::MidiMessage::controllerEvent(1, 21, 0), 0);
+        midi.addEvent(juce::MidiMessage::noteOn(1, 36, 1.0f), 0);
+        processor.processBlock(audio, midi);
+        return std::vector<float>(audio.getReadPointer(0), audio.getReadPointer(0) + 1024);
+    };
+    const auto withOff = render(true);
+    const auto withoutOff = render(false);
+    const double difference = std::inner_product(withOff.begin(), withOff.end(), withoutOff.begin(), 0.0,
+        std::plus<>(), [](float a, float b) { return std::abs(a - b); });
+    REQUIRE(difference < 0.0001);
+}
+
+TEST_CASE("Native section locks cover their own parameter groups", "[routing][ui]") {
+    juce::ScopedJuceInitialiser_GUI gui;
+    OpenEdmKickProcessor processor;
+    openedmkick::ui::KickSynthPanel panel(processor);
+    auto* dive = dynamic_cast<openedmkick::ui::SectionLock*>(panel.findChildWithID("section_lock_dive"));
+    REQUIRE(dive != nullptr);
+    REQUIRE(dive->parameterIds() == juce::StringArray{"sweep_octaves", "sweep_ms", "sweep_shape", "snap_octaves", "snap_ms"});
+    dive->onClick();
+    REQUIRE(processor.routing().isLocked("sweep_ms"));
+    REQUIRE_FALSE(processor.routing().isLocked("body_tone"));
+    dive->onClick();
+    REQUIRE_FALSE(processor.routing().isLocked("sweep_ms"));
+}
+
+TEST_CASE("Routing restores legacy defaults and maps boolean/shared controllers", "[routing]") {
+    OpenEdmKickProcessor processor;
+    processor.routing().assignCc("amp_enabled", 35);
+    processor.routing().assignCc("click_type", 35);
+    processor.routing().applyCc(35, 127);
+    REQUIRE_THAT(processor.routing().displayValue("amp_enabled"), WithinAbs(1.0f, 0.0001f));
+    processor.routing().applyCc(35, 0);
+    REQUIRE_THAT(processor.routing().displayValue("amp_enabled"), WithinAbs(0.0f, 0.0001f));
+    REQUIRE_THAT(processor.routing().displayValue("click_type"), WithinAbs(0.0f, 0.0001f));
+    processor.routing().setLocked("clip", true);
+    processor.routing().assignCc("reverse_on", 90);
+    auto state = processor.parameters.copyState();
+    state.removeChild(state.getChildWithName("ParameterRouting"), nullptr);
+    juce::MemoryBlock saved;
+    juce::AudioProcessor::copyXmlToBinary(*state.createXml(), saved);
+    processor.setStateInformation(saved.getData(), static_cast<int>(saved.getSize()));
+    REQUIRE_FALSE(processor.routing().isLocked("clip"));
+    REQUIRE(processor.routing().assignment("reverse_on") == 20);
+    REQUIRE(processor.routing().assignment("amp_enabled") == -1);
+}
+
+TEST_CASE("Mapped CC order controls the following note rather than the preceding one", "[routing][midi]") {
+    const auto render = [](bool ccFirst) {
+        OpenEdmKickProcessor processor;
+        processor.prepareToPlay(48000, 512);
+        processor.routing().assignCc("layer_a_transpose", 35);
+        juce::AudioBuffer<float> audio(2, 512);
+        juce::MidiBuffer midi;
+        if (ccFirst) midi.addEvent(juce::MidiMessage::controllerEvent(1, 35, 127), 0);
+        midi.addEvent(juce::MidiMessage::noteOn(1, 36, 1.0f), 0);
+        if (!ccFirst) midi.addEvent(juce::MidiMessage::controllerEvent(1, 35, 127), 0);
+        processor.processBlock(audio, midi);
+        return std::vector<float>(audio.getReadPointer(0), audio.getReadPointer(0) + 512);
+    };
+    const auto before = render(true);
+    const auto after = render(false);
+    const double difference = std::inner_product(before.begin(), before.end(), after.begin(), 0.0,
+        std::plus<>(), [](float a, float b) { return std::abs(a - b); });
+    REQUIRE(difference > 1);
+}
+
+TEST_CASE("Capture the compiled native editor workspaces", "[capture]") {
+    const auto directory = juce::SystemStats::getEnvironmentVariable("OEK_CAPTURE_DIR", {});
+    if (directory.isEmpty()) SKIP("Set OEK_CAPTURE_DIR or build the openedmkick_screenshots target");
+    juce::ScopedJuceInitialiser_GUI gui;
+    OpenEdmKickProcessor processor;
+    setParam(processor, "amp_enabled", 1);
+    setParam(processor, "amp_release_ms", 20000);
+    processor.routing().setLocked("sweep_ms", true);
+    processor.routing().assignCc("body_tone", 35);
+    processor.togglePianoRollNote(8, 8, 0, 2);
+    processor.togglePianoRollNote(24, 8, 1, 3);
+    processor.togglePianoRollNote(40, 8, 2, 4);
+    processor.togglePianoRollNote(56, 8, 3, 5);
+    std::unique_ptr<juce::AudioProcessorEditor> editor(processor.createEditor());
+    auto* native = dynamic_cast<OpenEdmKickEditor*>(editor.get());
+    REQUIRE(native != nullptr);
+    native->setAdvancedView(true);
+    const juce::File destination(directory);
+    REQUIRE(destination.createDirectory().wasOk());
+    const std::array<juce::String, 4> pages{"kick", "layers", "pattern", "fx"};
+    for (const auto& page : pages) {
+        auto* tab = dynamic_cast<juce::TextButton*>(native->findChildWithID("page_" + page));
+        REQUIRE(tab != nullptr);
+        tab->onClick();
+        const auto image = native->createComponentSnapshot(native->getLocalBounds());
+        REQUIRE(image.getWidth() == 1100);
+        REQUIRE(image.getHeight() == 940);
+        auto output = destination.getChildFile("openKicker-" + page + ".png").createOutputStream();
+        REQUIRE(output != nullptr);
+        REQUIRE(output->setPosition(0));
+        REQUIRE(output->truncate().wasOk());
+        REQUIRE(juce::PNGImageFormat().writeImageToStream(image, *output));
+    }
+}
+
+TEST_CASE("Temporary fill CC overrides do not replace saved custom pattern edits", "[routing][state]") {
+    OpenEdmKickProcessor processor;
+    processor.prepareToPlay(48000, 32);
+    processor.togglePianoRollNote(7, 4, 2, 3);
+    processor.routing().assignCc("auto_fill", 35);
+    juce::AudioBuffer<float> audio(2, 32);
+    juce::MidiBuffer midi;
+    midi.addEvent(juce::MidiMessage::controllerEvent(1, 35, 127), 0);
+    processor.processBlock(audio, midi);
+    (void)processor.currentPianoRollNotes();
+    juce::MemoryBlock saved;
+    processor.getStateInformation(saved);
+    OpenEdmKickProcessor restored;
+    restored.setStateInformation(saved.getData(), static_cast<int>(saved.getSize()));
+    const auto notes = restored.currentPianoRollNotes();
+    REQUIRE(std::any_of(notes.begin(), notes.end(), [](const auto& note) { return note.step64 == 7 && note.layer == 2 && note.ratchets == 3; }));
+}
+
+TEST_CASE("A direct edit back to the host value clears a CC mirror", "[routing][ui]") {
+    juce::ScopedJuceInitialiser_GUI gui;
+    OpenEdmKickProcessor processor;
+    openedmkick::ui::Knob knob(processor.parameters, "body_tone", "Harmonics", juce::Colours::orange);
+    const float host = processor.parameters.getRawParameterValue("body_tone")->load();
+    processor.routing().assignCc("body_tone", 35);
+    processor.routing().applyCc(35, 127);
+    knob.refreshMidiMirror();
+    knob.slider().setValue(host, juce::sendNotificationSync);
+    REQUIRE_FALSE(processor.routing().isOverridden("body_tone"));
+    REQUIRE_THAT(processor.routing().displayValue("body_tone"), WithinAbs(host, 0.0001f));
+}
+
+TEST_CASE("Factory programs keep ADSR opt-in and respect an ADSR lock", "[followup][routing][presets]") {
+    OpenEdmKickProcessor processor;
+    setParam(processor, "amp_enabled", 1);
+    processor.setCurrentProgram(1);
+    REQUIRE_FALSE(processor.currentSynthSettings().ampEnabled);
+    processor.routing().setLocked("amp_enabled", true);
+    setParam(processor, "amp_enabled", 1);
+    processor.setCurrentProgram(2);
+    REQUIRE(processor.currentSynthSettings().ampEnabled);
+}
+
+TEST_CASE("Native controls provide routing affordances for every host parameter", "[routing][ui]") {
+    juce::ScopedJuceInitialiser_GUI gui;
+    OpenEdmKickProcessor processor;
+    std::unique_ptr<juce::AudioProcessorEditor> editor(processor.createEditor());
+    juce::StringArray represented;
+    const auto visit = [&](auto&& self, juce::Component& parent) -> void {
+        if (parent.getComponentID().startsWith("routing_")) represented.addIfNotAlreadyThere(parent.getComponentID().substring(8));
+        for (auto* child : parent.getChildren()) self(self, *child);
+    };
+    for (int scene = 0; scene < 4; ++scene) {
+        setParam(processor, "auto_slot", static_cast<float>(scene));
+        visit(visit, *editor);
+    }
+    for (auto* parameter : processor.getParameters()) {
+        const auto* ranged = dynamic_cast<juce::RangedAudioParameter*>(parameter);
+        REQUIRE(ranged != nullptr);
+        CAPTURE(ranged->paramID);
+        REQUIRE(represented.contains(ranged->paramID));
+    }
+}
+
+TEST_CASE("Host bypass processing still consumes matching ADSR note-offs", "[followup][adsr][tail]") {
+    OpenEdmKickProcessor processor;
+    processor.prepareToPlay(8000, 128);
+    setParam(processor, "amp_enabled", 1);
+    setParam(processor, "amp_release_ms", 10);
+    juce::AudioBuffer<float> audio(2, 128);
+    juce::MidiBuffer midi;
+    midi.addEvent(juce::MidiMessage::noteOn(1, 36, 1.0f), 0);
+    processor.processBlock(audio, midi);
+    midi.clear();
+    midi.addEvent(juce::MidiMessage::noteOff(1, 36), 0);
+    processor.processBlockBypassed(audio, midi);
+    REQUIRE_THAT(static_cast<float>(processor.getTailLengthSeconds()), WithinAbs(0.0f, 0.0001f));
+    REQUIRE_THAT(audio.getMagnitude(0, 128), WithinAbs(0.0f, 0.0001f));
+}
+
+TEST_CASE("Dense fill CC streams coalesce factory reloads before the Auto trigger", "[routing][realtime]") {
+    OpenEdmKickProcessor processor;
+    processor.prepareToPlay(48000, 32);
+    for (int slot = 0; slot < 4; ++slot) {
+        const auto prefix = slot == 0 ? juce::String("auto_") : "auto_" + juce::String::charToString(static_cast<juce::juce_wchar>('a' + slot)) + "_";
+        setParam(processor, prefix + "bars", 6);
+        processor.routing().assignCc(prefix + "fill", 35);
+    }
+    juce::AudioBuffer<float> audio(2, 32);
+    juce::MidiBuffer midi;
+    for (int event = 0; event < 65535; ++event) midi.addEvent(juce::MidiMessage::controllerEvent(1, 35, event % 128), 0);
+    const auto began = std::chrono::steady_clock::now();
+    processor.processBlock(audio, midi);
+    const auto elapsed = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - began).count();
+    CAPTURE(elapsed);
+    REQUIRE(elapsed < 500.0);
+    REQUIRE(processor.autoSlotSettings(0).fillPreset == 27);
+    REQUIRE(processor.autoSlotSettings(3).fillPreset == 27);
+}
+
+TEST_CASE("Resetting temporary fill CC control restores the live custom pattern", "[routing][state]") {
+    OpenEdmKickProcessor processor;
+    processor.prepareToPlay(48000, 32);
+    TestPlayHead host;
+    host.playing = true;
+    processor.setPlayHead(&host);
+    setParam(processor, "auto_on", 1);
+    processor.togglePianoRollNote(7, 4, 2, 3);
+    processor.routing().assignCc("auto_fill", 35);
+    juce::AudioBuffer<float> shortAudio(2, 32);
+    juce::MidiBuffer midi;
+    midi.addEvent(juce::MidiMessage::controllerEvent(1, 35, 127), 0);
+    processor.processBlock(shortAudio, midi);
+    const auto before = processor.displayTriggerCount.load();
+    juce::AudioBuffer<float> audio(2, 13000);
+    midi.clear();
+    midi.addEvent(juce::MidiMessage::controllerEvent(1, 121, 127), 0);
+    processor.processBlock(audio, midi);
+    REQUIRE(processor.displayTriggerCount.load() - before == 3);
+}

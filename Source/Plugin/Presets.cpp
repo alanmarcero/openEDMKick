@@ -104,7 +104,9 @@ constexpr std::array<KickProfile, 48> kProfiles{{
         { params::kClickLevel, profile.clickLevel }, { params::kClickHz, profile.clickHz },
         { params::kClickMs, clickMs }, { params::kAttackMs, attackMs }, { params::kHoldMs, holdMs },
         { params::kDecayMs, profile.decayMs }, { params::kDecayShape, decayShape },
-        { params::kLowCutHz, lowCutHz }, { params::kClip, clip }
+        { params::kLowCutHz, lowCutHz }, { params::kClip, clip },
+        { params::kAmpEnabled, 0 }, { params::kAmpAttack, 0 }, { params::kAmpDecay, 100 },
+        { params::kAmpSustain, 0.8f }, { params::kAmpRelease, 300 }
     } };
 }
 

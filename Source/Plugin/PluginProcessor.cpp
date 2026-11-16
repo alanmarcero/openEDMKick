@@ -13,8 +13,9 @@ namespace params = openedmkick::params;
 OpenEdmKickProcessor::OpenEdmKickProcessor()
     : AudioProcessor(BusesProperties().withOutput("Output", juce::AudioChannelSet::stereo(), true)),
       parameters(*this, nullptr, "openEDMKick", params::createParameterLayout()),
+      routing_(parameters),
       values_([this] {
-          const auto raw = [this](const juce::String& id) { return parameters.getRawParameterValue(id); };
+          const auto raw = [this](const juce::String& id) { return routing_.effectiveRaw(id); };
           const auto slotParams = [&](int slot) {
               const auto slotRaw = [&](const char* key) { return raw(params::autoSlotId(slot, key)); };
               return AutoSlotParams{ slotRaw(params::kAutoBars), slotRaw(params::kAutoFillPreset),
@@ -54,9 +55,14 @@ OpenEdmKickProcessor::OpenEdmKickProcessor()
               raw(params::kHighPass), raw(params::kLowPass), raw(params::kHighPassSyncEnabled),
               raw(params::kHighPassSyncRate), raw(params::kLowPassSyncEnabled), raw(params::kLowPassSyncRate),
               raw(params::kOutput),
-              raw(params::kLimiter), raw(params::kCeiling), raw(params::kMasterBypass)
+              raw(params::kLimiter), raw(params::kCeiling), raw(params::kMasterBypass),
+              raw(params::kAmpEnabled), raw(params::kAmpAttack), raw(params::kAmpDecay), raw(params::kAmpSustain), raw(params::kAmpRelease), raw(params::kReverseEnabled), raw(params::kCrushEnabled), raw(params::kStutterEnabled), raw(params::kGateEnabled), raw(params::kMidiVolume), raw(params::kMidiExpression), raw(params::kMidiBrightness), raw(params::kHighPassMidi), raw(params::kLowPassMidi)
           };
       }()) {
+    for (int slot = 0; slot < core::kNumAutoSlots; ++slot) {
+        hostFillParams_[static_cast<size_t>(slot)] = parameters.getRawParameterValue(params::autoSlotId(slot, params::kAutoFillPreset));
+        hostBarParams_[static_cast<size_t>(slot)] = parameters.getRawParameterValue(params::autoSlotId(slot, params::kAutoBars));
+    }
     setLatencySamples(core::KickEngine::kLatencySamples);
     engine_.prepare(48000.0);
     openedmkick::presets::apply(openedmkick::presets::factoryPresets().front(), parameters);
@@ -89,7 +95,8 @@ core::KickSettings OpenEdmKickProcessor::currentSynthSettings() const noexcept {
         static_cast<core::ClickType>(choice(values_.clickType)), values_.clickLevel->load(),
         values_.clickHz->load(), values_.clickMs->load(), values_.attackMs->load(),
         values_.holdMs->load(), values_.decayMs->load(), values_.decayShape->load(),
-        values_.lowCutHz->load(), values_.clip->load()
+        values_.lowCutHz->load(), values_.clip->load(),
+        values_.ampEnabled->load() > 0.5f, values_.ampAttackMs->load(), values_.ampDecayMs->load(), values_.ampSustain->load(), values_.ampReleaseMs->load()
     };
 }
 
@@ -146,13 +153,36 @@ std::vector<float> OpenEdmKickProcessor::previewKickWaveform() const {
 std::vector<core::PianoRollNote> OpenEdmKickProcessor::currentPianoRollNotes() const {
     const std::scoped_lock lock(stateMutex_);
     syncEditorSequencer();
-    return editorSequencer_.notesForSlot(currentAutoSlot());
+    const int slot = currentAutoSlot();
+    const auto settings = autoSlotSettings(slot);
+    const auto index = static_cast<size_t>(slot);
+    if (settings.fillPreset != editorPresets_[index] || settings.bars != editorBars_[index])
+        return core::buildPresetPattern(settings.fillPreset, settings.bars);
+    return editorSequencer_.notesForSlot(slot);
+}
+
+core::AutoSlotSettings OpenEdmKickProcessor::hostAutoSlotSettings(int slot) const {
+    const auto raw = [&](const char* key) { return parameters.getRawParameterValue(params::autoSlotId(slot, key))->load(); };
+    const auto bars = static_cast<size_t>(std::clamp(static_cast<int>(raw(params::kAutoBars)), 0, 6));
+    return {core::kAutoBarCounts[bars], std::clamp(static_cast<int>(raw(params::kAutoFillPreset)), 0, core::kNumFillPresets - 1),
+        std::clamp(static_cast<int>(raw(params::kAutoGrid)), 0, 4), raw(params::kAutoTailShorten), raw(params::kAutoCrushSweep)};
+}
+
+void OpenEdmKickProcessor::adoptDisplayedPattern() {
+    for (const auto* key : std::array<const char*, 2>{params::kAutoBars, params::kAutoFillPreset}) {
+        const auto id = params::autoSlotId(currentAutoSlot(), key);
+        if (!routing_.isOverridden(id)) continue;
+        const float value = routing_.displayValue(id);
+        auto* parameter = parameters.getParameter(id);
+        parameter->setValueNotifyingHost(parameter->convertTo0to1(value));
+        routing_.manualValue(id, value);
+    }
 }
 
 void OpenEdmKickProcessor::syncEditorSequencer() const {
     for (int slot = 0; slot < core::kNumAutoSlots; ++slot) {
         const auto index = static_cast<size_t>(slot);
-        const auto settings = autoSlotSettings(slot);
+        const auto settings = hostAutoSlotSettings(slot);
         if (editorPresets_[index] == settings.fillPreset && editorBars_[index] == settings.bars) continue;
         editorSequencer_.loadPresetIntoSlot(slot, settings.fillPreset, settings.bars);
         editorPresets_[index] = settings.fillPreset;
@@ -172,6 +202,7 @@ void OpenEdmKickProcessor::publishPatterns() {
 
 void OpenEdmKickProcessor::togglePianoRollNote(int step64, int length64, int layer, int ratchets) {
     const std::scoped_lock lock(stateMutex_);
+    adoptDisplayedPattern();
     syncEditorSequencer();
     const int slot = currentAutoSlot();
     editorSequencer_.toggleNoteAt(slot, step64, length64, autoSlotSettings(slot).bars, layer, ratchets);
@@ -180,6 +211,7 @@ void OpenEdmKickProcessor::togglePianoRollNote(int step64, int length64, int lay
 
 void OpenEdmKickProcessor::cyclePianoRollRatchets(int step64, int layer) {
     const std::scoped_lock lock(stateMutex_);
+    adoptDisplayedPattern();
     syncEditorSequencer();
     editorSequencer_.cycleRatchetsAt(currentAutoSlot(), step64, layer);
     publishPatterns();
@@ -189,11 +221,13 @@ void OpenEdmKickProcessor::syncSequencerPresets(
     const std::array<core::AutoSlotSettings, core::kNumAutoSlots>& slots) {
     std::ranges::for_each(std::views::iota(0, core::kNumAutoSlots), [&](int slot) {
         const auto index = static_cast<size_t>(slot);
-        if (slots[index].fillPreset != lastSlotPreset_[index] || slots[index].bars != lastSlotBars_[index]) {
+        const bool baseline = slots[index].fillPreset == baselinePresets_[index] && slots[index].bars == baselineBars_[index];
+        if (baseline) engine_.sequencer().referenceSlotPattern(slot, audioBaseline_);
+        if (!baseline && (usesBaseline_[index] || slots[index].fillPreset != lastSlotPreset_[index] || slots[index].bars != lastSlotBars_[index]))
             engine_.sequencer().loadPresetIntoSlot(slot, slots[index].fillPreset, slots[index].bars);
-            lastSlotPreset_[index] = slots[index].fillPreset;
-            lastSlotBars_[index] = slots[index].bars;
-        }
+        usesBaseline_[index] = baseline;
+        lastSlotPreset_[index] = slots[index].fillPreset;
+        lastSlotBars_[index] = slots[index].bars;
     });
 }
 
@@ -201,32 +235,16 @@ juce::AudioProcessorParameter* OpenEdmKickProcessor::getBypassParameter() const 
     return parameters.getParameter(params::kMasterBypass);
 }
 
-void OpenEdmKickProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi) {
-    juce::ScopedNoDenormals noDenormals;
+core::EngineSettings OpenEdmKickProcessor::currentEngineSettings() const noexcept {
     const auto isOn = [](const std::atomic<float>* value) { return value->load() > 0.5f; };
     const auto choice = [](const std::atomic<float>* value) { return static_cast<int>(value->load()); };
-
-    const std::array<core::AutoSlotSettings, core::kNumAutoSlots> slotSettings{
-        autoSlotSettings(0), autoSlotSettings(1), autoSlotSettings(2), autoSlotSettings(3)
-    };
-    syncSequencerPresets(slotSettings);
-    if ((middlePattern_.load(std::memory_order_acquire) & 4) != 0) {
-        readPattern_ = middlePattern_.exchange(readPattern_, std::memory_order_acq_rel) & 3;
-        auto& snapshot = patternSnapshots_[static_cast<size_t>(readPattern_)];
-        for (int slot = 0; slot < core::kNumAutoSlots; ++slot) {
-            const auto index = static_cast<size_t>(slot);
-            if (snapshot.presets[index] != slotSettings[index].fillPreset || snapshot.bars[index] != slotSettings[index].bars) continue;
-            engine_.sequencer().swapSlotPattern(slot, snapshot.sequencer);
-        }
-    }
-
     core::EngineSettings settings{};
     settings.synth = currentSynthSettings();
     settings.layers = currentLayerSettings();
     settings.autoEnabled = isOn(values_.autoEnabled);
     settings.autoBypass = isOn(values_.autoBypass);
     settings.activeAutoSlot = currentAutoSlot();
-    settings.autoSlots = slotSettings;
+    settings.autoSlots = {autoSlotSettings(0), autoSlotSettings(1), autoSlotSettings(2), autoSlotSettings(3)};
     settings.effects = core::EffectSettings{
         static_cast<core::ReverseSyncMode>(std::clamp(choice(values_.reverseMode), 0, 4)),
         values_.reverseMix->load(), values_.drive->load(), values_.crushRate->load(),
@@ -236,16 +254,51 @@ void OpenEdmKickProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
         juce::Decibels::decibelsToGain(values_.output->load()), isOn(values_.limiter),
         juce::Decibels::decibelsToGain(values_.ceiling->load()), values_.highPass->load(),
         values_.lowPass->load(), isOn(values_.highPassSyncEnabled), choice(values_.highPassSyncRate),
-        isOn(values_.lowPassSyncEnabled), choice(values_.lowPassSyncRate)
+        isOn(values_.lowPassSyncEnabled), choice(values_.lowPassSyncRate),
+        values_.reverseEnabled->load() > 0.5f, values_.crushEnabled->load() > 0.5f, values_.stutterEnabled->load() > 0.5f, values_.gateEnabled->load() > 0.5f, values_.midiVolume->load(), values_.midiExpression->load(), values_.midiBrightness->load(), values_.highPassMidi->load() > 0.5f, values_.lowPassMidi->load() > 0.5f
     };
     settings.masterBypass = isOn(values_.masterBypass);
+    const int signature = choice(values_.timeSignature);
+    settings.manualBpm = isOn(values_.clockSync) ? 0 : static_cast<double>(values_.tempoBpm->load());
+    settings.manualBeatsPerBar = (!isOn(values_.clockSync) || signature != 0) ? params::beatsPerBarForSignature(signature) : 0;
 
-    const bool syncToHost = isOn(values_.clockSync);
+    return settings;
+}
+
+void OpenEdmKickProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi) {
+    juce::ScopedNoDenormals noDenormals;
+    const auto choice = [](const std::atomic<float>* value) { return static_cast<int>(value->load()); };
+
+    const std::array<core::AutoSlotSettings, core::kNumAutoSlots> slotSettings{
+        autoSlotSettings(0), autoSlotSettings(1), autoSlotSettings(2), autoSlotSettings(3)
+    };
+    for (int slot = 0; slot < core::kNumAutoSlots; ++slot) {
+        const auto index = static_cast<size_t>(slot);
+        const int preset = std::clamp(static_cast<int>(hostFillParams_[index]->load()), 0, core::kNumFillPresets - 1);
+        const int barChoice = std::clamp(static_cast<int>(hostBarParams_[index]->load()), 0, 6);
+        const int bars = core::kAutoBarCounts[static_cast<size_t>(barChoice)];
+        if (preset == baselinePresets_[index] && bars == baselineBars_[index]) continue;
+        audioBaseline_.loadPresetIntoSlot(slot, preset, bars);
+        baselinePresets_[index] = preset;
+        baselineBars_[index] = bars;
+    }
+    if ((middlePattern_.load(std::memory_order_acquire) & 4) != 0) {
+        readPattern_ = middlePattern_.exchange(readPattern_, std::memory_order_acq_rel) & 3;
+        auto& snapshot = patternSnapshots_[static_cast<size_t>(readPattern_)];
+        for (int slot = 0; slot < core::kNumAutoSlots; ++slot) {
+            const auto index = static_cast<size_t>(slot);
+            if (snapshot.presets[index] != baselinePresets_[index] || snapshot.bars[index] != baselineBars_[index]) continue;
+            audioBaseline_.swapSlotPattern(slot, snapshot.sequencer);
+        }
+    }
+
+    syncSequencerPresets(slotSettings);
+    auto settings = currentEngineSettings();
+
     const double manualBpm = static_cast<double>(values_.tempoBpm->load());
     const int signatureChoice = choice(values_.timeSignature);
     const double manualBeatsPerBar = params::beatsPerBarForSignature(signatureChoice);
     const core::Transport transport = [&] {
-        if (!syncToHost) return core::Transport{ manualBpm, std::nullopt, manualBeatsPerBar, true };
         auto* playHead = getPlayHead();
         if (playHead == nullptr) return core::Transport{ manualBpm, std::nullopt, manualBeatsPerBar, true };
         const auto position = playHead->getPosition();
@@ -271,15 +324,17 @@ void OpenEdmKickProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
         const int sample = std::clamp(metadata.samplePosition, 0, lastSample);
         if (message.isNoteOn() && message.getFloatVelocity() > 0.0f) {
             const int note = message.getNoteNumber();
-            midiEventScratch_.emplace_back(core::MidiTrigger{ sample, note, message.getFloatVelocity(), false });
+            midiEventScratch_.emplace_back(core::MidiTrigger{ sample, note, message.getFloatVelocity(), false, message.getChannel() });
             displayMidiNote.store(note, std::memory_order_relaxed);
             displayMidiHz.store(core::noteFrequencyHz(note), std::memory_order_relaxed);
             return;
         }
+        if (message.isNoteOff()) {
+            midiEventScratch_.emplace_back(core::MidiNoteOff{sample, message.getNoteNumber(), message.getChannel()});
+            return;
+        }
         if (!message.isController()) return;
         const int controller = message.getControllerNumber();
-        if (controller != 7 && controller != 11 && controller != 20 && controller != 21 && controller != 22 && controller != 74
-            && controller != 120 && controller != 121 && controller != 123) return;
         midiEventScratch_.emplace_back(core::MidiCcEvent{ sample, controller, message.getControllerValue() });
     });
 
@@ -291,16 +346,42 @@ void OpenEdmKickProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
         midiEventScratch_.insert(afterSampleZero, core::MidiTrigger{ 0, core::kDefaultMidiNote, 1.0f, true });
     }
 
+    core::MidiRouting routing{
+        this,
+        [](void* context, int cc, int value, core::EngineSettings& current) noexcept {
+            auto& processor = *static_cast<OpenEdmKickProcessor*>(context);
+            if (cc == 121) processor.routing_.clearPerformance();
+            if (processor.routing_.applyCc(cc, value) || cc == 121) {
+                current = processor.currentEngineSettings();
+            }
+        },
+        [](void* context) noexcept { static_cast<OpenEdmKickProcessor*>(context)->routing_.saveSample(); },
+        [](void* context, core::EngineSettings& current) noexcept {
+            auto& processor = *static_cast<OpenEdmKickProcessor*>(context);
+            processor.routing_.restoreSample();
+            current = processor.currentEngineSettings();
+        },
+        [](void* context, const core::EngineSettings& current) noexcept {
+            static_cast<OpenEdmKickProcessor*>(context)->syncSequencerPresets(current.autoSlots);
+        }
+    };
     buffer.clear();
     engine_.process(settings, transport, {}, buffer.getArrayOfWritePointers(),
-                    buffer.getNumChannels(), buffer.getNumSamples(), {}, midiEventScratch_);
+                    buffer.getNumChannels(), buffer.getNumSamples(), {}, midiEventScratch_, routing);
+    displayTailSeconds_.store(engine_.remainingTailSeconds());
     displayPeak.store(engine_.currentPeak());
     displayAutoPhase.store(engine_.currentAutoPhase());
     displayBeatPhase.store(engine_.currentBeatPhase());
-    displayBpm.store(static_cast<float>(transport.bpm));
+    displayBpm.store(static_cast<float>(engine_.currentBpm()));
     displayBeatsPerBar.store(static_cast<float>(transport.beatsPerBar));
     displayReversing.store(engine_.isVoiceReversing());
     displayTriggerCount.store(engine_.triggerSerial(), std::memory_order_relaxed);
+}
+
+void OpenEdmKickProcessor::processBlockBypassed(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi) {
+    processBlock(buffer, midi);
+    buffer.clear();
+    displayPeak.store(0);
 }
 
 juce::AudioProcessorEditor* OpenEdmKickProcessor::createEditor() {
@@ -317,7 +398,9 @@ void OpenEdmKickProcessor::setCurrentProgram(int index) {
     {
         const std::scoped_lock lock(stateMutex_);
         currentProgram_ = index;
+        const auto locked = routing_.lockedValues();
         openedmkick::presets::apply(presets[static_cast<size_t>(index)], parameters);
+        routing_.restoreLocked(locked);
         restoredCustomState_.store(false);
     }
     juce::AudioProcessorListener::ChangeDetails details;
@@ -334,6 +417,7 @@ const juce::String OpenEdmKickProcessor::getProgramName(int index) {
 void OpenEdmKickProcessor::getStateInformation(juce::MemoryBlock& destData) {
     const std::scoped_lock lock(stateMutex_);
     auto state = parameters.copyState();
+    routing_.writeState(state);
     state.setProperty("program", currentProgram_, nullptr);
     state.setProperty("presetCatalogVersion", 3, nullptr);
     state.setProperty("programCustom", restoredCustomState_.load(), nullptr);
@@ -381,6 +465,7 @@ void OpenEdmKickProcessor::setStateInformation(const void* data, int sizeInBytes
     restoredCustomState_.store(
         !hasV3Catalog || static_cast<bool>(state.getProperty("programCustom", false)));
     parameters.replaceState(state);
+    routing_.restoreState(state);
     const std::scoped_lock lock(stateMutex_);
     editorPresets_.fill(-1);
     syncEditorSequencer();

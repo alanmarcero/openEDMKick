@@ -197,6 +197,20 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout() {
         addFloat(layout, layerId(layer, kLayerPan), prefix + "Pan", { -1.0f, 1.0f }, 0.0f, kFormatPercent, 3);
         addBool(layout, layerId(layer, kLayerPolarity), prefix + "Invert", false, 3);
     }
+    addBool(layout, kAmpEnabled, "Amp Enabled", false, 4);
+    addFloat(layout, kAmpAttack, "Amp Attack Ms", { 0.0f, 10000.0f }, 0.0f, kFormatMs, 4);
+    addFloat(layout, kAmpDecay, "Amp Decay Ms", { 0.0f, 10000.0f }, 100.0f, kFormatMs, 4);
+    addFloat(layout, kAmpSustain, "Amp Sustain", { 0.0f, 1.0f }, 0.8f, kFormatPercent, 4);
+    addFloat(layout, kAmpRelease, "Amp Release Ms", { 0.0f, 20000.0f }, 300.0f, kFormatMs, 4);
+    addBool(layout, kReverseEnabled, "Reverse On", false, 4);
+    addBool(layout, kCrushEnabled, "Crush On", false, 4);
+    addBool(layout, kStutterEnabled, "Stutter On", false, 4);
+    addBool(layout, kGateEnabled, "Gate On", false, 4);
+    addFloat(layout, kMidiVolume, "Midi Volume", { 0.0f, 1.0f }, 1.0f, kFormatPercent, 4);
+    addFloat(layout, kMidiExpression, "Midi Expression", { 0.0f, 1.0f }, 1.0f, kFormatPercent, 4);
+    addFloat(layout, kMidiBrightness, "Midi Brightness", { 0.0f, 1.0f }, 1.0f, kFormatPercent, 4);
+    addBool(layout, kHighPassMidi, "HP MIDI activation", false, 4);
+    addBool(layout, kLowPassMidi, "LP MIDI activation", false, 4);
     return layout;
 }
 

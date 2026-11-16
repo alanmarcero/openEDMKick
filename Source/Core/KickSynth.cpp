@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <numbers>
+#include <limits>
 #include <ranges>
 
 namespace openedmkick::core {
@@ -102,14 +103,18 @@ void KickVoice::prepare(double hostRate) {
     const int factor = dsp::oversamplingFactorFor(hostRate_);
     decimator_.prepare(factor);
     osRate_ = hostRate_ * factor;
-    reverseBuffer_.reserve(static_cast<size_t>(std::ceil(hostRate_ * (kMaxHitMs / 1000.0))));
     reset();
 }
 
 void KickVoice::startState(const KickSettings& settings, int midiNote, float velocity,
                            const DrumLayerSettings& layer, float gainScale) noexcept {
     settings_ = settings;
+    const float transpose = finiteClamp(layer.transposeSemitones, 0, -24, 24);
+    const float pitchRatio = noteFrequencyHz(midiNote) / noteFrequencyHz(kDefaultMidiNote) * std::exp2(transpose / 12.0f);
+    const auto track = [&](float hz) { return std::clamp(hz * pitchRatio, 5.0f, static_cast<float>(hostRate_ * 0.45)); };
     layer_ = layer;
+    if (layer_.highPassHz > ToneFilter::kHighPassBypassHz + 0.5f) layer_.highPassHz = track(layer_.highPassHz);
+    if (layer_.lowPassHz < ToneFilter::kLowPassBypassHz - 1) layer_.lowPassHz = track(layer_.lowPassHz);
     settings_.drive = std::clamp(settings_.drive + finiteClamp(layer.driveOffset, 0, -1, 1), 0.0f, 1.0f);
     const float toneScale = finiteClamp(layer.toneScale, 1, 0.1f, 2);
     settings_.toneHz *= toneScale;
@@ -129,18 +134,22 @@ void KickVoice::startState(const KickSettings& settings, int midiNote, float vel
     velocity_ = 1.0f - finiteClamp(layer.velocityTimbre, 1, 0, 1) * (1.0f - hitVelocity);
     const float layerGain = finiteClamp(layer_.gain, 1.0f, 0.0f, 1.0f);
     gain_ = std::pow(hitVelocity, finiteClamp(layer.velocityCurve, 1.45f, 0.1f, 4)) * layerGain * finiteClamp(gainScale, 1.0f, 0.0f, 1.0f);
-    const float transpose = finiteClamp(layer_.transposeSemitones, 0.0f, -24.0f, 24.0f);
     noteHz_ = noteFrequencyHz(midiNote) * std::exp2(transpose / 12.0f);
-    if (layer_.sound == DrumSoundType::hat) noteHz_ = 6500.0f * std::exp2(transpose / 12.0f);
+    if (layer_.sound == DrumSoundType::hat) noteHz_ = 6500.0f * pitchRatio;
     noteHz_ = std::clamp(noteHz_, 1.0f, static_cast<float>(std::max(1000.0, osRate_ * 0.12)));
     phase_ = static_cast<double>(finiteClamp(settings_.startPhase, 0.5f, 0.0f, 1.0f) * 0.25f);
     subPhase_ = 0.0;
     clickPhase_ = 0.0;
     osIndex_ = 0;
+    ampIndex_ = 0;
+    phaseDirection_ = 1;
+    releaseStart_ = -1;
+    releaseLength_ = static_cast<int64_t>(std::ceil(finiteClamp(settings_.ampReleaseMs, 300, 0, 20000) * osRate_ * 0.001));
     hostIndex_ = 0;
     float lengthMs = finiteClamp(layer_.decayMs, 180.0f, 5.0f, 1500.0f);
     if (layer_.sound == DrumSoundType::kick) lengthMs = hitLengthMs(settings_);
     hostLength_ = std::max<int64_t>(1, static_cast<int64_t>(std::ceil(hostRate_ * lengthMs * 0.001f)));
+    if (settings_.ampEnabled) hostLength_ = std::numeric_limits<int64_t>::max();
     chokeRemaining_ = -1;
     chokeLength_ = std::max<int64_t>(1, static_cast<int64_t>(std::ceil(hostRate_ * 0.003)));
     previousSample_ = 0.0f;
@@ -152,12 +161,13 @@ void KickVoice::startState(const KickSettings& settings, int midiNote, float vel
     layerFilter_.reset();
     noise_.state = 0x9E3779B9u ^ static_cast<uint32_t>(std::clamp(midiNote, 0, 127) * 0x45D9F3Bu)
         ^ (static_cast<uint32_t>(layer_.sound) * 0x27D4EB2Du);
-    const float safeKnockHz = finiteClamp(settings_.knockHz, 180.0f, 60.0f, 800.0f);
+    const float safeKnockHz = track(finiteClamp(settings_.knockHz, 180.0f, 60.0f, 800.0f));
     const float safeKnockDb = finiteClamp(settings_.knockDb, 6.0f, 0.0f, 18.0f);
-    const float safeTone = finiteClamp(settings_.toneHz, 9000.0f, 300.0f, 20000.0f);
-    const float safeLowCut = finiteClamp(settings_.lowCutHz, 25.0f, 10.0f, 90.0f);
-    float safeClickHz = finiteClamp(settings_.clickHz, 3500.0f, 500.0f, 14000.0f);
-    if (layer_.sound == DrumSoundType::hat) safeClickHz = std::clamp(noteHz_, 2500.0f, 14000.0f);
+    const float safeTone = track(finiteClamp(settings_.toneHz, 9000.0f, 300.0f, 20000.0f));
+    const float safeLowCut = track(finiteClamp(settings_.lowCutHz, 25.0f, 10.0f, 90.0f));
+    clickFrequencyHz_ = track(finiteClamp(settings_.clickHz, 3500.0f, 500.0f, 14000.0f));
+    float safeClickHz = clickFrequencyHz_;
+    if (layer_.sound == DrumSoundType::hat) safeClickHz = std::clamp(noteHz_ * toneScale, 5.0f, static_cast<float>(hostRate_ * 0.45));
     knock_.c = dsp::peakCoeffs(safeKnockHz, 1.05, safeKnockDb, osRate_);
     tone_.c = dsp::lowpassCoeffs(safeTone, 0.707, osRate_);
     lowCut_.c = dsp::highpassCoeffs(safeLowCut, 0.707, osRate_);
@@ -172,19 +182,63 @@ void KickVoice::start(const KickSettings& settings, int midiNote, float velocity
 void KickVoice::startReverse(const KickSettings& settings, int midiNote, float velocity, int durationSamples,
                              const DrumLayerSettings& layer, float gainScale) noexcept {
     startState(settings, midiNote, velocity, layer, gainScale);
-    reverseBuffer_.clear();
-    reverseBuffer_.resize(static_cast<size_t>(hostLength_));
-    const int sourceLength = static_cast<int>(reverseBuffer_.size());
-    for (int i = 0; i < sourceLength; ++i) reverseBuffer_[static_cast<size_t>(i)] = renderHostSample();
-    std::reverse(reverseBuffer_.begin(), reverseBuffer_.end());
+    const double sourceMs = layer_.sound == DrumSoundType::kick ? hitLengthMs(settings_)
+        : finiteClamp(layer_.decayMs, 180, 5, 1500);
+    const double sourceSeconds = sourceMs * 0.001;
+    // Integrate a fixed number of points: setup never renders a hit or scales with its duration.
+    constexpr int integrationSteps = 128;
+    const double interval = sourceSeconds / integrationSteps;
+    double cycles = phase_;
+    for (int point = 0; point < integrationSteps; ++point) {
+        const float timeMs = static_cast<float>((point + 0.5) * interval * 1000.0);
+        const float pitch = layer_.sound == DrumSoundType::kick ? std::exp2(pitchOctavesAt(timeMs, settings_)) : 1.0f;
+        cycles += static_cast<double>(noteHz_ * pitch) * interval;
+    }
+    phase_ = cycles - std::floor(cycles);
+    subPhase_ = noteHz_ * sourceSeconds;
+    subPhase_ -= std::floor(subPhase_);
+    clickPhase_ = clickFrequencyHz_ * std::min(sourceMs, static_cast<double>(settings_.clickMs)) * 0.001;
+    clickPhase_ -= std::floor(clickPhase_);
+    reverseSourcePosition_ = std::max(0.0, std::ceil(sourceSeconds * osRate_) - 1.0);
     reversing_ = true;
     active_ = true;
-    reverseSamplesRemaining_ = std::max(1, durationSamples);
-    reverseReadPosition_ = 0.0;
-    reverseReadStep_ = reverseSamplesRemaining_ > 1
-        ? static_cast<double>(sourceLength - 1) / static_cast<double>(reverseSamplesRemaining_ - 1)
-        : 0.0;
-    hostIndex_ = 0;
+    retimeReverse(durationSamples);
+}
+
+void KickVoice::retimeReverse(int remainingSamples) noexcept {
+    if (!reversing_ || !active_) return;
+    reverseSamplesRemaining_ = std::max(1, remainingSamples);
+    reverseSourceStep_ = (reverseSourcePosition_ + 1.0) / (reverseSamplesRemaining_ * static_cast<double>(decimator_.factor()));
+    phaseDirection_ = -reverseSourceStep_;
+}
+
+float KickVoice::ampLevel() const noexcept {
+    if (releaseStart_ >= 0) {
+        if (releaseLength_ <= 0) return 0;
+        return releaseLevel_ * std::clamp(1.0f - static_cast<float>(ampIndex_ - releaseStart_) / static_cast<float>(releaseLength_), 0.0f, 1.0f);
+    }
+    const double attack = finiteClamp(settings_.ampAttackMs, 0, 0, 10000) * osRate_ * 0.001;
+    const double decay = finiteClamp(settings_.ampDecayMs, 100, 0, 10000) * osRate_ * 0.001;
+    const float sustain = finiteClamp(settings_.ampSustain, 0.8f, 0, 1);
+    if (static_cast<double>(ampIndex_) < attack) return static_cast<float>(ampIndex_ / attack);
+    if (static_cast<double>(ampIndex_) < attack + decay)
+        return 1.0f + (sustain - 1.0f) * static_cast<float>((ampIndex_ - attack) / decay);
+    return sustain;
+}
+
+void KickVoice::release() noexcept {
+    if (!settings_.ampEnabled || !active_ || releaseStart_ >= 0) return;
+    releaseLevel_ = ampLevel();
+    releaseStart_ = ampIndex_;
+    if (releaseLength_ == 0) active_ = false;
+}
+
+double KickVoice::remainingSeconds() const noexcept {
+    if (!active_) return 0;
+    if (reversing_) return reverseSamplesRemaining_ / hostRate_;
+    if (!settings_.ampEnabled) return static_cast<double>(hostLength_ - hostIndex_) / hostRate_;
+    if (releaseStart_ < 0) return static_cast<double>(releaseLength_) / osRate_;
+    return std::max(0.0, static_cast<double>(releaseLength_ - (ampIndex_ - releaseStart_)) / osRate_);
 }
 
 void KickVoice::choke() noexcept {
@@ -195,13 +249,13 @@ void KickVoice::reset() noexcept {
     active_ = false;
     reversing_ = false;
     reverseSamplesRemaining_ = 0;
-    reverseReadPosition_ = 0.0;
-    reverseReadStep_ = 1.0;
+    reverseSourcePosition_ = 0;
+    reverseSourceStep_ = 1;
+    phaseDirection_ = 1;
     hostIndex_ = 0;
     osIndex_ = 0;
     chokeRemaining_ = -1;
     previousSample_ = 0.0f;
-    reverseBuffer_.clear();
     decimator_.reset();
     knock_.reset();
     tone_.reset();
@@ -215,7 +269,7 @@ float KickVoice::renderClick(float timeMs) noexcept {
     if (level <= 0.0001f) return 0.0f;
     const float duration = finiteClamp(settings_.clickMs, 6.0f, 0.5f, 40.0f);
     if (timeMs >= duration) return 0.0f;
-    const float hz = finiteClamp(settings_.clickHz, 3500.0f, 500.0f, 14000.0f);
+    const float hz = clickFrequencyHz_;
     const float attack = std::min(1.0f, timeMs / 0.18f);
     const float envelope = std::exp(-timeMs * 5.0f / duration) * attack;
     const float noise = clickFilter_.process(nextNoise(noise_));
@@ -224,7 +278,7 @@ float KickVoice::renderClick(float timeMs) noexcept {
         oscillatorHz *= 1.0f + 0.8f * shapedFall(timeMs / duration, 0.5f);
     }
     const float tone = std::sin(static_cast<float>(clickPhase_) * kTwoPi);
-    clickPhase_ += static_cast<double>(oscillatorHz) / osRate_;
+    clickPhase_ += static_cast<double>(oscillatorHz) / osRate_ * phaseDirection_;
     clickPhase_ -= std::floor(clickPhase_);
     const float body = settings_.clickType == ClickType::noise ? 0.0f : tone;
     const float noiseMix = settings_.clickType == ClickType::beater ? 0.25f
@@ -235,15 +289,15 @@ float KickVoice::renderClick(float timeMs) noexcept {
 float KickVoice::renderDrumLayer(float timeMs) noexcept {
     const float decayMs = finiteClamp(layer_.decayMs, 180.0f, 5.0f, 1500.0f);
     const float progress = std::clamp(timeMs / decayMs, 0.0f, 1.0f);
-    const float decay = shapedFall(progress, 0.15f);
+    const float decay = settings_.ampEnabled && !reversing_ ? 1.0f : shapedFall(progress, 0.15f);
     const float bright = 0.45f + 0.55f * velocity_;
     const float noise = nextNoise(noise_);
     const float phase = static_cast<float>(phase_) * kTwoPi;
 
     switch (layer_.sound) {
         case DrumSoundType::snare: {
-            const float noiseTail = std::exp(-timeMs * (3.8f + bright * 2.0f) / decayMs);
-            const float body = std::sin(phase) * std::exp(-timeMs * 9.0f / decayMs);
+            const float noiseTail = settings_.ampEnabled && !reversing_ ? 1.0f : std::exp(-timeMs * (3.8f + bright * 2.0f) / decayMs);
+            const float body = std::sin(phase) * (settings_.ampEnabled && !reversing_ ? 1.0f : std::exp(-timeMs * 9.0f / decayMs));
             const float snareNoise = clickFilter_.process(noise);
             return decay * (body * 0.48f + snareNoise * noiseTail * (0.72f + bright * 0.2f));
         }
@@ -254,7 +308,7 @@ float KickVoice::renderDrumLayer(float timeMs) noexcept {
                 if (timeMs >= startMs) burst += std::exp(-(timeMs - startMs) * 1.25f);
             });
             const float clapNoise = clickFilter_.process(noise);
-            const float diffuseTail = std::exp(-timeMs * 5.0f / decayMs);
+            const float diffuseTail = settings_.ampEnabled && !reversing_ ? 1.0f : std::exp(-timeMs * 5.0f / decayMs);
             const float texture = std::min(1.0f, burst * 0.38f) * 0.78f + diffuseTail * 0.22f;
             return clapNoise * texture * decay * (0.8f + bright * 0.2f);
         }
@@ -276,7 +330,8 @@ float KickVoice::renderOversampled() noexcept {
     const float timeMs = static_cast<float>(1000.0 * static_cast<double>(osIndex_) / osRate_);
     float sample = 0.0f;
     if (layer_.sound == DrumSoundType::kick) {
-        const float envelope = amplitudeAt(timeMs, settings_);
+        const float envelope = settings_.ampEnabled && !reversing_ ? ampLevel() : amplitudeAt(timeMs, settings_);
+        const float reverseGate = settings_.ampEnabled && reversing_ ? ampLevel() : 1.0f;
         const float semitoneRatio = std::exp2(pitchOctavesAt(timeMs, settings_));
         const float frequency = std::min(noteHz_ * semitoneRatio, static_cast<float>(osRate_ * 0.45));
         const float bodyPhase = static_cast<float>(phase_) * kTwoPi;
@@ -308,8 +363,8 @@ float KickVoice::renderOversampled() noexcept {
         sample = lowCut_.process(sample);
         const float clip = finiteClamp(settings_.clip, 0.45f, 0.0f, 1.0f);
         sample += clip * (dsp::softClip(sample * 1.35f) - sample);
-        sample *= envelope;
-        phase_ += static_cast<double>(frequency) / osRate_;
+        sample *= envelope * reverseGate;
+        phase_ += static_cast<double>(frequency) / osRate_ * phaseDirection_;
     }
     if (layer_.sound != DrumSoundType::kick) {
         sample = renderDrumLayer(timeMs);
@@ -320,14 +375,16 @@ float KickVoice::renderOversampled() noexcept {
         }
         sample = tone_.process(sample);
         sample = lowCut_.process(sample);
-        phase_ += static_cast<double>(noteHz_) / osRate_;
+        if (settings_.ampEnabled) sample *= ampLevel();
+        phase_ += static_cast<double>(noteHz_) / osRate_ * phaseDirection_;
     }
     sample *= gain_;
 
     phase_ -= std::floor(phase_);
-    subPhase_ += static_cast<double>(noteHz_) / osRate_;
+    subPhase_ += static_cast<double>(noteHz_) / osRate_ * phaseDirection_;
     subPhase_ -= std::floor(subPhase_);
     ++osIndex_;
+    ++ampIndex_;
     return std::isfinite(sample) ? sample : 0.0f;
 }
 
@@ -346,41 +403,45 @@ float KickVoice::renderHostSample() noexcept {
     }
     previousSample_ = std::isfinite(sample) ? sample : 0.0f;
     ++hostIndex_;
-    if (hostIndex_ >= hostLength_) active_ = false;
+    if (hostIndex_ >= hostLength_ || (settings_.ampEnabled && releaseStart_ >= 0 && ampIndex_ - releaseStart_ >= releaseLength_)) active_ = false;
     return previousSample_;
 }
 
 float KickVoice::nextSample() noexcept {
     if (!active_) return 0.0f;
     if (!reversing_) return renderHostSample();
-    if (reverseSamplesRemaining_ <= 0 || reverseBuffer_.empty()) {
+    if (reverseSamplesRemaining_ <= 0) {
         active_ = false;
         reversing_ = false;
-        return 0.0f;
+        return 0;
     }
-    const size_t last = reverseBuffer_.size() - 1u;
-    const size_t index = std::min(last, static_cast<size_t>(reverseReadPosition_));
-    const size_t next = std::min(last, index + 1u);
-    const float fraction = static_cast<float>(reverseReadPosition_ - static_cast<double>(index));
-    float sample = reverseBuffer_[index] + fraction * (reverseBuffer_[next] - reverseBuffer_[index]);
+    std::array<float, dsp::Decimator::kMaxFactor> samples{};
+    for (int point = 0; point < decimator_.factor(); ++point) {
+        osIndex_ = static_cast<int64_t>(reverseSourcePosition_);
+        samples[static_cast<size_t>(point)] = renderOversampled();
+        reverseSourcePosition_ = std::max(0.0, reverseSourcePosition_ - reverseSourceStep_);
+    }
+    float sample = decimator_.process(samples);
+    sample = layerFilter_.process(sample, layer_.highPassHz, layer_.lowPassHz, hostRate_);
+    sample *= static_cast<float>(std::min(1.0, reverseSamplesRemaining_ / (hostRate_ * 0.003)));
     if (chokeRemaining_ >= 0) {
         sample *= static_cast<float>(chokeRemaining_) / static_cast<float>(chokeLength_);
         if (--chokeRemaining_ <= 0) active_ = false;
     }
-    reverseReadPosition_ += reverseReadStep_;
-    --reverseSamplesRemaining_;
-    if (reverseSamplesRemaining_ <= 0) {
+    if (--reverseSamplesRemaining_ <= 0 || (settings_.ampEnabled && releaseStart_ >= 0 && ampIndex_ - releaseStart_ >= releaseLength_)) {
         active_ = false;
         reversing_ = false;
     }
-    previousSample_ = std::isfinite(sample) ? sample : 0.0f;
+    previousSample_ = std::isfinite(sample) ? sample : 0;
     return previousSample_;
 }
 
 std::vector<float> renderKick(const KickSettings& settings, double sampleRate, int midiNote) {
     KickVoice voice;
     voice.prepare(sampleRate);
-    voice.start(settings, midiNote, 1.0f);
+    auto preview = settings;
+    preview.ampEnabled = false;
+    voice.start(preview, midiNote, 1.0f);
     std::vector<float> samples;
     samples.reserve(static_cast<size_t>(std::ceil(sampleRate * hitLengthMs(settings) * 0.001)));
     while (voice.isActive()) samples.push_back(voice.nextSample());
@@ -398,7 +459,9 @@ std::vector<float> renderLayeredKick(const KickSettings& settings,
         const auto& layer = layers[index];
         if (!layer.enabled || layer.gain <= 0.0001f || (anySolo && !layer.solo)) return;
         if (midiNote < layer.keyLow || midiNote > layer.keyHigh || layer.velocityHigh < 127) return;
-        voices[index].start(settings, midiNote, 1.0f, layer);
+        auto preview = settings;
+        preview.ampEnabled = false;
+        voices[index].start(preview, midiNote, 1.0f, layer);
         float layerLength = finiteClamp(layer.decayMs, 180.0f, 5.0f, 1500.0f);
         if (layer.sound == DrumSoundType::kick)
             layerLength = hitLengthMs(settings) * finiteClamp(layer.decayMs, 300.0f, 5.0f, 1500.0f) / 300.0f;
