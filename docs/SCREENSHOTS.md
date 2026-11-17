@@ -1,11 +1,11 @@
-# openKicker v3.3.0 native editor screenshots
+# openKicker v3.3.1 native editor screenshots
 
-The four images are rendered by the compiled native JUCE editor at 1100 × 940. They show Advanced view with graphite panels, mint/amber controls, per-parameter padlocks, section locks, and visible current MIDI assignments.
+The four images are rendered by the compiled native JUCE editor at 1200 × 1040. They show Advanced view with graphite panels, mint/amber controls, per-parameter padlocks, section locks, and visible current MIDI assignments. Navigation and Effects use full labels.
 
 - [Kick / Full ADSR](../assets/openKicker-kick.png): optional ADSR with 20-second release, a locked Dive time, and Harmonics assigned to CC35.
 - [Layers](../assets/openKicker-layers.png): independent layer response, tuning, key/velocity zones, and padlocks.
 - [Pattern](../assets/openKicker-pattern.png): shared ALL lane plus A–D lanes with ratchets, with separate clock/scene locks.
-- [FX](../assets/openKicker-fx.png): reverse, bitcrush/downsample, stutter, and chopper MIDI activations; defaults CC20–25, Volume CC7, Expression CC11, and Brightness CC74 are visible beside their controls.
+- [Effects](../assets/openKicker-fx.png): reverse, bitcrush/downsample, stutter, and chopper MIDI activations; defaults CC20–25, Volume CC7, Expression CC11, and Brightness CC74 are visible beside their controls.
 
 ```sh
 cmake --build build --target openedmkick_screenshots --config Release

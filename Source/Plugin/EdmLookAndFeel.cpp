@@ -6,7 +6,7 @@
 namespace openedmkick::ui {
 namespace {
 constexpr float kCorner = 7.0f;
-constexpr float kControlFont = 11.5f;
+constexpr float kControlFont = 14.0f;
 }
 
 EdmLookAndFeel::EdmLookAndFeel() {

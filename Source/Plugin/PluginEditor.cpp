@@ -12,8 +12,8 @@ namespace theme = openedmkick::theme;
 namespace params = openedmkick::params;
 namespace presets = openedmkick::presets;
 
-constexpr int kEditorWidth = 1100;
-constexpr int kEditorHeight = 940;
+constexpr int kEditorWidth = 1200;
+constexpr int kEditorHeight = 1040;
 
 void styleTab(juce::TextButton& button, const juce::String& id) {
     button.setComponentID(id);
@@ -116,7 +116,7 @@ void OpenEdmKickEditor::setAdvancedView(bool advanced) {
     synthPanel_.setAdvancedMode(advanced);
     autoPanel_.setAdvancedMode(advanced);
     effectsPanel_.setAdvancedMode(advanced);
-    viewToggleBtn_.setButtonText(advanced ? "SIMPLE VIEW" : "ADVANCED");
+    viewToggleBtn_.setButtonText(advanced ? "SIMPLE VIEW" : "ADVANCED VIEW");
     viewToggleBtn_.setColour(juce::TextButton::buttonOnColourId, advanced ? theme::kBrass : theme::kViolet);
     resized();
     repaint();
@@ -165,20 +165,20 @@ void OpenEdmKickEditor::paint(juce::Graphics& g) {
 void OpenEdmKickEditor::resized() {
     auto bounds = getLocalBounds().reduced(16, 10);
     auto header = bounds.removeFromTop(46);
-    viewToggleBtn_.setBounds(header.removeFromRight(112).withHeight(30).withY(header.getY() + 6));
+    viewToggleBtn_.setBounds(header.removeFromRight(140).withHeight(36).withY(header.getCentreY() - 18));
     header.removeFromRight(14);
-    nextPresetBtn_.setBounds(header.removeFromRight(34).withHeight(30).withY(header.getY() + 6));
+    nextPresetBtn_.setBounds(header.removeFromRight(112).withHeight(36).withY(header.getCentreY() - 18));
     header.removeFromRight(4);
-    presetBox_.setBounds(header.removeFromRight(245).withHeight(30).withY(header.getY() + 6));
+    presetBox_.setBounds(header.removeFromRight(235).withHeight(36).withY(header.getCentreY() - 18));
     header.removeFromRight(4);
-    prevPresetBtn_.setBounds(header.removeFromRight(34).withHeight(30).withY(header.getY() + 6));
+    prevPresetBtn_.setBounds(header.removeFromRight(132).withHeight(36).withY(header.getCentreY() - 18));
 
     bounds.removeFromTop(8);
-    auto tabs = bounds.removeFromTop(38);
-    kickTab_.setBounds(tabs.removeFromLeft(132).withHeight(32)); tabs.removeFromLeft(6);
-    layersTab_.setBounds(tabs.removeFromLeft(110).withHeight(32)); tabs.removeFromLeft(6);
-    patternTab_.setBounds(tabs.removeFromLeft(132).withHeight(32)); tabs.removeFromLeft(6);
-    effectsTab_.setBounds(tabs.removeFromLeft(92).withHeight(32));
+    auto tabs = bounds.removeFromTop(44);
+    kickTab_.setBounds(tabs.removeFromLeft(132).withHeight(40)); tabs.removeFromLeft(6);
+    layersTab_.setBounds(tabs.removeFromLeft(110).withHeight(40)); tabs.removeFromLeft(6);
+    patternTab_.setBounds(tabs.removeFromLeft(132).withHeight(40)); tabs.removeFromLeft(6);
+    effectsTab_.setBounds(tabs.removeFromLeft(108).withHeight(40));
     bounds.removeFromTop(10);
 
     synthPanel_.setBounds(bounds);
