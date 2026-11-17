@@ -1,4 +1,4 @@
-# openKicker v3.3.0
+# openKicker v3.3.1
 
 [Install with OpenVST Manager](https://github.com/alanmarcero/alan-m-OpenVSTManager/releases/latest)
 
@@ -69,7 +69,7 @@ Auto Mode follows host tempo, meter, and playhead, or runs from its own tempo an
 
 ## Effects
 
-The FX page includes host-synced reverse, high-pass and low-pass sweeps, drive, bitcrushing, beat stutter, gate, filter pump, output trim, peak meter, and a zero-latency limiter. Reverse mode and the HP/LP sync switches and rates are automatable. The MIDI reverse activation always ends at the next quarter-note beat; legacy automated reverse modes retain their subdivisions. Reverse uses bounded streaming synthesis with a backward pitch/envelope trajectory and a short end fade; it does not render a complete hit inside the audio callback. Its filtered/noise waveform can differ from the former cached reversal. Reverse and stutter follow host timing across tempo changes. Crush, Stutter, and Chopper MIDI activations use a nonzero Mix/Depth setting, or full activation when that amount is zero; switching the MIDI activation off returns to the original automated amount. CC20–CC25 activate the matching reverse, filter, crush, stutter, and gate modes during performance. Filter sync rates range from 1/4 to 1/64.
+The Effects page includes host-synced reverse, high-pass and low-pass sweeps, drive, bitcrushing, beat stutter, gate, filter pump, output trim, peak meter, and a zero-latency limiter. Reverse mode and the HP/LP sync switches and rates are automatable. The MIDI reverse activation always ends at the next quarter-note beat; legacy automated reverse modes retain their subdivisions. Reverse uses bounded streaming synthesis with a backward pitch/envelope trajectory and a short end fade; it does not render a complete hit inside the audio callback. Its filtered/noise waveform can differ from the former cached reversal. Reverse and stutter follow host timing across tempo changes. Crush, Stutter, and Chopper MIDI activations use a nonzero Mix/Depth setting, or full activation when that amount is zero; switching the MIDI activation off returns to the original automated amount. CC20–CC25 activate the matching reverse, filter, crush, stutter, and gate modes during performance. Filter sync rates range from 1/4 to 1/64.
 
 ## Sessions and compatibility
 
@@ -77,7 +77,7 @@ The plug-in identity remains openKicker. Version 3.2 adds optional note-tracked 
 
 ## Native editor
 
-The editor uses shared graphite surfaces with mint focus/primary controls and amber secondary controls. These captures come from the compiled JUCE editor:
+The editor uses shared graphite surfaces with mint focus/primary controls and amber secondary controls. All navigation and section buttons use full labels. These captures come from the compiled JUCE editor:
 
 ![Kick, Full ADSR, and preset locks](assets/openKicker-kick.png)
 ![Layer response, zones, and routing controls](assets/openKicker-layers.png)

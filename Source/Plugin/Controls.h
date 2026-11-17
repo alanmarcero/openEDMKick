@@ -8,7 +8,9 @@ namespace openedmkick::ui {
 
 using Apvts = juce::AudioProcessorValueTreeState;
 
-class ParameterControl final : public juce::Component, private juce::Timer {
+class ParameterControl final : public juce::Component,
+                               public juce::SettableTooltipClient,
+                               private juce::Timer {
 public:
     ParameterControl(Apvts&, juce::String id, juce::Component& owner, juce::Component& input);
     ~ParameterControl() override;

@@ -14,7 +14,10 @@ namespace params = openedmkick::params;
 namespace theme = openedmkick::theme;
 
 constexpr int kCardGap = 10;
-constexpr int kCardHeader = 32;
+constexpr int kCardHeader = 48;
+constexpr int kSectionLockWidth = 136;
+constexpr int kSectionLockHeight = 36;
+constexpr int kPlaybackCardHeight = 290;
 
 void setControlsVisible(std::initializer_list<juce::Component*> controls, bool visible) {
     for (auto* control : controls) control->setVisible(visible);
@@ -203,9 +206,10 @@ void KickSynthPanel::paint(juce::Graphics& g) {
 void KickSynthPanel::resized() {
     auto area = getLocalBounds().withTrimmedTop(22).withTrimmedBottom(18);
     const auto adsr = area.removeFromTop(132);
-    auto ampControls = adsr.withTrimmedTop(32).reduced(14, 5);
+    auto ampControls = adsr.withTrimmedTop(46).reduced(14, 5);
     layoutRow(ampControls, {&ampEnabled_, &ampAttack_, &ampDecay_, &ampSustain_, &ampRelease_}, 8);
-    sectionLocks_[4]->setBounds(adsr.getRight() - 114, adsr.getY() + 7, 102, 18);
+    sectionLocks_[4]->setBounds(adsr.getRight() - kSectionLockWidth - 12, adsr.getY() + 5,
+                                kSectionLockWidth, kSectionLockHeight);
     area.removeFromTop(8);
     const int waveHeight = 96;
     waveform_.setBounds(area.removeFromTop(waveHeight).reduced(1));
@@ -222,7 +226,8 @@ void KickSynthPanel::resized() {
 
     const std::array<juce::Rectangle<int>, 4> cards{dive, body, transient, tail};
     for (size_t i = 0; i < cards.size(); ++i)
-        sectionLocks_[i]->setBounds(cards[i].getRight() - 114, cards[i].getY() + 7, 102, 18);
+        sectionLocks_[i]->setBounds(cards[i].getRight() - kSectionLockWidth - 12, cards[i].getY() + 5,
+                                    kSectionLockWidth, kSectionLockHeight);
     placeRow(dive, 0, 2, { &sweepOctaves_, &sweepMs_, &snapOctaves_ });
     placeRow(dive, 1, 2, { &sweepShape_, &snapMs_ });
     placeRow(body, 0, 3, { &bodyTone_, &bodyDrive_, &knockDb_ });
@@ -293,14 +298,14 @@ void LayerPage::paint(juce::Graphics& g) {
     g.fillRoundedRectangle(panel, 9);
     g.setColour(theme::kEdge);
     g.drawRoundedRectangle(panel.reduced(0.5f), 9, 1);
-    drawSmallLabel(g, getLocalBounds().removeFromTop(20),
+    drawSmallLabel(g, getLocalBounds().withWidth(getWidth() - 160).removeFromTop(20),
         "Layer " + juce::String::charToString(static_cast<juce::juce_wchar>('A' + layer_))
         + " / key/velocity limits are inclusive / solo respects Layer on", theme::kTextDim);
 }
 
 void LayerPage::resized() {
-    sectionLock_->setBounds(getWidth() - 114, 0, 102, 18);
-    auto area = getLocalBounds().withTrimmedTop(26).reduced(10, 0);
+    sectionLock_->setBounds(getWidth() - kSectionLockWidth - 12, 0, kSectionLockWidth, kSectionLockHeight);
+    auto area = getLocalBounds().withTrimmedTop(42).reduced(10, 0);
     const int rowHeight = area.getHeight() / 4;
     layoutRow(area.removeFromTop(rowHeight), { &enabled_, &sound_, &level_, layerToggles_[0].get(), layerToggles_[1].get() }, 10);
     layoutRow(area.removeFromTop(rowHeight), { &pitch_, &decay_, &highPass_, &lowPass_, layerKnobs_[9].get() }, 10);
@@ -343,9 +348,9 @@ void LayerPanel::paint(juce::Graphics& g) {
 
 void LayerPanel::resized() {
     auto area = getLocalBounds().withTrimmedTop(24);
-    auto tabs = area.removeFromTop(36);
+    auto tabs = area.removeFromTop(44);
     std::ranges::for_each(tabs_, [&](juce::TextButton& tab) {
-        tab.setBounds(tabs.removeFromLeft(118).withHeight(32));
+        tab.setBounds(tabs.removeFromLeft(118).withHeight(40));
         tabs.removeFromLeft(8);
     });
     area.removeFromTop(8);
@@ -515,19 +520,21 @@ void AutoPianoRollPanel::paint(juce::Graphics& g) {
     auto area = getLocalBounds();
     drawSmallLabel(g, area.removeFromTop(21), "Sequence shared hits and individual layers", theme::kTextDim);
     const int top = 35;
-    drawCard(g, { 0, top, getWidth(), 250 }, "Clock and playback", theme::kViolet);
-    drawSmallLabel(g, {12, top + 124, 300, 18}, "Scene controls", theme::kBrass);
-    drawCard(g, { 0, top + 261, getWidth(), getHeight() - top - 261 }, "Step editor", theme::kBrass);
+    drawCard(g, { 0, top, getWidth(), kPlaybackCardHeight }, "Clock and playback", theme::kViolet);
+    drawSmallLabel(g, {12, top + 143, 300, 18}, "Scene controls", theme::kBrass);
+    drawCard(g, { 0, top + kPlaybackCardHeight + 11, getWidth(), getHeight() - top - kPlaybackCardHeight - 11 }, "Step editor", theme::kBrass);
 }
 
 void AutoPianoRollPanel::resized() {
     auto area = getLocalBounds().withTrimmedTop(39);
-    auto card = area.removeFromTop(250);
-    clockLock_->setBounds(card.getRight() - 114, card.getY() + 3, 102, 18);
-    sceneLock_->setBounds(card.getRight() - 114, card.getY() + 124, 102, 18);
-    auto first = card.reduced(12, 32).removeFromTop(94);
+    auto card = area.removeFromTop(kPlaybackCardHeight);
+    clockLock_->setBounds(card.getRight() - kSectionLockWidth - 12, card.getY() + 4,
+                          kSectionLockWidth, kSectionLockHeight);
+    sceneLock_->setBounds(card.getRight() - kSectionLockWidth - 12, card.getY() + 143,
+                          kSectionLockWidth, kSectionLockHeight);
+    auto first = card.reduced(12, 48).removeFromTop(88);
     layoutRow(first, {&scene_, &enabled_, &bypass_, &clockSync_, &timeSig_, &tempo_}, 8);
-    auto second = card.withTrimmedTop(134).reduced(12, 10);
+    auto second = card.withTrimmedTop(180).reduced(12, 10);
     layoutRow(second, {&bars_, &grid_, &fillPreset_, &tailShorten_, &crushSweep_}, 8);
 
     area.removeFromTop(11);
@@ -597,8 +604,10 @@ EffectsPanel::EffectsPanel(OpenEdmKickProcessor& processor)
         addAndMakeVisible(*sectionLocks_.back());
     }
     reverseMode_.setTooltip("Reverse on defaults to CC20 and ends at the next quarter-note boundary. Right-click to reassign.");
-    highPassSync_.setTooltip("Automated HP sync. The separate HP MIDI activation defaults to CC21.");
-    lowPassSync_.setTooltip("Automated LP sync. The separate LP MIDI activation defaults to CC22.");
+    highPassMidi_.setTooltip("High-pass MIDI activation. CC21 enables the high-pass filter for incoming hits.");
+    highPassSync_.setTooltip("High-pass sync starts an automated host-tempo sweep. The separate MIDI activation defaults to CC21.");
+    lowPassMidi_.setTooltip("Low-pass MIDI activation. CC22 enables the low-pass filter for incoming hits.");
+    lowPassSync_.setTooltip("Low-pass sync starts an automated host-tempo sweep. The separate MIDI activation defaults to CC22.");
     setAdvancedMode(false);
 }
 
@@ -636,7 +645,9 @@ void EffectsPanel::resized() {
     const auto tone = juce::Rectangle<int>(area.getX() + cardWidth + gap, area.getY() + cardHeight + gap, cardWidth, cardHeight);
 
     const std::array<juce::Rectangle<int>, 4> cards{reverse, texture, rhythm, tone};
-    for (size_t i = 0; i < cards.size(); ++i) sectionLocks_[i]->setBounds(cards[i].getRight() - 114, cards[i].getY() + 7, 102, 18);
+    for (size_t i = 0; i < cards.size(); ++i)
+        sectionLocks_[i]->setBounds(cards[i].getRight() - kSectionLockWidth - 12, cards[i].getY() + 5,
+                                    kSectionLockWidth, kSectionLockHeight);
     placeRow(reverse, 0, 2, { &reverseEnabled_, &reverseMode_, &reverseMix_ });
     placeRow(reverse, 1, 2, { &drive_, &masterBypass_, &meter_ });
     const auto meterArea = meter_.getBounds();

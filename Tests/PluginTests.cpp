@@ -49,6 +49,24 @@ void setParam(OpenEdmKickProcessor& processor, const juce::String& id, float val
     REQUIRE(parameter != nullptr);
     parameter->setValueNotifyingHost(parameter->convertTo0to1(value));
 }
+
+void checkInteractiveTargets(juce::Component& component) {
+    for (auto* child : component.getChildren()) {
+        if (!child->isVisible()) continue;
+        if (auto* button = dynamic_cast<juce::TextButton*>(child)) {
+            INFO(button->getButtonText());
+            CHECK(button->getHeight() >= 36);
+            CHECK(button->getLookAndFeel().getTextButtonFont(*button, button->getHeight()).getHeight() >= 14.0f);
+            CHECK(button->getButtonText() != "<");
+            CHECK(button->getButtonText() != ">");
+        }
+        if (dynamic_cast<openedmkick::ui::ParameterControl*>(child) != nullptr) {
+            CHECK(child->getWidth() >= 40);
+            CHECK(child->getHeight() >= 40);
+        }
+        checkInteractiveTargets(*child);
+    }
+}
 } // namespace
 
 using Catch::Matchers::WithinAbs;
@@ -85,6 +103,7 @@ TEST_CASE("A/B/C/D Auto Mode slots store independent bar counts, fills, and tail
         REQUIRE_THAT(restored.currentAutoSlotSettings().tailShorten,
                      WithinAbs(0.2f * static_cast<float>(slot + 1), 0.001f));
     }
+
 }
 
 TEST_CASE("Host stop silences Auto Mode and host play resumes it", "[plugin]") {
@@ -128,8 +147,8 @@ TEST_CASE("Editor shows the new sound pages and current MIDI note", "[plugin][ui
 
     std::unique_ptr<juce::AudioProcessorEditor> editor(processor.createEditor());
     REQUIRE(editor != nullptr);
-    REQUIRE(editor->getWidth() == 1100);
-    REQUIRE(editor->getHeight() == 940);
+    REQUIRE(editor->getWidth() == 1200);
+    REQUIRE(editor->getHeight() == 1040);
     auto* kickEditor = dynamic_cast<OpenEdmKickEditor*>(editor.get());
     REQUIRE(kickEditor != nullptr);
     REQUIRE(processor.currentMidiNote() == 69);
@@ -672,6 +691,8 @@ TEST_CASE("Capture the compiled native editor workspaces", "[capture]") {
     std::unique_ptr<juce::AudioProcessorEditor> editor(processor.createEditor());
     auto* native = dynamic_cast<OpenEdmKickEditor*>(editor.get());
     REQUIRE(native != nullptr);
+    CHECK(native->getWidth() == 1200);
+    CHECK(native->getHeight() == 1040);
     native->setAdvancedView(true);
     const juce::File destination(directory);
     REQUIRE(destination.createDirectory().wasOk());
@@ -680,9 +701,10 @@ TEST_CASE("Capture the compiled native editor workspaces", "[capture]") {
         auto* tab = dynamic_cast<juce::TextButton*>(native->findChildWithID("page_" + page));
         REQUIRE(tab != nullptr);
         tab->onClick();
+        checkInteractiveTargets(*native);
         const auto image = native->createComponentSnapshot(native->getLocalBounds());
-        REQUIRE(image.getWidth() == 1100);
-        REQUIRE(image.getHeight() == 940);
+        REQUIRE(image.getWidth() == 1200);
+        REQUIRE(image.getHeight() == 1040);
         auto output = destination.getChildFile("openKicker-" + page + ".png").createOutputStream();
         REQUIRE(output != nullptr);
         REQUIRE(output->setPosition(0));

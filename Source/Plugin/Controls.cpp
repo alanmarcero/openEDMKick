@@ -9,12 +9,14 @@ namespace openedmkick::ui {
 namespace {
 constexpr int kLabelHeight = 14;
 constexpr int kKnobValueHeight = 15;
+constexpr int kRoutingHeight = 40;
 constexpr float kLabelFont = 9.5f;
 }
 
 ParameterControl::ParameterControl(Apvts& state, juce::String id, juce::Component& owner, juce::Component& input)
     : state_(state), id_(std::move(id)), owner_(owner), input_(input) {
     setComponentID("routing_" + id_);
+    setTooltip("Click the lock to keep this value when loading a preset. Right-click to assign a MIDI CC.");
     owner_.addMouseListener(this, false);
     for (auto* child : owner_.getChildren()) if (child != this) child->addMouseListener(this, true);
     startTimerHz(25);
@@ -27,24 +29,24 @@ void ParameterControl::bind(juce::String id) { id_ = std::move(id); setComponent
 void ParameterControl::paint(juce::Graphics& g) {
     auto& routing = static_cast<OpenEdmKickProcessor&>(state_.processor).routing();
     g.setColour(routing.isLocked(id_) ? theme::kBrass : theme::kTextDim);
-    g.drawRoundedRectangle(3, 5, 9, 7, 1, 1);
-    if (routing.isLocked(id_)) g.drawRoundedRectangle(5, 1, 5, 7, 2, 1);
+    g.drawRoundedRectangle(12, 20, 16, 13, 2, 1.5f);
+    if (routing.isLocked(id_)) g.drawRoundedRectangle(15, 8, 10, 18, 5, 1.5f);
     if (!routing.isLocked(id_)) {
         juce::Path shackle;
-        shackle.startNewSubPath(6, 5);
-        shackle.lineTo(6, 3);
-        shackle.quadraticTo(6, 0, 9, 1);
-        shackle.lineTo(12, 3);
-        g.strokePath(shackle, juce::PathStrokeType(1));
+        shackle.startNewSubPath(15, 22);
+        shackle.lineTo(15, 16);
+        shackle.quadraticTo(15, 8, 21, 8);
+        shackle.lineTo(25, 12);
+        g.strokePath(shackle, juce::PathStrokeType(1.5f));
     }
-    g.setFont(juce::FontOptions(9.0f));
+    g.setFont(juce::FontOptions(12.0f));
     const int cc = routing.assignment(id_);
     g.setColour(cc >= 0 ? theme::kViolet : theme::kTextDim);
-    g.drawText(cc >= 0 ? "CC " + juce::String(cc) : "CC -", getLocalBounds().withTrimmedLeft(18), juce::Justification::centredLeft);
+    g.drawText(cc >= 0 ? "CC " + juce::String(cc) : "CC -", getLocalBounds().withTrimmedLeft(44), juce::Justification::centredLeft);
 }
 void ParameterControl::mouseDown(const juce::MouseEvent& event) {
     auto& routing = static_cast<OpenEdmKickProcessor&>(state_.processor).routing();
-    if (!event.mods.isPopupMenu() && !(event.eventComponent == this && event.position.x >= 18)) {
+    if (!event.mods.isPopupMenu() && !(event.eventComponent == this && event.position.x >= 40)) {
         if (event.eventComponent == this) routing.setLocked(id_, !routing.isLocked(id_));
         repaint();
         return;
@@ -137,7 +139,7 @@ void Knob::setTooltip(const juce::String& text) { slider_.setTooltip(text); titl
 
 void Knob::resized() {
     auto area = getLocalBounds();
-    routing_->setBounds(area.removeFromBottom(15));
+    routing_->setBounds(area.removeFromBottom(kRoutingHeight));
     title_.setBounds(area.removeFromTop(kLabelHeight));
     const int boxHeight = std::min(kKnobValueHeight, std::max(0, area.getHeight() / 4));
     slider_.setTextBoxStyle(juce::Slider::TextBoxBelow, false, std::max(20, area.getWidth()), boxHeight);
@@ -179,9 +181,9 @@ void Choice::bind(Apvts& state, const juce::String& parameterId) {
 void Choice::setTooltip(const juce::String& text) { box_.setTooltip(text); }
 void Choice::resized() {
     auto area = getLocalBounds();
-    routing_->setBounds(area.removeFromBottom(15));
+    routing_->setBounds(area.removeFromBottom(kRoutingHeight));
     if (title_.getText().isNotEmpty()) title_.setBounds(area.removeFromTop(kLabelHeight));
-    box_.setBounds(area.withHeight(std::min(28, area.getHeight())).withY(area.getY() + (area.getHeight() - std::min(28, area.getHeight())) / 2));
+    box_.setBounds(area.withHeight(std::min(36, area.getHeight())).withY(area.getY() + (area.getHeight() - std::min(36, area.getHeight())) / 2));
 }
 
 Toggle::Toggle(Apvts& state, const juce::String& parameterId, const juce::String& text, juce::Colour accent)
@@ -201,7 +203,7 @@ Toggle::Toggle(Apvts& state, const juce::String& parameterId, const juce::String
     };
     attachment_->sendInitialUpdate();
 }
-void Toggle::resized() { auto area = getLocalBounds(); routing_->setBounds(area.removeFromBottom(15)); button_.setBounds(area.withHeight(std::min(30, area.getHeight())).withY(area.getCentreY() - std::min(30, area.getHeight()) / 2)); }
+void Toggle::resized() { auto area = getLocalBounds(); routing_->setBounds(area.removeFromBottom(kRoutingHeight)); button_.setBounds(area.withHeight(std::min(36, area.getHeight())).withY(area.getCentreY() - std::min(36, area.getHeight()) / 2)); }
 void Toggle::setTooltip(const juce::String& text) { button_.setTooltip(text); }
 
 void layoutRow(juce::Rectangle<int> area, std::initializer_list<juce::Component*> components, int gap) {
@@ -222,10 +224,10 @@ void drawCard(juce::Graphics& g, juce::Rectangle<int> area, const juce::String& 
     g.setColour(theme::kEdge);
     g.drawRoundedRectangle(r.reduced(0.5f), 10.0f, 1.0f);
     g.setColour(accent);
-    g.fillRoundedRectangle(r.getX() + 12.0f, r.getY() + 9.0f, 3.0f, 13.0f, 1.5f);
+    g.fillRoundedRectangle(r.getX() + 12.0f, r.getY() + 8.0f, 3.0f, 30.0f, 1.5f);
     g.setColour(accent);
-    g.setFont(juce::FontOptions(10.0f, juce::Font::bold));
-    g.drawText(title, area.getX() + 22, area.getY() + 7, area.getWidth() - 32, 18,
+    g.setFont(juce::FontOptions(14.0f, juce::Font::bold));
+    g.drawText(title, area.getX() + 22, area.getY() + 7, area.getWidth() - 190, 34,
                juce::Justification::centredLeft);
 }
 

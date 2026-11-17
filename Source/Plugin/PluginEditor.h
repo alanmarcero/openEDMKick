@@ -27,13 +27,13 @@ private:
     OpenEdmKickProcessor& processor_;
     openedmkick::ui::EdmLookAndFeel lookAndFeel_;
     juce::ComboBox presetBox_;
-    juce::TextButton prevPresetBtn_{"<"};
-    juce::TextButton nextPresetBtn_{">"};
-    juce::TextButton viewToggleBtn_{"ADVANCED"};
+    juce::TextButton prevPresetBtn_{"PREVIOUS PRESET"};
+    juce::TextButton nextPresetBtn_{"NEXT PRESET"};
+    juce::TextButton viewToggleBtn_{"ADVANCED VIEW"};
     juce::TextButton kickTab_{"KICK"};
     juce::TextButton layersTab_{"LAYERS"};
     juce::TextButton patternTab_{"PATTERN"};
-    juce::TextButton effectsTab_{"FX"};
+    juce::TextButton effectsTab_{"EFFECTS"};
     openedmkick::ui::KickSynthPanel synthPanel_;
     openedmkick::ui::LayerPanel layerPanel_;
     openedmkick::ui::AutoPianoRollPanel autoPanel_;
