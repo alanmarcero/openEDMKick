@@ -2,104 +2,44 @@
 
 [Install with OpenVST Manager](https://github.com/alanmarcero/alan-m-OpenVSTManager/releases/latest)
 
-openKicker is a MIDI-tuned kick and layered drum synthesizer. Four independently shaped layers, note-gated ADSR, and MIDI-controlled glitch effects share the tuned kick voice, pattern sequencer, and existing preset bank. Factory programs keep their one-shot behavior unless Full ADSR is locked on.
+openKicker makes pitched trance kicks and layered drum hits. Play it from a MIDI keyboard or sequence. MIDI notes set the kick pitch and octave. Add up to four kick, snare, clap, or hat layers to create a complete hit.
 
-## Sound design
+## Shape the kick
 
-- **Dive:** Shape the pitch sweep and opening snap above the played note. The sweep always lands on that exact MIDI note.
-- **Body:** Add upper harmonics, resonant knock, saturation, grit, tone shaping, and a clean sub layer for a punchy, bright trance impact.
-- **Transient:** Choose a beater, noise, tick, or analog click, then set its tone and level.
-- **Tail:** Shape the one-shot attack, hold, decay, curve, low cut, and clipping.
-- **Waveform and note readout:** See the current MIDI note and its equal-tempered frequency alongside the live sound preview.
-- **48 factory kicks:** The bank is tuned for clean, bright, bass-forward trance. Factory settings use warm low drive, short transient accents, restrained clipping, and clear sub weight; the full drive, saturation, grit, and clipping ranges remain available for custom sounds.
-- **Simple and advanced views:** Start with the controls that matter most, then open the full set for detailed sound design.
+Use **Dive** to set the pitch drop and opening snap. Shape the **Body** with harmonics, knock, saturation, grit, tone, and sub weight. Choose a **Transient** such as a beater, noise, tick, or analog click. **Tail** controls set the one-shot envelope, low cut, and clipping. A live waveform and note display show the sound, MIDI note, and frequency. Simple View keeps the main controls in reach; Advanced View adds detailed controls.
 
-## Full ADSR
+The 48 factory kicks suit clean, bright, bass-forward trance. The default sound is a one-shot. Enable **Full ADSR** to hold the kick while a MIDI note is held and release it with the matching note and channel. Full ADSR also gates generated snare, clap, and hat tails. Audition and the pattern sequencer continue to play one-shots.
 
-Enable **Full ADSR** on the Kick page for MIDI-gated sound. Attack and decay span 0–10,000 ms, sustain spans 0–100%, and release spans 0–20,000 ms. A matching note-off starts release from the current envelope level at its exact MIDI sample offset. Note and channel must both match. Eight sustained MIDI notes can overlap; retriggering the same note/channel restarts that voice, and the oldest note is stolen when all eight are busy. Auto Mode and audition keep a dedicated one-shot lane.
+## Add drum layers
 
-Full ADSR gates the kick body and generated snare, clap, and hat tails before shared effects. It is off by default; factory recall switches it off unless the enable control is locked. The original Tail controls remain the one-shot envelope. The waveform preview shows a finite one-shot reference. Host tail reporting follows remaining voice release, beat-repeat time, and a bounded shared-filter/sample-hold allowance, and returns to zero when those tails finish.
+The **Layers** pages A–D each add a Kick, Snare, Clap, or Hat voice. Set level, pitch, decay, and filters for each layer. Key and velocity ranges choose which notes activate it. Set the velocity response and timbre, then adjust tone, drive, and pitch-sweep offsets. Solo, pan, or invert layers to shape the mix.
 
-Tonal oscillators, pitch sweeps, knock, transient oscillators, and tuned-noise/filter paths now follow the incoming MIDI note plus each layer's transpose. Frequency controls use C2 as their reference, retaining the original C2 one-shot character. Broadband noise remains broadband; its tuned filtering follows the note. Frequencies stay below the sample rate's safe Nyquist limit.
+## Play and automate
 
-## Drum layers
+Velocity changes the hit level and tone. Notes follow their MIDI pitch; the layer pitch control can transpose each voice. Use the MIDI page to assign or clear CC controls for parameters. The default CCs control output volume (7), expression (11), reverse (20), high-pass sync (21), low-pass sync (22), crush (23), stutter (24), chopper (25), and brightness (74). CC 120 stops the sound and effect tails. CC 121 resets controller overrides. In Full ADSR, use matching note-offs to release held notes.
 
-The **Layers** workspace has four pages, A through D. Each layer can be enabled or muted and set to Kick, Snare, Clap, or Hat. Set the level, pitch, decay, high-pass, and low-pass on each page. The filters run on their own layer before the voices are mixed into one hit. Layer A starts as an enabled kick; B, C, and D start muted with Snare, Clap, and Hat selected.
+Protect a section with its lock while browsing presets. Locked controls stay editable, and the lock state saves with the project.
 
-Each layer has inclusive MIDI key and velocity limits. Reversed limits reject all notes. Velocity curve sets the amplitude exponent (0.1–4, with the original 1.45 response as default); Velocity timbre blends between fixed full-hit tone and velocity-sensitive drive/transients. These settings act independently on each layer.
+## Make patterns
 
-The pitch control transposes its layer. Tone scale shifts its body/transient filter frequencies. Drive offset adds to the main kick drive, and shapes snare, clap, and hat voices independently. Sweep scale adjusts a kick layer's pitch dive and snap. Neutral offsets retain the main synthesis settings; layer decay still scales the main kick decay.
+The pattern sequencer has four scenes, A–D. Each scene has its own pattern, length, fill, grid, tail trim, and bitcrush ramp. Use the ALL lane to trigger every enabled layer or edit separate lanes for each layer. Add up to eight ratchets to a step. Auto Mode follows the host tempo, meter, and playhead, or runs at a tempo and meter you set. It can play the 28 built-in trance fills.
 
-Solo auditions enabled layers; multiple solos can play together. Pan places each layer before the stereo FX, and Invert reverses its polarity. Center pan preserves the original dual-mono level. Mono output averages the stereo layer mix.
+## Add effects
 
-## MIDI
+Use the Effects page for reverse, high-pass and low-pass sweeps, drive, bitcrushing, stutter, gate, filter pump, and output trim. The peak meter and limiter help control output. Reverse, stutter, and filter sweeps can follow host timing. MIDI CCs can activate the glitch effects while you play.
 
-The kick voice follows the incoming note's equal-tempered pitch, including its octave. For example, MIDI A4 (note 69) plays at 440 Hz; A3 (note 57) plays at 220 Hz. The layer pitch control transposes that note for an individual layer. Note-off does not stop a one-shot; Full ADSR uses matched note/channel note-offs. An audition click plays C2.
+## Screenshots
 
-Velocity shapes the hit level and kick drive, so soft hits have less weight and hard hits gain extra bite. MIDI input is omni-channel. The callback accepts up to 65,535 supported MIDI events plus one audition per block; excess events are ignored to keep storage bounded. The default performance bindings are shown below and beside their controls. Values 64–127 activate a MIDI switch; values 0–63 deactivate it. MIDI activations are separate from the existing automated effect amounts and HP/LP sync switches. Their host parameters are automatable and saved; incoming CC values use a separate display/DSP mirror and leave host automation values intact. Every binding can be reassigned or cleared:
+![Kick controls, Full ADSR, and preset locks](assets/openKicker-kick.png)
 
-| CC | Name | Effect |
-| --- | --- | --- |
-| 7 | Volume | Output trim multiplied by the Output control |
-| 11 | Expression | Additional output trim |
-| 20 | Sync Reverse | Starts a reversed hit on the next note-on, ending at the next quarter-note boundary. A note exactly on a beat gets one full beat. |
-| 21 | Sync High Pass | Enables the host-synced high-pass sweep. |
-| 22 | Sync Low Pass | Enables the host-synced low-pass sweep. |
-| 23 | Crush MIDI | Activates bitcrush and sample-rate reduction. |
-| 24 | Stutter MIDI | Arms host-synced repeats from note-on until the next quarter-note boundary. |
-| 25 | Chopper MIDI | Activates the host-synced gate. |
-| 74 | Brightness | Sets the effective low-pass ceiling |
-| 120 | All Sound Off | Stops the current hit |
-| 121 | Reset Controllers | Clears CC overrides back to host values and resets performance controllers |
-| 123 | All Notes Off | Ignored; use matched note-offs in Full ADSR, or CC120 for immediate silence |
-
-## Preset locks and MIDI assignment
-
-Click a parameter's padlock to protect it while browsing factory programs. **Lock section** protects exactly that card's controls; clicking again unlocks a fully locked section. Locks preserve the latest edit, rather than an older frozen value. Direct edits, host automation, and MIDI control remain available.
-
-Right-click a control or its CC badge to open **MIDI CC**. Choose Unassigned, any CC from 0 through 127, or Restore factory assignment. Multiple parameters may share a controller; continuous, stepped, choice, and toggle parameters use their own ranges and quantization. New sound/envelope assignments start unassigned. Locks and bindings save by parameter ID with the session; full project restore restores project values even when the current instance has locks. MIDI overrides are transient and never write host automation from the audio callback.
-
-Incoming controllers apply at their sample offsets and retain input order against notes. Frequency/envelope/velocity settings latch on note-on, while FX, output trim, layer mute/solo/pan/polarity, and clock settings use the live routed values. Temporary fill/length CC overrides do not replace saved custom patterns. Editing a displayed temporary pattern commits that fill/length as a direct edit before changing its notes. MIDI command CC120/121/123 retain their existing command behavior even when also assigned to a parameter.
-
-## Pattern sequencer
-
-Four independent pattern scenes, A/B/C/D, have separate length, fill, grid, tail trim, and bitcrush ramp. Each piano roll contains an **ALL** lane plus separate **A–D layer lanes**. Factory patterns and older sessions use ALL, triggering every enabled layer at the step velocity. Click a layer lane to add or remove a hit for that layer only; Shift-click an existing hit to cycle its ratchets from 1 to 8. Ratchets divide the hit's grid length evenly, including triplets. Explicit layer hits take priority over simultaneous ALL hits for the same layer. Lane edits and ratchets are saved with the session. Changing a scene's fill or length reloads its factory pattern. Internally generated hits use C2; incoming MIDI notes still trigger at their exact pitch. The 28 trance fills and every preset have been authored for the current kick engine.
-
-Auto Mode follows host tempo, meter, and playhead, or runs from its own tempo and time signature. Tail trim shortens fast rolls in Auto Mode. It does not change incoming MIDI hits.
-
-## Effects
-
-The Effects page includes host-synced reverse, high-pass and low-pass sweeps, drive, bitcrushing, beat stutter, gate, filter pump, output trim, peak meter, and a zero-latency limiter. Reverse mode and the HP/LP sync switches and rates are automatable. The MIDI reverse activation always ends at the next quarter-note beat; legacy automated reverse modes retain their subdivisions. Reverse uses bounded streaming synthesis with a backward pitch/envelope trajectory and a short end fade; it does not render a complete hit inside the audio callback. Its filtered/noise waveform can differ from the former cached reversal. Reverse and stutter follow host timing across tempo changes. Crush, Stutter, and Chopper MIDI activations use a nonzero Mix/Depth setting, or full activation when that amount is zero; switching the MIDI activation off returns to the original automated amount. CC20–CC25 activate the matching reverse, filter, crush, stutter, and gate modes during performance. Filter sync rates range from 1/4 to 1/64.
-
-## Sessions and compatibility
-
-The plug-in identity remains openKicker. Version 3.2 adds optional note-tracked Full ADSR with eight sustained MIDI notes, per-parameter MIDI CC assignments and locks, and MIDI activation for the host-synced glitch modes. Version 3.1 introduced the saved layer and sync-effect parameters. Older sessions load matching controls and use the new default layer setup for parameters they do not contain.
-
-## Native editor
-
-The editor uses shared graphite surfaces with mint focus/primary controls and amber secondary controls. All navigation and section buttons use full labels. These captures come from the compiled JUCE editor:
-
-![Kick, Full ADSR, and preset locks](assets/openKicker-kick.png)
 ![Layer response, zones, and routing controls](assets/openKicker-layers.png)
+
 ![Shared and per-layer pattern lanes](assets/openKicker-pattern.png)
-![Glitch MIDI activations and visible CC bindings](assets/openKicker-fx.png)
 
-Reproduce them with `cmake --build build --target openedmkick_screenshots --config Release`. See [capture notes](docs/SCREENSHOTS.md).
+![Glitch MIDI controls and CC bindings](assets/openKicker-fx.png)
 
-## Build
+## Formats and license
 
-The project uses C++20 and JUCE 8.0.9. It builds VST3, AU, LV2, and Standalone formats on macOS; VST3, LV2, and Standalone on Windows and Linux.
+VST3, AU, LV2, and Standalone formats are available on macOS. Windows and Linux versions include VST3, LV2, and Standalone. Older openKicker sessions retain their supported settings; new controls use their default values when an older session does not contain them.
 
-```sh
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build --target OpenEDMKick_Standalone --config Release --parallel
-cmake --build build --config Release --parallel
-ctest --test-dir build -C Release --output-on-failure
-```
-
-## Source layout
-
-- `Source/Core`: Synth, Auto Mode sequencer, effects, and audio engine.
-- `Source/Plugin`: Parameters, presets, JUCE processor, custom controls, and editor pages.
-- `Tests`: Existing Catch2 checks used by the GitHub Actions build.
-- `docs`: Audio behavior, compatibility, and design notes.
+MIT License. See [LICENSE](LICENSE).
