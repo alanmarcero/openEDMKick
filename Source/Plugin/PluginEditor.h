@@ -5,8 +5,7 @@
 #include "PluginProcessor.h"
 
 class OpenEdmKickEditor final : public juce::AudioProcessorEditor,
-                                private juce::Timer,
-                                private juce::AudioProcessorListener {
+                                private juce::Timer {
 public:
     explicit OpenEdmKickEditor(OpenEdmKickProcessor& processorToEdit);
     ~OpenEdmKickEditor() override;
@@ -19,21 +18,21 @@ public:
 private:
     enum class Page { kick, layers, pattern, effects };
     void timerCallback() override;
-    void audioProcessorChanged(juce::AudioProcessor* processor, const ChangeDetails& details) override;
-    void audioProcessorParameterChanged(juce::AudioProcessor* processor, int parameterIndex, float newValue) override;
     void syncPresetBox();
     void setPage(Page page);
 
     OpenEdmKickProcessor& processor_;
     openedmkick::ui::EdmLookAndFeel lookAndFeel_;
+    juce::Viewport workspace_;
     juce::ComboBox presetBox_;
-    juce::TextButton prevPresetBtn_{"PREVIOUS PRESET"};
-    juce::TextButton nextPresetBtn_{"NEXT PRESET"};
-    juce::TextButton viewToggleBtn_{"ADVANCED VIEW"};
-    juce::TextButton kickTab_{"KICK"};
-    juce::TextButton layersTab_{"LAYERS"};
-    juce::TextButton patternTab_{"PATTERN"};
-    juce::TextButton effectsTab_{"EFFECTS"};
+    juce::TextButton auditionBtn_{"Audition C2"};
+    juce::TextButton prevPresetBtn_{"Previous"};
+    juce::TextButton nextPresetBtn_{"Next"};
+    juce::TextButton viewToggleBtn_{"Advanced controls"};
+    juce::TextButton kickTab_{"Kick"};
+    juce::TextButton layersTab_{"Layers"};
+    juce::TextButton patternTab_{"Pattern"};
+    juce::TextButton effectsTab_{"Effects"};
     openedmkick::ui::KickSynthPanel synthPanel_;
     openedmkick::ui::LayerPanel layerPanel_;
     openedmkick::ui::AutoPianoRollPanel autoPanel_;

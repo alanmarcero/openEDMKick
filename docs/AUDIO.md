@@ -1,4 +1,4 @@
-# V3.3 audio engine
+# openKicker audio engine
 
 openKicker v3.1 combines four independently shaped drum voices into one MIDI instrument. The engine remains a self-contained C++20 library without a JUCE dependency.
 
@@ -14,7 +14,7 @@ Velocity maps to a configurable amplitude exponent (default 1.45) and an indepen
 
 ## Factory kick balance
 
-The 48 factory programs target punchy, clean trance kicks with a fast pitch dive, a defined transient accent, and a phase-locked sub foundation. They use the warm saturation curve with low body drive, moderate knock, reduced tail grit, short tails, and restrained clipping. The more aggressive saturation, drive, and clip settings remain exposed for custom patches rather than being the default sound of the bank.
+The 48 factory kicks span Uplifting, Rolling, Progressive, Psy, Tech, and Classic trance. Each family has a different transient and body voicing. Each patch sets its own pitch dive, transient frequency, hold, decay, and sub level. Dives settle in 18–42 ms. The factory envelope uses a 0.24 ms attack, 10–23 ms hold, and 105–168 ms decay. Layer A at its default length finishes within 192 ms. Full ADSR remains opt-in.
 
 ## Pattern clock
 
@@ -46,7 +46,7 @@ Solo, linear pan, and polarity operate per layer before the stereo mix. Center p
 
 ## Session state
 
-The processor keeps the openKicker plug-in identity and v3 factory bank. Layer settings and host-sync parameters are saved with the session and are available for automation. New layer parameters append to the existing parameter list with AU version hint 3. All four scenes' custom lane notes and ratchets are stored in a separate LayerPatterns state child. Editor edits publish precompiled schedules through an atomic triple buffer; the callback swaps pattern storage without taking the editor mutex. Supported MIDI input is bounded to 65,535 events plus an audition per callback; excess input is ignored. Older sessions retain matching parameter values and use defaults for the added layer and sync controls.
+The processor keeps the openKicker plug-in identity and saves a factory catalog version alongside the complete parameter state. A session from an older bank restores its parameter values as a custom sound. Layer settings and host-sync parameters are saved with the session and are available for automation. New layer parameters append to the existing parameter list with AU version hint 3. All four scenes' custom lane notes and ratchets are stored in a separate LayerPatterns state child. Editor edits publish precompiled schedules through an atomic triple buffer; the callback swaps pattern storage without taking the editor mutex. Supported MIDI input is bounded to 65,535 events plus an audition per callback; excess input is ignored. Older sessions retain matching parameter values and use defaults for the added layer and sync controls.
 
 
 ## Full ADSR and note tracking

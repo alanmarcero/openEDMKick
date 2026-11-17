@@ -139,13 +139,12 @@ core::AutoSlotSettings OpenEdmKickProcessor::currentAutoSlotSettings() const noe
 }
 
 std::vector<float> OpenEdmKickProcessor::previewKickWaveform() const {
-    constexpr double previewRate = 24000.0;
-    auto wave = core::renderLayeredKick(currentSynthSettings(), currentLayerSettings(), previewRate, currentMidiNote());
+    auto wave = core::renderLayeredKick(currentSynthSettings(), currentLayerSettings(), previewSampleRate, currentMidiNote());
     core::ToneFilter filter;
     const float highPass = values_.highPass->load();
     const float lowPass = values_.lowPass->load();
     std::ranges::for_each(wave, [&](float& sample) {
-        sample = filter.process(sample, highPass, lowPass, previewRate);
+        sample = filter.process(sample, highPass, lowPass, previewSampleRate);
     });
     return wave;
 }
@@ -419,7 +418,7 @@ void OpenEdmKickProcessor::getStateInformation(juce::MemoryBlock& destData) {
     auto state = parameters.copyState();
     routing_.writeState(state);
     state.setProperty("program", currentProgram_, nullptr);
-    state.setProperty("presetCatalogVersion", 3, nullptr);
+    state.setProperty("presetCatalogVersion", openedmkick::presets::kCatalogVersion, nullptr);
     state.setProperty("programCustom", restoredCustomState_.load(), nullptr);
     syncEditorSequencer();
     juce::ValueTree patterns("LayerPatterns");
@@ -457,13 +456,13 @@ void OpenEdmKickProcessor::setStateInformation(const void* data, int sizeInBytes
             state.appendChild(value, nullptr);
         }
     });
-    const bool hasV3Catalog = static_cast<int>(state.getProperty("presetCatalogVersion", 0)) == 3;
-    currentProgram_ = hasV3Catalog
+    const bool hasCurrentCatalog = static_cast<int>(state.getProperty("presetCatalogVersion", 0)) == openedmkick::presets::kCatalogVersion;
+    currentProgram_ = hasCurrentCatalog
         ? std::clamp(static_cast<int>(state.getProperty("program", 0)), 0,
                      static_cast<int>(openedmkick::presets::factoryPresets().size()) - 1)
         : 0;
     restoredCustomState_.store(
-        !hasV3Catalog || static_cast<bool>(state.getProperty("programCustom", false)));
+        !hasCurrentCatalog || static_cast<bool>(state.getProperty("programCustom", false)));
     parameters.replaceState(state);
     routing_.restoreState(state);
     const std::scoped_lock lock(stateMutex_);

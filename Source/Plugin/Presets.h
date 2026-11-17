@@ -6,6 +6,8 @@
 
 namespace openedmkick::presets {
 
+inline constexpr int kCatalogVersion = 4;
+
 struct FactoryPreset {
     const char* name;
     std::vector<std::pair<juce::String, float>> values;

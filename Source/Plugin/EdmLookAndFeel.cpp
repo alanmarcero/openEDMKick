@@ -24,7 +24,7 @@ EdmLookAndFeel::EdmLookAndFeel() {
     setColour(juce::PopupMenu::highlightedBackgroundColourId, theme::kViolet);
     setColour(juce::PopupMenu::highlightedTextColourId, theme::kInk);
     setColour(juce::TextButton::buttonColourId, theme::kSteel);
-    setColour(juce::TextButton::textColourOffId, theme::kTextDim);
+    setColour(juce::TextButton::textColourOffId, theme::kText);
     setColour(juce::TextButton::textColourOnId, theme::kInk);
     setColour(juce::TooltipWindow::backgroundColourId, theme::kSteel.brighter(0.1f));
     setColour(juce::TooltipWindow::textColourId, theme::kText);
@@ -97,10 +97,22 @@ void EdmLookAndFeel::drawButtonBackground(juce::Graphics& g, juce::Button& butto
     const auto bounds = button.getLocalBounds().toFloat().reduced(0.5f);
     const auto accent = button.findColour(juce::TextButton::buttonOnColourId);
     const bool active = button.getToggleState();
-    const auto fill = active ? accent : theme::kSteel;
+    if (button.getComponentID().startsWith("page_")) {
+        if (highlighted || down) {
+            g.setColour(theme::kSteel);
+            g.fillRoundedRectangle(bounds, kCorner);
+        }
+        if (active || button.hasKeyboardFocus(true)) {
+            g.setColour(theme::kViolet);
+            g.fillRoundedRectangle(bounds.withTrimmedLeft(8).withTrimmedRight(8).withHeight(3)
+                                       .withY(bounds.getBottom() - 3), 1.5f);
+        }
+        return;
+    }
+    const auto fill = active ? accent : button.findColour(juce::TextButton::buttonColourId);
     g.setColour(down ? fill.brighter(0.12f) : (highlighted ? fill.brighter(0.07f) : fill));
     g.fillRoundedRectangle(bounds, kCorner);
-    g.setColour(accent.withAlpha(active ? 0.95f : (highlighted ? 0.85f : 0.45f)));
+    g.setColour(active || highlighted ? accent : theme::kEdge);
     if (button.hasKeyboardFocus(true)) g.setColour(theme::kViolet);
     g.drawRoundedRectangle(bounds, kCorner, button.hasKeyboardFocus(true) ? 1.8f : 1.0f);
 }
@@ -108,6 +120,7 @@ void EdmLookAndFeel::drawButtonBackground(juce::Graphics& g, juce::Button& butto
 void EdmLookAndFeel::drawButtonText(juce::Graphics& g, juce::TextButton& button, bool, bool) {
     const bool active = button.getToggleState();
     g.setColour(button.findColour(active ? juce::TextButton::textColourOnId : juce::TextButton::textColourOffId));
+    if (active && button.getComponentID().startsWith("page_")) g.setColour(theme::kViolet);
     const float size = button.getHeight() < 23 ? 9.0f : kControlFont;
     g.setFont(juce::FontOptions(size, juce::Font::bold));
     g.drawFittedText(button.getButtonText(), button.getLocalBounds().reduced(4, 0), juce::Justification::centred, 1);
@@ -118,7 +131,7 @@ juce::Font EdmLookAndFeel::getPopupMenuFont() { return juce::FontOptions(13.0f);
 
 juce::Label* EdmLookAndFeel::createSliderTextBox(juce::Slider& slider) {
     auto* label = LookAndFeel_V4::createSliderTextBox(slider);
-    label->setFont(juce::FontOptions(9.5f, juce::Font::bold));
+    label->setFont(juce::FontOptions(12.5f, juce::Font::bold));
     label->setJustificationType(juce::Justification::centred);
     return label;
 }

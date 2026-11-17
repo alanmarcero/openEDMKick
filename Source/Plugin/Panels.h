@@ -28,7 +28,7 @@ public:
     [[nodiscard]] bool isAdvancedMode() const noexcept { return advancedMode_; }
 
 private:
-    void setVisibleControls(std::initializer_list<juce::Component*> controls, bool visible);
+    [[nodiscard]] std::array<juce::Rectangle<int>, 6> sections() const;
     bool advancedMode_ = false;
     Knob sweepOctaves_;
     Knob sweepMs_;
@@ -83,7 +83,6 @@ private:
 class LayerPanel final : public juce::Component {
 public:
     explicit LayerPanel(OpenEdmKickProcessor& processor);
-    void paint(juce::Graphics& g) override;
     void resized() override;
     void selectLayer(int layer);
 
@@ -156,6 +155,7 @@ public:
     [[nodiscard]] bool isAdvancedMode() const noexcept { return advancedMode_; }
 
 private:
+    [[nodiscard]] std::array<juce::Rectangle<int>, 4> sections() const;
     bool advancedMode_ = false;
     Toggle reverseEnabled_, crushEnabled_, stutterEnabled_, gateEnabled_, highPassMidi_, lowPassMidi_;
     Knob midiVolume_, midiExpression_, midiBrightness_;

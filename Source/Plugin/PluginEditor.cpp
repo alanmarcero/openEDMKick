@@ -1,6 +1,5 @@
 #include "PluginEditor.h"
 
-#include "Parameters.h"
 #include "Presets.h"
 #include "Theme.h"
 
@@ -9,11 +8,10 @@
 namespace {
 
 namespace theme = openedmkick::theme;
-namespace params = openedmkick::params;
 namespace presets = openedmkick::presets;
 
-constexpr int kEditorWidth = 1200;
-constexpr int kEditorHeight = 1040;
+constexpr int kEditorWidth = 1080;
+constexpr int kEditorHeight = 716;
 
 void styleTab(juce::TextButton& button, const juce::String& id) {
     button.setComponentID(id);
@@ -33,14 +31,37 @@ OpenEdmKickEditor::OpenEdmKickEditor(OpenEdmKickProcessor& processorToEdit)
       effectsPanel_(processorToEdit),
       tooltipWindow_(this, 650) {
     setLookAndFeel(&lookAndFeel_);
-    setResizable(false, false);
+    setResizable(true, true);
+    setResizeLimits(900, 570, 1600, 1280);
+    workspace_.setScrollBarsShown(true, false);
+    workspace_.setScrollBarThickness(10);
+    workspace_.setScrollOnDragMode(juce::Viewport::ScrollOnDragMode::never);
+    addAndMakeVisible(workspace_);
+    auditionBtn_.setComponentID("audition");
+    auditionBtn_.setTooltip("Play a one-shot at C2 with the current layers and effects.");
+    auditionBtn_.setColour(juce::TextButton::buttonColourId, theme::kMint);
+    auditionBtn_.setColour(juce::TextButton::textColourOffId, theme::kInk);
+    auditionBtn_.onClick = [this] { processor_.triggerAudition(); };
+    addAndMakeVisible(auditionBtn_);
 
     const auto& factory = presets::factoryPresets();
-    for (int i = 0; i < static_cast<int>(factory.size()); ++i)
-        presetBox_.addItem(factory[static_cast<size_t>(i)].name, i + 1);
+    juce::String family;
+    juce::PopupMenu sounds;
+    for (size_t i = 0; i < factory.size(); ++i) {
+        const juce::String name(factory[i].name);
+        const auto nextFamily = name.upToFirstOccurrenceOf(" / ", false, false);
+        if (family != nextFamily && sounds.getNumItems() > 0) {
+            presetBox_.getRootMenu()->addSubMenu(family, sounds);
+            sounds.clear();
+        }
+        family = nextFamily;
+        sounds.addItem(static_cast<int>(i + 1), name);
+    }
+    presetBox_.getRootMenu()->addSubMenu(family, sounds);
     presetBox_.setComponentID("factoryPreset");
-    presetBox_.setTextWhenNothingSelected("CUSTOM SOUND");
-    presetBox_.setTooltip("48 tuned, impact-focused trance kick starting points.");
+    presetBox_.setName("Factory preset");
+    presetBox_.setTextWhenNothingSelected("Custom sound");
+    presetBox_.setTooltip("Choose a factory kick. Locked controls keep their current values.");
     presetBox_.setColour(juce::ComboBox::outlineColourId, theme::kViolet);
     presetBox_.onChange = [this] {
         const int selected = presetBox_.getSelectedId() - 1;
@@ -55,14 +76,15 @@ OpenEdmKickEditor::OpenEdmKickEditor(OpenEdmKickProcessor& processorToEdit)
     prevPresetBtn_.onClick = [this] {
         const int count = processor_.getNumPrograms();
         if (count <= 0) return;
-        const int current = processor_.getCurrentProgram();
+        const int current = processor_.hasRestoredCustomState() ? 0 : processor_.getCurrentProgram();
         processor_.setCurrentProgram((current + count - 1) % count);
         syncPresetBox();
     };
     nextPresetBtn_.onClick = [this] {
         const int count = processor_.getNumPrograms();
         if (count <= 0) return;
-        processor_.setCurrentProgram((processor_.getCurrentProgram() + 1) % count);
+        const int next = processor_.hasRestoredCustomState() ? 0 : (processor_.getCurrentProgram() + 1) % count;
+        processor_.setCurrentProgram(next);
         syncPresetBox();
     };
 
@@ -78,12 +100,12 @@ OpenEdmKickEditor::OpenEdmKickEditor(OpenEdmKickProcessor& processorToEdit)
     patternTab_.onClick = [this] { setPage(Page::pattern); };
     effectsTab_.onClick = [this] { setPage(Page::effects); };
 
-    std::ranges::for_each(std::array<juce::Component*, 12>{
+    std::ranges::for_each(std::array<juce::Component*, 8>{
         &presetBox_, &prevPresetBtn_, &nextPresetBtn_, &viewToggleBtn_, &kickTab_, &layersTab_,
-        &patternTab_, &effectsTab_, &synthPanel_, &layerPanel_, &autoPanel_, &effectsPanel_},
+        &patternTab_, &effectsTab_},
         [this](juce::Component* component) { addAndMakeVisible(component); });
 
-    processor_.addListener(this);
+    viewToggleBtn_.setColour(juce::TextButton::buttonOnColourId, theme::kViolet);
     setPage(Page::kick);
     setSize(kEditorWidth, kEditorHeight);
     startTimerHz(5);
@@ -91,17 +113,11 @@ OpenEdmKickEditor::OpenEdmKickEditor(OpenEdmKickProcessor& processorToEdit)
 }
 
 OpenEdmKickEditor::~OpenEdmKickEditor() {
-    processor_.removeListener(this);
+    workspace_.setViewedComponent(nullptr);
     setLookAndFeel(nullptr);
 }
 
 void OpenEdmKickEditor::timerCallback() { syncPresetBox(); }
-
-void OpenEdmKickEditor::audioProcessorChanged(juce::AudioProcessor*, const ChangeDetails& details) {
-    if (details.programChanged) syncPresetBox();
-}
-
-void OpenEdmKickEditor::audioProcessorParameterChanged(juce::AudioProcessor*, int, float) {}
 
 void OpenEdmKickEditor::syncPresetBox() {
     if (processor_.hasRestoredCustomState()) {
@@ -116,18 +132,18 @@ void OpenEdmKickEditor::setAdvancedView(bool advanced) {
     synthPanel_.setAdvancedMode(advanced);
     autoPanel_.setAdvancedMode(advanced);
     effectsPanel_.setAdvancedMode(advanced);
-    viewToggleBtn_.setButtonText(advanced ? "SIMPLE VIEW" : "ADVANCED VIEW");
-    viewToggleBtn_.setColour(juce::TextButton::buttonOnColourId, advanced ? theme::kBrass : theme::kViolet);
+    viewToggleBtn_.setToggleState(advanced, juce::dontSendNotification);
+    workspace_.setViewPosition(0, 0);
     resized();
     repaint();
 }
 
 void OpenEdmKickEditor::setPage(Page page) {
     page_ = page;
-    synthPanel_.setVisible(page == Page::kick);
-    layerPanel_.setVisible(page == Page::layers);
-    autoPanel_.setVisible(page == Page::pattern);
-    effectsPanel_.setVisible(page == Page::effects);
+    juce::Component* panels[]{ &synthPanel_, &layerPanel_, &autoPanel_, &effectsPanel_ };
+    workspace_.setViewedComponent(panels[static_cast<int>(page)], false);
+    workspace_.setViewPosition(0, 0);
+    viewToggleBtn_.setVisible(page != Page::layers);
     kickTab_.setToggleState(page == Page::kick, juce::dontSendNotification);
     layersTab_.setToggleState(page == Page::layers, juce::dontSendNotification);
     patternTab_.setToggleState(page == Page::pattern, juce::dontSendNotification);
@@ -136,53 +152,56 @@ void OpenEdmKickEditor::setPage(Page page) {
 }
 
 void OpenEdmKickEditor::paint(juce::Graphics& g) {
-    g.setGradientFill(juce::ColourGradient(theme::kInk.brighter(0.035f), 0.0f, 0.0f,
-                                           theme::kInk.darker(0.08f), 0.0f, static_cast<float>(getHeight()), false));
-    g.fillAll();
-    g.setColour(theme::kViolet.withAlpha(0.10f));
-    g.fillRoundedRectangle(juce::Rectangle<float>(static_cast<float>(getWidth()) - 260.0f, -70.0f, 300.0f, 210.0f), 42.0f);
-    g.setColour(theme::kCoral.withAlpha(0.045f));
-    g.fillEllipse(juce::Rectangle<float>(static_cast<float>(getWidth()) - 150.0f, 0.0f, 105.0f, 105.0f));
-    g.setColour(theme::kEdge.withAlpha(0.62f));
-    g.drawLine(18.0f, 60.0f, static_cast<float>(getWidth() - 18), 60.0f, 1.0f);
-    g.setColour(theme::kViolet.withAlpha(0.42f));
-    g.fillRoundedRectangle(18.0f, 60.0f, 130.0f, 2.0f, 1.0f);
-
-    g.setFont(juce::FontOptions(25.0f, juce::Font::bold));
-    g.setColour(theme::kText);
-    g.drawText("open", 20, 8, 58, 32, juce::Justification::centredLeft);
-    const int openWidth = juce::GlyphArrangement::getStringWidthInt(g.getCurrentFont(), "open");
+    g.fillAll(theme::kInk);
+    g.setColour(theme::kSteel);
+    g.fillRect(0, 0, getWidth(), 72);
     g.setColour(theme::kViolet);
-    g.drawText("Kicker", 20 + openWidth, 8, 90, 32, juce::Justification::centredLeft);
+    g.fillRoundedRectangle(20, 16, 40, 40, 11);
+    g.setColour(theme::kInk);
+    juce::Path mark;
+    mark.startNewSubPath(26, 39);
+    mark.lineTo(30, 39);
+    mark.lineTo(34, 26);
+    mark.lineTo(39, 46);
+    mark.lineTo(44, 31);
+    mark.lineTo(48, 39);
+    mark.lineTo(54, 39);
+    g.strokePath(mark, juce::PathStrokeType(2.4f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    g.setColour(theme::kText);
+    g.setFont(juce::FontOptions(26.0f, juce::Font::bold));
+    g.drawText("openKicker", 72, 12, 180, 30, juce::Justification::centredLeft);
     g.setColour(theme::kTextDim);
-    g.setFont(juce::FontOptions(9.5f, juce::Font::bold));
-    g.drawText("TRANCE KICK SYNTHESIS  /  MIDI TRACKING", 22, 39, 300, 14, juce::Justification::centredLeft);
-    g.setColour(theme::kBrass);
-    g.setFont(juce::FontOptions(9.0f, juce::Font::bold));
-    g.drawText("FOUR LAYERS / ADSR / GLITCH", 330, 17, 220, 20, juce::Justification::centredLeft);
+    g.setFont(juce::FontOptions(13.0f));
+    g.drawText("Tuned drum synthesizer", 73, 40, 175, 18, juce::Justification::centredLeft);
+    auto presetLabel = presetBox_.getBounds().translated(3, -19).withHeight(18);
+    g.drawText("Factory preset", presetLabel, juce::Justification::centredLeft);
 }
 
 void OpenEdmKickEditor::resized() {
-    auto bounds = getLocalBounds().reduced(16, 10);
-    auto header = bounds.removeFromTop(46);
-    viewToggleBtn_.setBounds(header.removeFromRight(140).withHeight(36).withY(header.getCentreY() - 18));
-    header.removeFromRight(14);
-    nextPresetBtn_.setBounds(header.removeFromRight(112).withHeight(36).withY(header.getCentreY() - 18));
-    header.removeFromRight(4);
-    presetBox_.setBounds(header.removeFromRight(235).withHeight(36).withY(header.getCentreY() - 18));
-    header.removeFromRight(4);
-    prevPresetBtn_.setBounds(header.removeFromRight(132).withHeight(36).withY(header.getCentreY() - 18));
+    auto bounds = getLocalBounds().reduced(20, 0);
+    auto header = bounds.removeFromTop(72).reduced(0, 9);
+    auditionBtn_.setBounds(header.removeFromRight(122).withSizeKeepingCentre(122, 40));
+    header.removeFromRight(20);
+    nextPresetBtn_.setBounds(header.removeFromRight(66).removeFromBottom(36));
+    header.removeFromRight(5);
+    prevPresetBtn_.setBounds(header.removeFromRight(84).removeFromBottom(36));
+    header.removeFromRight(6);
+    presetBox_.setBounds(header.removeFromRight(std::min(310, header.getWidth() - 242)).removeFromBottom(36));
 
-    bounds.removeFromTop(8);
-    auto tabs = bounds.removeFromTop(44);
-    kickTab_.setBounds(tabs.removeFromLeft(132).withHeight(40)); tabs.removeFromLeft(6);
-    layersTab_.setBounds(tabs.removeFromLeft(110).withHeight(40)); tabs.removeFromLeft(6);
-    patternTab_.setBounds(tabs.removeFromLeft(132).withHeight(40)); tabs.removeFromLeft(6);
-    effectsTab_.setBounds(tabs.removeFromLeft(108).withHeight(40));
-    bounds.removeFromTop(10);
-
-    synthPanel_.setBounds(bounds);
-    layerPanel_.setBounds(bounds);
-    autoPanel_.setBounds(bounds);
-    effectsPanel_.setBounds(bounds);
+    auto nav = bounds.removeFromTop(60).reduced(0, 10);
+    for (auto* tab : { &kickTab_, &layersTab_, &patternTab_, &effectsTab_ }) {
+        tab->setBounds(nav.removeFromLeft(90));
+        nav.removeFromLeft(4);
+    }
+    viewToggleBtn_.setBounds(nav.removeFromRight(164));
+    bounds.removeFromBottom(16);
+    workspace_.setBounds(bounds);
+    auto* panel = workspace_.getViewedComponent();
+    if (panel == nullptr) return;
+    int contentHeight = 560;
+    if (page_ == Page::kick && isAdvancedView()) contentHeight = 920;
+    if (page_ == Page::effects) contentHeight = isAdvancedView() ? 995 : 560;
+    const bool scroll = bounds.getHeight() < contentHeight;
+    panel->setSize(bounds.getWidth() - (scroll ? workspace_.getScrollBarThickness() : 0),
+                   std::max(bounds.getHeight(), contentHeight));
 }

@@ -10,6 +10,7 @@
 #include <chrono>
 #include <cstdlib>
 #include <numeric>
+#include <numbers>
 #include <new>
 #include <ranges>
 #include <ranges>
@@ -147,17 +148,42 @@ TEST_CASE("Editor shows the new sound pages and current MIDI note", "[plugin][ui
 
     std::unique_ptr<juce::AudioProcessorEditor> editor(processor.createEditor());
     REQUIRE(editor != nullptr);
-    REQUIRE(editor->getWidth() == 1200);
-    REQUIRE(editor->getHeight() == 1040);
+    REQUIRE(editor->getWidth() == 1080);
+    REQUIRE(editor->getHeight() == 716);
     auto* kickEditor = dynamic_cast<OpenEdmKickEditor*>(editor.get());
     REQUIRE(kickEditor != nullptr);
     REQUIRE(processor.currentMidiNote() == 69);
-    REQUIRE_THAT(processor.displayMidiHz.load(), WithinAbs(440.0f, 0.001f));
+    auto* audition = dynamic_cast<juce::TextButton*>(editor->findChildWithID("audition"));
+    REQUIRE(audition != nullptr);
+    const auto triggersBefore = processor.displayTriggerCount.load();
+    audition->onClick();
+    midi.clear();
+    processor.processBlock(buffer, midi);
+    REQUIRE(processor.displayTriggerCount.load() == triggersBefore + 1);
+    REQUIRE(buffer.getMagnitude(0, 512) > 0.1f);
     REQUIRE_FALSE(kickEditor->isAdvancedView());
+    auto* presets = dynamic_cast<juce::ComboBox*>(editor->findChildWithID("factoryPreset"));
+    REQUIRE(presets != nullptr);
+    CHECK(presets->getRootMenu()->getNumItems() == 6);
+    presets->setSelectedId(48, juce::sendNotificationSync);
+    REQUIRE(processor.getCurrentProgram() == 47);
+    auto* next = dynamic_cast<juce::TextButton*>(editor->findChildWithID("nextPreset"));
+    REQUIRE(next != nullptr);
+    next->onClick();
+    CHECK(processor.getCurrentProgram() == 0);
+    CHECK(presets->getSelectedId() == 1);
     kickEditor->setAdvancedView(true);
     REQUIRE(kickEditor->isAdvancedView());
     kickEditor->setAdvancedView(false);
     REQUIRE_FALSE(kickEditor->isAdvancedView());
+    kickEditor->setSize(900, 570);
+    kickEditor->setAdvancedView(true);
+    for (const auto* name : {"kick", "layers", "pattern", "fx"}) {
+        auto* tab = dynamic_cast<juce::TextButton*>(kickEditor->findChildWithID(juce::String("page_") + name));
+        REQUIRE(tab != nullptr);
+        tab->onClick();
+        checkInteractiveTargets(*kickEditor);
+    }
 }
 
 TEST_CASE("MIDI input tracks pitch and octave, including notes from other channels", "[plugin][midi]") {
@@ -255,8 +281,8 @@ TEST_CASE("V3 factory bank contains the new kick and fill catalogs", "[plugin][p
     const auto& fills = openedmkick::presets::fillBuildPresets();
     REQUIRE(programs.size() == 48u);
     REQUIRE(fills.size() == 28u);
-    REQUIRE(std::string(programs.front().name) == "Plasma Breaker");
-    REQUIRE(std::string(programs.back().name) == "Eventide Engine");
+    REQUIRE(std::string(programs.front().name) == "Uplifting / First Light");
+    REQUIRE(std::string(programs.back().name) == "Classic / Final Press");
     REQUIRE(std::string(fills.front().name) == "Ion Drive Four");
     REQUIRE(std::string(fills.back().name) == "Final Orbit Reverse");
 
@@ -269,7 +295,7 @@ TEST_CASE("V3 factory bank contains the new kick and fill catalogs", "[plugin][p
 
     processor.setCurrentProgram(0);
     const auto first = processor.currentSynthSettings();
-    REQUIRE_THAT(first.bodyTone, WithinAbs(0.78f, 0.01f));
+    REQUIRE_THAT(first.bodyTone, WithinAbs(0.49f, 0.01f));
     REQUIRE(first.clickLevel <= 0.55f);
 
     juce::MemoryBlock saved;
@@ -278,6 +304,19 @@ TEST_CASE("V3 factory bank contains the new kick and fill catalogs", "[plugin][p
     restored.setStateInformation(saved.getData(), static_cast<int>(saved.getSize()));
     REQUIRE(restored.getCurrentProgram() == 0);
     REQUIRE_FALSE(restored.hasRestoredCustomState());
+}
+
+TEST_CASE("A previous bank restores its saved sound as custom", "[plugin][presets][state]") {
+    OpenEdmKickProcessor processor;
+    auto legacy = processor.parameters.copyState();
+    legacy.setProperty("presetCatalogVersion", 3, nullptr);
+    legacy.setProperty("program", 12, nullptr);
+    legacy.getChildWithProperty("id", "decay_ms").setProperty("value", 347.0f, nullptr);
+    juce::MemoryBlock saved;
+    juce::AudioProcessor::copyXmlToBinary(*legacy.createXml(), saved);
+    processor.setStateInformation(saved.getData(), static_cast<int>(saved.getSize()));
+    REQUIRE(processor.hasRestoredCustomState());
+    REQUIRE_THAT(processor.currentSynthSettings().decayMs, WithinAbs(347.0f, 0.01f));
 }
 
 TEST_CASE("All 48 trance kick presets load and report valid program names", "[plugin][presets]") {
@@ -298,30 +337,45 @@ TEST_CASE("All 48 trance kick presets load and report valid program names", "[pl
     REQUIRE(presets.size() == 48u);
 }
 
-TEST_CASE("Factory kick presets use clean bright bass-forward trance settings", "[plugin][presets]") {
+TEST_CASE("Factory trance one-shots have a defined attack, tuned sub and short tail", "[plugin][presets][audio]") {
+    constexpr int rate = 48000;
     OpenEdmKickProcessor processor;
+    juce::AudioBuffer<float> hit(2, rate / 4);
+    processor.prepareToPlay(rate, hit.getNumSamples());
     for (int index = 0; index < processor.getNumPrograms(); ++index) {
         processor.setCurrentProgram(index);
         const auto settings = processor.currentSynthSettings();
         INFO(processor.getProgramName(index).toStdString());
-        REQUIRE(settings.drive >= 0.14f);
-        REQUIRE(settings.drive <= 0.24f);
-        REQUIRE(settings.saturation == openedmkick::core::Saturation::warm);
-        REQUIRE(settings.grit <= 0.21f);
-        REQUIRE(settings.clip <= 0.16f);
-        REQUIRE(settings.knockDb <= 5.6f);
-        REQUIRE(settings.knockHz >= 95.0f);
-        REQUIRE(settings.knockHz <= 180.0f);
-        REQUIRE(settings.bodyTone >= 0.50f);
-        REQUIRE(settings.bodyTone <= 0.82f);
-        REQUIRE(settings.subLevel >= 0.30f);
-        REQUIRE(settings.subLevel <= 0.68f);
-        REQUIRE(settings.clickLevel <= 0.55f);
-        REQUIRE(settings.clickHz >= 3199.0f);
-        REQUIRE(settings.clickHz <= 7601.0f);
-        REQUIRE(settings.sweepOctaves <= 3.0f);
-        REQUIRE(settings.sweepMs <= 75.0f);
-        REQUIRE(settings.decayMs <= 350.0f);
+        CHECK(settings.saturation == openedmkick::core::Saturation::warm);
+        CHECK(settings.drive <= 0.16f);
+        CHECK(settings.clip <= 0.05f);
+        CHECK_FALSE(settings.ampEnabled);
+        for (int note : {29, 33, 36}) {
+            juce::MidiBuffer midi;
+            midi.addEvent(juce::MidiMessage::noteOn(1, note, 1.0f), 0);
+            processor.processBlock(hit, midi);
+            CAPTURE(note);
+            const float peak = hit.getMagnitude(0, hit.getNumSamples());
+            CHECK(peak <= 1.0f);
+            CHECK(hit.getMagnitude(0, rate / 50) > 0.25f);
+            CHECK(hit.getMagnitude(rate / 5, rate / 20) < 0.001f);
+
+            // Measure two cycles after the pitch dive, projecting onto the played fundamental.
+            const double hz = openedmkick::core::noteFrequencyHz(note);
+            const int count = juce::roundToInt(2.0 * rate / hz);
+            const int start = juce::roundToInt(settings.sweepMs * rate / 1000.0);
+            double real = 0, imag = 0, energy = 0;
+            for (int i = 0; i < count; ++i) {
+                const double sample = hit.getSample(0, start + i);
+                const double phase = 2 * std::numbers::pi * hz * i / rate;
+                real += sample * std::cos(phase);
+                imag += sample * std::sin(phase);
+                energy += sample * sample;
+            }
+            const double fundamentalPower = 2 * (real * real + imag * imag) / (count * count);
+            CHECK(std::sqrt(fundamentalPower) > 0.10);
+            CHECK(fundamentalPower > 0.60 * energy / count);
+        }
     }
 }
 
@@ -680,8 +734,6 @@ TEST_CASE("Capture the compiled native editor workspaces", "[capture]") {
     if (directory.isEmpty()) SKIP("Set OEK_CAPTURE_DIR or build the openedmkick_screenshots target");
     juce::ScopedJuceInitialiser_GUI gui;
     OpenEdmKickProcessor processor;
-    setParam(processor, "amp_enabled", 1);
-    setParam(processor, "amp_release_ms", 20000);
     processor.routing().setLocked("sweep_ms", true);
     processor.routing().assignCc("body_tone", 35);
     processor.togglePianoRollNote(8, 8, 0, 2);
@@ -691,9 +743,8 @@ TEST_CASE("Capture the compiled native editor workspaces", "[capture]") {
     std::unique_ptr<juce::AudioProcessorEditor> editor(processor.createEditor());
     auto* native = dynamic_cast<OpenEdmKickEditor*>(editor.get());
     REQUIRE(native != nullptr);
-    CHECK(native->getWidth() == 1200);
-    CHECK(native->getHeight() == 1040);
-    native->setAdvancedView(true);
+    CHECK(native->getWidth() == 1080);
+    CHECK(native->getHeight() == 716);
     const juce::File destination(directory);
     REQUIRE(destination.createDirectory().wasOk());
     const std::array<juce::String, 4> pages{"kick", "layers", "pattern", "fx"};
@@ -701,10 +752,12 @@ TEST_CASE("Capture the compiled native editor workspaces", "[capture]") {
         auto* tab = dynamic_cast<juce::TextButton*>(native->findChildWithID("page_" + page));
         REQUIRE(tab != nullptr);
         tab->onClick();
+        native->setAdvancedView(page == "fx");
+        native->setSize(1080, page == "fx" ? 1160 : 716);
         checkInteractiveTargets(*native);
         const auto image = native->createComponentSnapshot(native->getLocalBounds());
-        REQUIRE(image.getWidth() == 1200);
-        REQUIRE(image.getHeight() == 1040);
+        REQUIRE(image.getWidth() == 1080);
+        REQUIRE(image.getHeight() == native->getHeight());
         auto output = destination.getChildFile("openKicker-" + page + ".png").createOutputStream();
         REQUIRE(output != nullptr);
         REQUIRE(output->setPosition(0));
@@ -766,7 +819,12 @@ TEST_CASE("Native controls provide routing affordances for every host parameter"
     };
     for (int scene = 0; scene < 4; ++scene) {
         setParam(processor, "auto_slot", static_cast<float>(scene));
-        visit(visit, *editor);
+        for (const auto* page : {"kick", "layers", "pattern", "fx"}) {
+            auto* tab = dynamic_cast<juce::TextButton*>(editor->findChildWithID(juce::String("page_") + page));
+            REQUIRE(tab != nullptr);
+            tab->onClick();
+            visit(visit, *editor);
+        }
     }
     for (auto* parameter : processor.getParameters()) {
         const auto* ranged = dynamic_cast<juce::RangedAudioParameter*>(parameter);
