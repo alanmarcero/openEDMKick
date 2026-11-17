@@ -14,7 +14,9 @@ Velocity maps to a configurable amplitude exponent (default 1.45) and an indepen
 
 ## Factory kick balance
 
-The 48 factory kicks span Uplifting, Rolling, Progressive, Psy, Tech, and Classic trance. Each family has a different transient and body voicing. Each patch sets its own pitch dive, transient frequency, hold, decay, and sub level. Dives settle in 18–42 ms. The factory envelope uses a 0.24 ms attack, 10–23 ms hold, and 105–168 ms decay. Layer A at its default length finishes within 192 ms. Full ADSR remains opt-in.
+The 48 factory kicks span Uplifting, Rolling, Progressive, Psy, Tech, and Classic trance. Each family has a different transient and body voicing. Each patch sets its own pitch dive, transient frequency, hold, decay, and sub level. Dives settle in 18–42 ms. The factory envelope uses a 0.24 ms attack, 10–23 ms hold, and 105–168 ms decay. Layer A at its default length finishes within 192 ms. Held-note playback remains opt-in.
+
+The attack sub runs at the MIDI fundamental. As the pitch dive passes through its last half-octave, a smooth crossfade moves the clean sub onto the body oscillator's sine phase. The settled sub and body reinforce each other across pitches, including in held-note mode. Reverse uses the same blend evaluated in source time. The knock bell applies its requested gain once before saturation and preserves unity gain away from its centre frequency.
 
 ## Pattern clock
 

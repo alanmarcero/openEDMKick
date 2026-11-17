@@ -80,6 +80,7 @@ void ParameterControl::refresh() {
 }
 SectionLock::SectionLock(Apvts& state, juce::String name, juce::StringArray ids) : state_(state), ids_(std::move(ids)) {
     setComponentID("section_lock_" + name);
+    setTooltip("Keep this section’s settings when choosing another factory sound.");
     setColour(juce::TextButton::buttonOnColourId, theme::kViolet);
     onClick = [this] { static_cast<OpenEdmKickProcessor&>(state_.processor).routing().toggleSection(ids_); timerCallback(); };
     startTimerHz(10);
@@ -189,7 +190,7 @@ void Choice::resized() {
     auto area = getLocalBounds();
     routing_->setBounds(area.removeFromBottom(kRoutingHeight).withSizeKeepingCentre(std::min(area.getWidth(), 82), kRoutingHeight));
     if (title_.getText().isNotEmpty()) title_.setBounds(area.removeFromTop(kLabelHeight));
-    box_.setBounds(area.withHeight(std::min(36, area.getHeight())).withY(area.getY() + (area.getHeight() - std::min(36, area.getHeight())) / 2));
+    box_.setBounds(area.withHeight(std::min(40, area.getHeight())).withY(area.getY() + (area.getHeight() - std::min(40, area.getHeight())) / 2));
 }
 
 Toggle::Toggle(Apvts& state, const juce::String& parameterId, const juce::String& text, juce::Colour accent)
@@ -212,7 +213,7 @@ Toggle::Toggle(Apvts& state, const juce::String& parameterId, const juce::String
 void Toggle::resized() {
     auto area = getLocalBounds();
     routing_->setBounds(area.removeFromBottom(kRoutingHeight).withSizeKeepingCentre(std::min(area.getWidth(), 82), kRoutingHeight));
-    button_.setBounds(area.withSizeKeepingCentre(area.getWidth(), std::min(36, area.getHeight())));
+    button_.setBounds(area.withSizeKeepingCentre(area.getWidth(), std::min(40, area.getHeight())));
 }
 void Toggle::setTooltip(const juce::String& text) { button_.setTooltip(text); }
 

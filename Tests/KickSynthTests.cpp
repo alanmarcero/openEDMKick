@@ -132,3 +132,58 @@ TEST_CASE("Kick, snare, clap, and hat layers render and filter independently", "
         [](double sum, float sample) { return sum + static_cast<double>(sample) * sample; });
     REQUIRE(filteredEnergy < dryEnergy * 0.35);
 }
+
+namespace {
+double bodyRms(const core::KickSettings& settings, double rate, int note) {
+    core::KickVoice voice;
+    voice.prepare(rate);
+    voice.start(settings, note, 1);
+    const int start = static_cast<int>(rate * 0.10);
+    const int end = static_cast<int>(rate * 0.18);
+    double energy = 0;
+    for (int i = 0; i < end; ++i) {
+        const double sample = voice.nextSample();
+        if (i >= start) energy += sample * sample;
+    }
+    return std::sqrt(energy / (end - start));
+}
+}
+
+TEST_CASE("The sub reinforces the settled kick across pitches and gate modes", "[synth][sub]") {
+    core::KickSettings settings;
+    settings.sweepMs = 42;
+    settings.drive = 0.1f;
+    settings.bodyTone = 0.24f;
+    settings.holdMs = 220;
+    settings.knockDb = settings.clip = 0;
+    settings.ampDecayMs = 10;
+    settings.ampSustain = 0.8f;
+    for (double rate : {44100., 96000.}) {
+        for (bool gated : {false, true}) {
+            settings.ampEnabled = gated;
+            for (int note : {29, 33, 36, 41, 45, 48}) {
+                settings.subLevel = 0;
+                const double body = bodyRms(settings, rate, note);
+                settings.subLevel = 1;
+                CAPTURE(rate, gated, note);
+                CHECK(bodyRms(settings, rate, note) > 0.93 * body);
+            }
+        }
+    }
+}
+
+TEST_CASE("Knock emphasizes the selected frequency while preserving the distant sub", "[synth][knock]") {
+    core::KickSettings settings;
+    settings.sweepOctaves = settings.snapOctaves = settings.clickLevel = 0;
+    settings.drive = settings.bodyTone = settings.subLevel = settings.clip = 0;
+    settings.holdMs = 220;
+    for (double rate : {44100., 96000.}) {
+        settings.knockDb = 0;
+        const double dry = bodyRms(settings, rate, core::kDefaultMidiNote);
+        settings.knockDb = 12;
+        settings.knockHz = 800;
+        CHECK(bodyRms(settings, rate, core::kDefaultMidiNote) < dry * 1.05);
+        settings.knockHz = core::noteFrequencyHz(core::kDefaultMidiNote);
+        CHECK(bodyRms(settings, rate, core::kDefaultMidiNote) > dry * 1.15);
+    }
+}

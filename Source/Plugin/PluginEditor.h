@@ -23,6 +23,8 @@ private:
 
     OpenEdmKickProcessor& processor_;
     openedmkick::ui::EdmLookAndFeel lookAndFeel_;
+    std::unique_ptr<juce::Drawable> kickArtwork_;
+    float lastDrawnBeat_ = -1.0f;
     juce::Viewport workspace_;
     juce::ComboBox presetBox_;
     juce::TextButton auditionBtn_{"Audition C2"};

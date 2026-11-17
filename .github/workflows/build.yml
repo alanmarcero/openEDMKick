@@ -111,7 +111,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libasound2-dev libjack-jackd2-dev libfreetype-dev libfontconfig1-dev \
             libx11-dev libxcomposite-dev libxcursor-dev libxext-dev libxinerama-dev libxrandr-dev \
-            libxrender-dev libglu1-mesa-dev mesa-common-dev
+            libxrender-dev libglu1-mesa-dev mesa-common-dev xvfb xauth
 
       - name: Configure
         run: cmake -B build -DCMAKE_BUILD_TYPE=Release
@@ -120,7 +120,7 @@ jobs:
         run: cmake --build build --config Release --parallel
 
       - name: Unit tests
-        run: ctest --test-dir build --output-on-failure
+        run: xvfb-run -a ctest --test-dir build --output-on-failure
 
       - name: Package
         run: |
@@ -154,4 +154,5 @@ jobs:
           files: |
             openKicker-*.zip
             openEDMKick-*.zip
+          body: '![Native editor](https://raw.githubusercontent.com/alanmarcero/openEDMKick/${{ github.ref_name }}/assets/openKicker-kick.png)'
           generate_release_notes: true
