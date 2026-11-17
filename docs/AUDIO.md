@@ -1,4 +1,4 @@
-# V3.1 audio engine
+# V3.3 audio engine
 
 openKicker v3.1 combines four independently shaped drum voices into one MIDI instrument. The engine remains a self-contained C++20 library without a JUCE dependency.
 
@@ -11,6 +11,10 @@ Kick layers use the main kick controls for their swept, harmonically shaped voic
 The incoming MIDI note sets the kick oscillator's equal-tempered fundamental around A4 = 440 Hz. Pitch sweeps start above that note and land on its tuned pitch. All matching layers receive the same MIDI note and incoming velocity; each applies its own velocity response. Auto Mode uses C2 and passes through the same zones. Note-off does not end a one-shot.
 
 Velocity maps to a configurable amplitude exponent (default 1.45) and an independent timbre-response amount. Zero timbre response holds drive/transients at full-hit timbre; the default amount of one retains the original response. Pattern steps use their stored velocity through the same response.
+
+## Factory kick balance
+
+The 48 factory programs target punchy, clean trance kicks with a fast pitch dive, a defined transient accent, and a phase-locked sub foundation. They use the warm saturation curve with low body drive, moderate knock, reduced tail grit, short tails, and restrained clipping. The more aggressive saturation, drive, and clip settings remain exposed for custom patches rather than being the default sound of the bank.
 
 ## Pattern clock
 

@@ -251,7 +251,7 @@ TEST_CASE("V3 factory bank contains the new kick and fill catalogs", "[plugin][p
     processor.setCurrentProgram(0);
     const auto first = processor.currentSynthSettings();
     REQUIRE_THAT(first.bodyTone, WithinAbs(0.78f, 0.01f));
-    REQUIRE(first.clickLevel > 0.8f);
+    REQUIRE(first.clickLevel <= 0.55f);
 
     juce::MemoryBlock saved;
     processor.getStateInformation(saved);
@@ -277,6 +277,33 @@ TEST_CASE("All 48 trance kick presets load and report valid program names", "[pl
     std::ranges::sort(names);
     REQUIRE(std::ranges::adjacent_find(names) == names.end());
     REQUIRE(presets.size() == 48u);
+}
+
+TEST_CASE("Factory kick presets use clean bright bass-forward trance settings", "[plugin][presets]") {
+    OpenEdmKickProcessor processor;
+    for (int index = 0; index < processor.getNumPrograms(); ++index) {
+        processor.setCurrentProgram(index);
+        const auto settings = processor.currentSynthSettings();
+        INFO(processor.getProgramName(index).toStdString());
+        REQUIRE(settings.drive >= 0.14f);
+        REQUIRE(settings.drive <= 0.24f);
+        REQUIRE(settings.saturation == openedmkick::core::Saturation::warm);
+        REQUIRE(settings.grit <= 0.21f);
+        REQUIRE(settings.clip <= 0.16f);
+        REQUIRE(settings.knockDb <= 5.6f);
+        REQUIRE(settings.knockHz >= 95.0f);
+        REQUIRE(settings.knockHz <= 180.0f);
+        REQUIRE(settings.bodyTone >= 0.50f);
+        REQUIRE(settings.bodyTone <= 0.82f);
+        REQUIRE(settings.subLevel >= 0.30f);
+        REQUIRE(settings.subLevel <= 0.68f);
+        REQUIRE(settings.clickLevel <= 0.55f);
+        REQUIRE(settings.clickHz >= 3199.0f);
+        REQUIRE(settings.clickHz <= 7601.0f);
+        REQUIRE(settings.sweepOctaves <= 3.0f);
+        REQUIRE(settings.sweepMs <= 75.0f);
+        REQUIRE(settings.decayMs <= 350.0f);
+    }
 }
 
 TEST_CASE("New layer controls automate and restore independently", "[layer-improvements]") {
