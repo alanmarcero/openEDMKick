@@ -1,4 +1,4 @@
-# openKicker v3.4.0
+# openKicker v3.5.0
 
 [Install with OpenVST Manager](https://github.com/alanmarcero/alan-m-OpenVSTManager/releases/latest)
 
@@ -6,13 +6,19 @@ openKicker makes pitched trance kicks and layered drum hits. Play it from a MIDI
 
 ![Kick waveform, preset browser, audition, and sound controls](assets/openKicker-kick.png)
 
+The drum badge pulses on each quarter note. It follows the host playhead, tempo changes, and loop jumps, or the internal clock in standalone playback.
+
 ## Shape the kick
 
 Choose a style under **Factory preset**, then press **Audition C2** to hear a hit. **Previous** and **Next** step through the bank from any page. The 48 factory kicks come in six families of eight. Choose from Uplifting, Rolling, Progressive, Psy, Tech, and Classic. Try *First Light* for a firm beater, *Velvet Sub* for a soft attack, or *Triplet* for a running bass line.
 
 On the **Kick** page, **Pitch dive** sets how quickly the pitch drops to the played note. Adjust **Body & sub** for low-end weight, **Transient** for the attack, and **One-shot tail** for the space before the bass enters. The waveform shows the length of the hit in milliseconds. Factory kicks use 10–23 ms of hold and 105–168 ms of decay.
 
-Enable **Advanced controls** for saturation, filters, snap, and detailed envelopes. Switch on **Full ADSR** under **MIDI envelope** to hold the kick while a MIDI note is held and release it with the matching note and channel. Full ADSR also gates generated snare, clap, and hat tails. Audition and the pattern sequencer continue to play one-shots.
+Switch on **Hold MIDI notes** beside the waveform to play openKicker as a pitched synthesizer. The Kick page shows attack, decay, sustain, and release. Hold a chord on your keyboard and release each note independently. **Audition C2** and the sequencer play one-shots. **Advanced controls** exposes both envelopes, saturation, filters, and snap.
+
+![Held-note mode with the attack, decay, sustain and release controls](assets/openKicker-held.png)
+
+The clean sub starts at the played pitch and blends into the body's phase as the dive settles. This keeps the low end consistent as you change notes. **Knock** now boosts its selected frequency band, so you can add impact without driving the entire body harder.
 
 ## Add drum layers
 
@@ -20,7 +26,7 @@ The **Layers** pages A–D each add a Kick, Snare, Clap, or Hat voice. Set level
 
 ## Play and automate
 
-Velocity changes the hit level and tone. Notes follow their MIDI pitch; the layer pitch control can transpose each voice. Right-click a control to assign or clear its MIDI CC. The default CCs control output volume (7), expression (11), reverse (20), high-pass sync (21), low-pass sync (22), crush (23), stutter (24), chopper (25), and brightness (74). CC 120 stops the sound and effect tails. CC 121 resets controller overrides. In Full ADSR, use matching note-offs to release held notes.
+Velocity changes the hit level and tone. Notes follow their MIDI pitch; the layer pitch control can transpose each voice. Right-click a control to assign or clear its MIDI CC. The default CCs control output volume (7), expression (11), reverse (20), high-pass sync (21), low-pass sync (22), crush (23), stutter (24), chopper (25), and brightness (74). CC 120 stops the sound and effect tails. CC 121 resets controller overrides. With **Hold MIDI notes** enabled, a matching note-off starts the release stage.
 
 Protect a section with its lock while browsing presets. Locked controls stay editable, and the lock state saves with the project.
 

@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(OpenKicker VERSION 3.4.0 LANGUAGES C CXX)
+project(OpenKicker VERSION 3.5.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -30,6 +30,8 @@ if(OEK_BUILD_PLUGIN)
         GIT_TAG 8.0.9
         GIT_SHALLOW TRUE)
     FetchContent_MakeAvailable(juce)
+
+    juce_add_binary_data(KickArtwork SOURCES assets/kick-drum.svg)
 
     juce_add_plugin(OpenEDMKick
         VERSION "${PROJECT_VERSION}"
@@ -70,6 +72,7 @@ if(OEK_BUILD_PLUGIN)
 
     target_link_libraries(OpenEDMKick
         PRIVATE
+            KickArtwork
             openedmkick_core
             juce::juce_audio_processors
             juce::juce_audio_utils

@@ -19,16 +19,19 @@ private:
     std::vector<float> samples_;
 };
 
-class KickSynthPanel final : public juce::Component {
+class KickSynthPanel final : public juce::Component, private juce::Value::Listener {
 public:
     explicit KickSynthPanel(OpenEdmKickProcessor& processor);
+    ~KickSynthPanel() override;
     void paint(juce::Graphics& g) override;
     void resized() override;
     void setAdvancedMode(bool advanced);
     [[nodiscard]] bool isAdvancedMode() const noexcept { return advancedMode_; }
 
 private:
+    void valueChanged(juce::Value&) override { setAdvancedMode(advancedMode_); }
     [[nodiscard]] std::array<juce::Rectangle<int>, 6> sections() const;
+    bool heldNotes_ = false;
     bool advancedMode_ = false;
     Knob sweepOctaves_;
     Knob sweepMs_;

@@ -1,8 +1,10 @@
 #include "PluginEditor.h"
 
+#include "BinaryData.h"
 #include "Presets.h"
 #include "Theme.h"
 
+#include <cmath>
 #include <ranges>
 
 namespace {
@@ -17,7 +19,7 @@ void styleTab(juce::TextButton& button, const juce::String& id) {
     button.setComponentID(id);
     button.setClickingTogglesState(false);
     button.setColour(juce::TextButton::buttonOnColourId, theme::kViolet);
-    button.setTooltip("Open this workspace page.");
+    button.setTooltip("Open the " + button.getButtonText() + " workspace.");
 }
 
 } // namespace
@@ -30,6 +32,7 @@ OpenEdmKickEditor::OpenEdmKickEditor(OpenEdmKickProcessor& processorToEdit)
       autoPanel_(processorToEdit),
       effectsPanel_(processorToEdit),
       tooltipWindow_(this, 650) {
+    kickArtwork_ = juce::Drawable::createFromImageData(BinaryData::kickdrum_svg, BinaryData::kickdrum_svgSize);
     setLookAndFeel(&lookAndFeel_);
     setResizable(true, true);
     setResizeLimits(900, 570, 1600, 1280);
@@ -108,7 +111,7 @@ OpenEdmKickEditor::OpenEdmKickEditor(OpenEdmKickProcessor& processorToEdit)
     viewToggleBtn_.setColour(juce::TextButton::buttonOnColourId, theme::kViolet);
     setPage(Page::kick);
     setSize(kEditorWidth, kEditorHeight);
-    startTimerHz(5);
+    startTimerHz(30);
     syncPresetBox();
 }
 
@@ -117,7 +120,11 @@ OpenEdmKickEditor::~OpenEdmKickEditor() {
     setLookAndFeel(nullptr);
 }
 
-void OpenEdmKickEditor::timerCallback() { syncPresetBox(); }
+void OpenEdmKickEditor::timerCallback() {
+    syncPresetBox();
+    if (std::abs(processor_.displayBeatPhase.load(std::memory_order_relaxed) - lastDrawnBeat_) > 0.0001f)
+        repaint(12, 6, 58, 60);
+}
 
 void OpenEdmKickEditor::syncPresetBox() {
     if (processor_.hasRestoredCustomState()) {
@@ -155,25 +162,20 @@ void OpenEdmKickEditor::paint(juce::Graphics& g) {
     g.fillAll(theme::kInk);
     g.setColour(theme::kSteel);
     g.fillRect(0, 0, getWidth(), 72);
-    g.setColour(theme::kViolet);
-    g.fillRoundedRectangle(20, 16, 40, 40, 11);
-    g.setColour(theme::kInk);
-    juce::Path mark;
-    mark.startNewSubPath(26, 39);
-    mark.lineTo(30, 39);
-    mark.lineTo(34, 26);
-    mark.lineTo(39, 46);
-    mark.lineTo(44, 31);
-    mark.lineTo(48, 39);
-    mark.lineTo(54, 39);
-    g.strokePath(mark, juce::PathStrokeType(2.4f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    lastDrawnBeat_ = processor_.displayBeatPhase.load(std::memory_order_relaxed);
+    if (kickArtwork_ != nullptr) {
+        const float pulse = std::exp(-5.0f * lastDrawnBeat_);
+        const float size = 44.0f + 12.0f * pulse;
+        const auto drum = juce::Rectangle<float>(size, size).withCentre({41.0f, 36.0f});
+        kickArtwork_->drawWithin(g, drum, juce::RectanglePlacement::centred, 0.83f + 0.17f * pulse);
+    }
     g.setColour(theme::kText);
     g.setFont(juce::FontOptions(26.0f, juce::Font::bold));
     g.drawText("openKicker", 72, 12, 180, 30, juce::Justification::centredLeft);
     g.setColour(theme::kTextDim);
     g.setFont(juce::FontOptions(13.0f));
     g.drawText("Tuned drum synthesizer", 73, 40, 175, 18, juce::Justification::centredLeft);
-    auto presetLabel = presetBox_.getBounds().translated(3, -19).withHeight(18);
+    auto presetLabel = presetBox_.getBounds().translated(3, -17).withHeight(16);
     g.drawText("Factory preset", presetLabel, juce::Justification::centredLeft);
 }
 
@@ -182,11 +184,11 @@ void OpenEdmKickEditor::resized() {
     auto header = bounds.removeFromTop(72).reduced(0, 9);
     auditionBtn_.setBounds(header.removeFromRight(122).withSizeKeepingCentre(122, 40));
     header.removeFromRight(20);
-    nextPresetBtn_.setBounds(header.removeFromRight(66).removeFromBottom(36));
+    nextPresetBtn_.setBounds(header.removeFromRight(66).removeFromBottom(40));
     header.removeFromRight(5);
-    prevPresetBtn_.setBounds(header.removeFromRight(84).removeFromBottom(36));
+    prevPresetBtn_.setBounds(header.removeFromRight(84).removeFromBottom(40));
     header.removeFromRight(6);
-    presetBox_.setBounds(header.removeFromRight(std::min(310, header.getWidth() - 242)).removeFromBottom(36));
+    presetBox_.setBounds(header.removeFromRight(std::min(310, header.getWidth() - 242)).removeFromBottom(40));
 
     auto nav = bounds.removeFromTop(60).reduced(0, 10);
     for (auto* tab : { &kickTab_, &layersTab_, &patternTab_, &effectsTab_ }) {

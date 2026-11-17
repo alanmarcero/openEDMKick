@@ -6,7 +6,7 @@
 namespace openedmkick::ui {
 namespace {
 constexpr float kCorner = 7.0f;
-constexpr float kControlFont = 14.0f;
+constexpr float kControlFont = 15.0f;
 }
 
 EdmLookAndFeel::EdmLookAndFeel() {
@@ -19,6 +19,10 @@ EdmLookAndFeel::EdmLookAndFeel() {
     setColour(juce::ComboBox::backgroundColourId, theme::kSteel);
     setColour(juce::ComboBox::textColourId, theme::kText);
     setColour(juce::ComboBox::arrowColourId, theme::kViolet);
+    setColour(juce::ScrollBar::thumbColourId, theme::kEdge.brighter(0.25f));
+    setColour(juce::TextEditor::backgroundColourId, theme::kInk);
+    setColour(juce::TextEditor::textColourId, theme::kText);
+    setColour(juce::TextEditor::focusedOutlineColourId, theme::kViolet);
     setColour(juce::PopupMenu::backgroundColourId, theme::kSteel);
     setColour(juce::PopupMenu::textColourId, theme::kText);
     setColour(juce::PopupMenu::highlightedBackgroundColourId, theme::kViolet);

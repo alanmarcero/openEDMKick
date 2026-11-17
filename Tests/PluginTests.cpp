@@ -34,13 +34,15 @@ namespace {
 class TestPlayHead final : public juce::AudioPlayHead {
 public:
     bool playing = false;
+    double bpm = 128.0;
+    double ppq = 0.0;
 
     juce::Optional<PositionInfo> getPosition() const override {
         PositionInfo info;
-        info.setBpm(128.0);
+        info.setBpm(bpm);
         info.setTimeSignature(juce::AudioPlayHead::TimeSignature{ 4, 4 });
         info.setIsPlaying(playing);
-        info.setPpqPosition(0.0);
+        info.setPpqPosition(ppq);
         return info;
     }
 };
@@ -56,7 +58,10 @@ void checkInteractiveTargets(juce::Component& component) {
         if (!child->isVisible()) continue;
         if (auto* button = dynamic_cast<juce::TextButton*>(child)) {
             INFO(button->getButtonText());
-            CHECK(button->getHeight() >= 36);
+            CHECK(button->getHeight() >= 40);
+            CHECK(button->getWidth() >= 40);
+            const juce::Font face(juce::FontOptions(15.0f, juce::Font::bold));
+            CHECK(juce::GlyphArrangement::getStringWidthInt(face, button->getButtonText()) <= button->getWidth() - 8);
             CHECK(button->getLookAndFeel().getTextButtonFont(*button, button->getHeight()).getHeight() >= 14.0f);
             CHECK(button->getButtonText() != "<");
             CHECK(button->getButtonText() != ">");
@@ -132,6 +137,43 @@ TEST_CASE("Host stop silences Auto Mode and host play resumes it", "[plugin]") {
         playingEnergy += std::abs(buffer.getSample(0, sample));
     REQUIRE(playingEnergy > 5.0f);
     processor.setPlayHead(nullptr);
+}
+
+TEST_CASE("The SVG pulse follows host seeks, tempo and stop, and runs on the standalone clock", "[plugin][clock]") {
+    juce::ScopedJuceInitialiser_GUI gui;
+    TestPlayHead host;
+    host.playing = true;
+    host.bpm = 120;
+    OpenEdmKickProcessor processor;
+    processor.prepareToPlay(48000, 240);
+    processor.setPlayHead(&host);
+    juce::AudioBuffer<float> buffer(2, 240);
+    juce::MidiBuffer midi;
+    processor.processBlock(buffer, midi);
+    CHECK_THAT(processor.displayBeatPhase.load(), WithinAbs(239.0 / 24000, 0.0001));
+    std::unique_ptr<juce::AudioProcessorEditor> editor(processor.createEditor());
+    const juce::Rectangle<int> badge(12, 6, 58, 60);
+    const auto downbeat = editor->createComponentSnapshot(badge);
+    host.ppq = 8.5;
+    host.bpm = 60;
+    processor.processBlock(buffer, midi);
+    const auto offbeat = editor->createComponentSnapshot(badge);
+    int changedPixels = 0;
+    for (int x = 0; x < badge.getWidth(); ++x)
+        for (int y = 0; y < badge.getHeight(); ++y)
+            if (downbeat.getPixelAt(x, y) != offbeat.getPixelAt(x, y)) ++changedPixels;
+    CHECK(changedPixels > 100);
+    CHECK_THAT(processor.displayBeatPhase.load(), WithinAbs(0.5 + 239.0 / 48000, 0.0001));
+    host.ppq = -0.75;
+    processor.processBlock(buffer, midi);
+    const float phase = processor.displayBeatPhase.load();
+    CHECK_THAT(phase, WithinAbs(0.25 + 239.0 / 48000, 0.0001));
+    host.playing = false;
+    processor.processBlock(buffer, midi);
+    CHECK(processor.displayBeatPhase.load() == phase);
+    processor.setPlayHead(nullptr);
+    processor.processBlock(buffer, midi);
+    CHECK(processor.displayBeatPhase.load() != phase);
 }
 
 TEST_CASE("Editor shows the new sound pages and current MIDI note", "[plugin][ui]") {
@@ -304,6 +346,31 @@ TEST_CASE("V3 factory bank contains the new kick and fill catalogs", "[plugin][p
     restored.setStateInformation(saved.getData(), static_cast<int>(saved.getSize()));
     REQUIRE(restored.getCurrentProgram() == 0);
     REQUIRE_FALSE(restored.hasRestoredCustomState());
+}
+
+TEST_CASE("Hold MIDI notes swaps the one-shot tail for an editable envelope on the Kick page", "[plugin][ui]") {
+    juce::ScopedJuceInitialiser_GUI gui;
+    OpenEdmKickProcessor processor;
+    openedmkick::ui::KickSynthPanel panel(processor);
+    panel.setSize(860, 560);
+    juce::TextButton* gate{};
+    juce::Slider* sustain{};
+    juce::Slider* hold{};
+    for (auto* control : panel.getChildren()) {
+        if (auto* input = dynamic_cast<juce::TextButton*>(control->findChildWithID("amp_enabled"))) gate = input;
+        if (auto* input = dynamic_cast<juce::Slider*>(control->findChildWithID("amp_sustain"))) sustain = input;
+        if (auto* input = dynamic_cast<juce::Slider*>(control->findChildWithID("hold_ms"))) hold = input;
+    }
+    REQUIRE(gate != nullptr);
+    REQUIRE(sustain != nullptr);
+    REQUIRE(hold != nullptr);
+    for (bool gated : {true, false}) {
+        gate->setToggleState(gated, juce::sendNotificationSync);
+        gate->getToggleStateValue().getValueSource().sendChangeMessage(true);
+        CHECK(processor.currentSynthSettings().ampEnabled == gated);
+        CHECK(sustain->getParentComponent()->isVisible() == gated);
+        CHECK(hold->getParentComponent()->isVisible() == !gated);
+    }
 }
 
 TEST_CASE("A previous bank restores its saved sound as custom", "[plugin][presets][state]") {
@@ -747,9 +814,11 @@ TEST_CASE("Capture the compiled native editor workspaces", "[capture]") {
     CHECK(native->getHeight() == 716);
     const juce::File destination(directory);
     REQUIRE(destination.createDirectory().wasOk());
-    const std::array<juce::String, 4> pages{"kick", "layers", "pattern", "fx"};
+    const std::array<juce::String, 5> pages{"kick", "held", "layers", "pattern", "fx"};
     for (const auto& page : pages) {
-        auto* tab = dynamic_cast<juce::TextButton*>(native->findChildWithID("page_" + page));
+        const bool held = page == "held";
+        setParam(processor, "amp_enabled", held ? 1.0f : 0.0f);
+        auto* tab = dynamic_cast<juce::TextButton*>(native->findChildWithID("page_" + (held ? "kick" : page)));
         REQUIRE(tab != nullptr);
         tab->onClick();
         native->setAdvancedView(page == "fx");

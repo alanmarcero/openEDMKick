@@ -332,8 +332,8 @@ float KickVoice::renderOversampled() noexcept {
     if (layer_.sound == DrumSoundType::kick) {
         const float envelope = settings_.ampEnabled && !reversing_ ? ampLevel() : amplitudeAt(timeMs, settings_);
         const float reverseGate = settings_.ampEnabled && reversing_ ? ampLevel() : 1.0f;
-        const float semitoneRatio = std::exp2(pitchOctavesAt(timeMs, settings_));
-        const float frequency = std::min(noteHz_ * semitoneRatio, static_cast<float>(osRate_ * 0.45));
+        const float diveOctaves = pitchOctavesAt(timeMs, settings_);
+        const float frequency = std::min(noteHz_ * std::exp2(diveOctaves), static_cast<float>(osRate_ * 0.45));
         const float bodyPhase = static_cast<float>(phase_) * kTwoPi;
         const float tone = finiteClamp(settings_.bodyTone, 0.65f, 0.0f, 1.0f);
         const float fundamental = std::sin(bodyPhase);
@@ -342,11 +342,15 @@ float KickVoice::renderOversampled() noexcept {
         const float harmonic4 = std::sin(bodyPhase * 4.0f);
         float body = fundamental * (1.0f - tone * 0.24f)
             + tone * (0.40f * harmonic2 + 0.22f * harmonic3 + 0.12f * harmonic4);
-        const float knockGain = dsp::dbToGain(finiteClamp(settings_.knockDb, 6.0f, 0.0f, 18.0f));
-        body += knock_.process(body) * (knockGain - 1.0f) * 0.28f;
+        body = knock_.process(body);
 
         const float subLevel = finiteClamp(settings_.subLevel, 0.35f, 0.0f, 1.0f);
-        const float sub = std::sin(static_cast<float>(subPhase_) * kTwoPi) * subLevel;
+        // Hand the fixed-pitch attack sub to the body's clean sine over the last half-octave.
+        // Once settled, the two layers reinforce each other on every MIDI note.
+        const float blend = std::min(1.0f, 2.0f * diveOctaves);
+        const float attackWeight = blend * blend * (3.0f - 2.0f * blend);
+        const float attackSub = std::sin(static_cast<float>(subPhase_) * kTwoPi);
+        const float sub = subLevel * std::lerp(fundamental, attackSub, attackWeight);
         const float drive = finiteClamp(settings_.drive, 0.55f, 0.0f, 1.0f);
         const float grit = finiteClamp(settings_.grit, 0.35f, 0.0f, 1.0f);
         const float attackMs = finiteClamp(settings_.attackMs, 0.15f, 0.05f, 10.0f);

@@ -370,7 +370,8 @@ void OpenEdmKickProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
     displayTailSeconds_.store(engine_.remainingTailSeconds());
     displayPeak.store(engine_.currentPeak());
     displayAutoPhase.store(engine_.currentAutoPhase());
-    displayBeatPhase.store(engine_.currentBeatPhase());
+    if (transport.isPlaying || settings.manualBpm > 0)
+        displayBeatPhase.store(engine_.currentBeatPhase(), std::memory_order_relaxed);
     displayBpm.store(static_cast<float>(engine_.currentBpm()));
     displayBeatsPerBar.store(static_cast<float>(transport.beatsPerBar));
     displayReversing.store(engine_.isVoiceReversing());
