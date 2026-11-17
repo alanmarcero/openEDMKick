@@ -16,7 +16,7 @@ struct KickProfile {
     float sweepOctaves;
     float sweepMs;
     float bodyTone;
-    float drive;
+    float driveSeed;
     float knockHz;
     float subLevel;
     float clickLevel;
@@ -77,33 +77,39 @@ constexpr std::array<KickProfile, 48> kProfiles{{
 
 [[nodiscard]] FactoryPreset makeFactoryPreset(const KickProfile& profile, int index) {
     using core::ClickType;
-    using core::Saturation;
-    const float snapOctaves = std::min(5.0f, profile.sweepOctaves * 0.72f);
-    const float snapMs = std::clamp(profile.sweepMs * 0.045f, 0.5f, 8.0f);
-    const float sweepShape = -0.65f + static_cast<float>((index * 7) % 15) * 0.11f;
-    const float clickMs = std::clamp(2.2f + profile.clickLevel * 7.0f, 0.5f, 12.0f);
+    constexpr auto cleanSaturation = core::Saturation::warm;
+    const float sweepOctaves = std::clamp(profile.sweepOctaves, 1.8f, 3.0f);
+    const float sweepMs = std::clamp(profile.sweepMs, 32.0f, 75.0f);
+    const float snapOctaves = std::min(2.2f, sweepOctaves * 0.68f);
+    const float snapMs = std::clamp(sweepMs * 0.045f, 0.5f, 8.0f);
+    const float sweepShape = -0.15f + static_cast<float>((index * 2) % 6) * 0.06f;
+    const float clickLevel = std::clamp(profile.clickLevel * 0.52f, 0.22f, 0.55f);
+    const float clickMs = std::clamp(2.0f + profile.clickLevel * 3.0f, 0.5f, 6.0f);
     const float holdMs = 20.0f + static_cast<float>((index * 5) % 8) * 7.0f;
-    const float decayShape = -0.2f + static_cast<float>((index * 3) % 9) * 0.14f;
+    const float decayShape = -0.15f + static_cast<float>((index * 2) % 6) * 0.06f;
     const float lowCutHz = 18.0f + static_cast<float>(index % 7) * 3.0f;
-    const float startPhase = 0.15f + static_cast<float>((index * 2) % 7) * 0.1f;
-    const auto saturation = static_cast<Saturation>(index % 4);
+    const float startPhase = 0.35f + static_cast<float>(index % 3) * 0.1f;
     const auto clickType = static_cast<ClickType>((index / 2) % 4);
-    const float knockDb = std::clamp(4.0f + profile.drive * 9.0f, 0.0f, 18.0f);
-    const float grit = 0.18f + static_cast<float>(index % 6) * 0.13f;
-    const float toneHz = 2600.0f + profile.bodyTone * 15000.0f;
+    const float drive = std::clamp(0.12f + profile.driveSeed * 0.12f, 0.14f, 0.24f);
+    const float knockDb = std::clamp(3.2f + profile.driveSeed * 2.2f, 3.5f, 5.6f);
+    const float grit = 0.10f + static_cast<float>(index % 5) * 0.025f;
+    const float bodyTone = std::clamp(profile.bodyTone, 0.50f, 0.82f);
+    const float toneHz = 10500.0f + bodyTone * 4500.0f;
+    const float clickHz = std::clamp(profile.clickHz, 3200.0f, 7600.0f);
     const float attackMs = 0.06f + static_cast<float>(index % 5) * 0.045f;
-    const float clip = std::clamp(0.3f + profile.drive * 0.65f, 0.0f, 1.0f);
+    const float clip = 0.08f + static_cast<float>(index % 4) * 0.025f;
     return FactoryPreset{ profile.name, {
-        { params::kSweepOctaves, profile.sweepOctaves }, { params::kSweepMs, profile.sweepMs },
+        { params::kSweepOctaves, sweepOctaves }, { params::kSweepMs, sweepMs },
         { params::kSweepShape, sweepShape }, { params::kSnapOctaves, snapOctaves },
-        { params::kSnapMs, snapMs }, { params::kBodyTone, profile.bodyTone },
-        { params::kBodyDrive, profile.drive }, { params::kSaturation, static_cast<float>(saturation) },
-        { params::kKnockHz, profile.knockHz }, { params::kKnockDb, knockDb },
-        { params::kGrit, grit }, { params::kToneHz, toneHz }, { params::kSubLevel, profile.subLevel },
+        { params::kSnapMs, snapMs }, { params::kBodyTone, bodyTone },
+        { params::kBodyDrive, drive }, { params::kSaturation, static_cast<float>(cleanSaturation) },
+        { params::kKnockHz, std::clamp(profile.knockHz, 95.0f, 180.0f) }, { params::kKnockDb, knockDb },
+        { params::kGrit, grit }, { params::kToneHz, toneHz },
+        { params::kSubLevel, std::clamp(profile.subLevel, 0.30f, 0.68f) },
         { params::kStartPhase, startPhase }, { params::kClickType, static_cast<float>(clickType) },
-        { params::kClickLevel, profile.clickLevel }, { params::kClickHz, profile.clickHz },
+        { params::kClickLevel, clickLevel }, { params::kClickHz, clickHz },
         { params::kClickMs, clickMs }, { params::kAttackMs, attackMs }, { params::kHoldMs, holdMs },
-        { params::kDecayMs, profile.decayMs }, { params::kDecayShape, decayShape },
+        { params::kDecayMs, std::clamp(profile.decayMs, 180.0f, 350.0f) }, { params::kDecayShape, decayShape },
         { params::kLowCutHz, lowCutHz }, { params::kClip, clip },
         { params::kAmpEnabled, 0 }, { params::kAmpAttack, 0 }, { params::kAmpDecay, 100 },
         { params::kAmpSustain, 0.8f }, { params::kAmpRelease, 300 }

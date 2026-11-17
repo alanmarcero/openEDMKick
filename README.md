@@ -1,4 +1,4 @@
-# openKicker v3.2.0
+# openKicker v3.3.0
 
 [Install with OpenVST Manager](https://github.com/alanmarcero/alan-m-OpenVSTManager/releases/latest)
 
@@ -7,11 +7,11 @@ openKicker is a MIDI-tuned kick and layered drum synthesizer. Four independently
 ## Sound design
 
 - **Dive:** Shape the pitch sweep and opening snap above the played note. The sweep always lands on that exact MIDI note.
-- **Body:** Add upper harmonics, resonant knock, saturation, grit, tone shaping, and a clean sub layer for a harder trance impact.
+- **Body:** Add upper harmonics, resonant knock, saturation, grit, tone shaping, and a clean sub layer for a punchy, bright trance impact.
 - **Transient:** Choose a beater, noise, tick, or analog click, then set its tone and level.
 - **Tail:** Shape the one-shot attack, hold, decay, curve, low cut, and clipping.
 - **Waveform and note readout:** See the current MIDI note and its equal-tempered frequency alongside the live sound preview.
-- **48 factory kicks:** The full bank is rebuilt for the new engine, from tight club impacts to longer, heavier trance tails.
+- **48 factory kicks:** The bank is tuned for clean, bright, bass-forward trance. Factory settings use warm low drive, short transient accents, restrained clipping, and clear sub weight; the full drive, saturation, grit, and clipping ranges remain available for custom sounds.
 - **Simple and advanced views:** Start with the controls that matter most, then open the full set for detailed sound design.
 
 ## Full ADSR
