@@ -67,6 +67,9 @@ inline constexpr const char* kLowPassMidi = "lp_midi_on";
 inline constexpr const char* kMidiVolume = "midi_volume";
 inline constexpr const char* kMidiExpression = "midi_expression";
 inline constexpr const char* kMidiBrightness = "midi_brightness";
+inline constexpr const char* kSubOctave = "sub_octave";
+inline constexpr const char* kClickPunch = "click_punch";
+inline constexpr const char* kStereoWidth = "stereo_width";
 
 inline constexpr const char* kClockSync = "clock_sync";
 inline constexpr const char* kTempoBpm = "tempo_bpm";

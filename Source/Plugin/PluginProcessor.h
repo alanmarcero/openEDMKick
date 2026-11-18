@@ -177,6 +177,9 @@ private:
         std::atomic<float>* midiBrightness;
         std::atomic<float>* highPassMidi;
         std::atomic<float>* lowPassMidi;
+        std::atomic<float>* subOctave;
+        std::atomic<float>* clickPunch;
+        std::atomic<float>* stereoWidth;
     };
 
     static constexpr size_t kMaxMidiEvents = 65536;

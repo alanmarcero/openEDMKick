@@ -959,3 +959,28 @@ TEST_CASE("Resetting temporary fill CC control restores the live custom pattern"
     processor.processBlock(audio, midi);
     REQUIRE(processor.displayTriggerCount.load() - before == 3);
 }
+
+TEST_CASE("Sub-octave, transient punch, and stereo width shape the kick output", "[plugin][dsp]") {
+    OpenEdmKickProcessor dryProc, enhancedProc;
+    dryProc.prepareToPlay(48000.0, 2048);
+    enhancedProc.prepareToPlay(48000.0, 2048);
+    setParam(enhancedProc, "sub_octave", 0.85f);
+    setParam(enhancedProc, "click_punch", 0.85f);
+    setParam(enhancedProc, "stereo_width", 0.85f);
+
+    juce::AudioBuffer<float> dryBuf(2, 2048), enhancedBuf(2, 2048);
+    juce::MidiBuffer midi1, midi2;
+    midi1.addEvent(juce::MidiMessage::noteOn(1, 36, 1.0f), 0);
+    midi2.addEvent(juce::MidiMessage::noteOn(1, 36, 1.0f), 0);
+    dryProc.processBlock(dryBuf, midi1);
+    enhancedProc.processBlock(enhancedBuf, midi2);
+
+    float diff = 0.0f;
+    float stereoSide = 0.0f;
+    for (int i = 0; i < 2048; ++i) {
+        diff += std::abs(dryBuf.getSample(0, i) - enhancedBuf.getSample(0, i));
+        stereoSide += std::abs(enhancedBuf.getSample(0, i) - enhancedBuf.getSample(1, i));
+    }
+    REQUIRE(diff > 1.0f);
+    REQUIRE(stereoSide > 0.1f);
+}

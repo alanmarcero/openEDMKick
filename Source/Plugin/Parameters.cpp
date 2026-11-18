@@ -211,6 +211,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout() {
     addFloat(layout, kMidiBrightness, "Midi Brightness", { 0.0f, 1.0f }, 1.0f, kFormatPercent, 4);
     addBool(layout, kHighPassMidi, "HP MIDI activation", false, 4);
     addBool(layout, kLowPassMidi, "LP MIDI activation", false, 4);
+    addFloat(layout, kSubOctave, "Sub Octave", { 0.0f, 1.0f }, 0.0f, kFormatPercent, 5);
+    addFloat(layout, kClickPunch, "Transient Punch", { 0.0f, 1.0f }, 0.0f, kFormatPercent, 5);
+    addFloat(layout, kStereoWidth, "Stereo Width", { 0.0f, 1.0f }, 0.0f, kFormatPercent, 5);
     return layout;
 }
 
