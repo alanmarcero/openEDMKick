@@ -4,7 +4,7 @@
 
 openKicker makes pitched trance kicks and layered drum hits. Play it from a MIDI keyboard or sequence. MIDI notes set the kick pitch and octave. Add up to four kick, snare, clap, or hat layers to create a complete hit.
 
-![Kick waveform, preset browser, audition, and sound controls](assets/openKicker-kick.png)
+![Kick waveform, preset browser, audition, and sound controls](docs/screenshots/preview.png)
 
 The drum badge pulses on each quarter note. It follows the host playhead, tempo changes, and loop jumps, or the internal clock in standalone playback.
 
