@@ -100,7 +100,6 @@ private:
         std::atomic<float>* keyHigh;
         std::atomic<float>* velocityLow;
         std::atomic<float>* velocityHigh;
-        std::atomic<float>* driveOffset;
         std::atomic<float>* toneScale;
         std::atomic<float>* sweepScale;
         std::atomic<float>* solo;
@@ -115,11 +114,8 @@ private:
         std::atomic<float>* snapOctaves;
         std::atomic<float>* snapMs;
         std::atomic<float>* bodyTone;
-        std::atomic<float>* bodyDrive;
-        std::atomic<float>* saturation;
         std::atomic<float>* knockHz;
         std::atomic<float>* knockDb;
-        std::atomic<float>* grit;
         std::atomic<float>* toneHz;
         std::atomic<float>* subLevel;
         std::atomic<float>* startPhase;
@@ -132,7 +128,6 @@ private:
         std::atomic<float>* decayMs;
         std::atomic<float>* decayShape;
         std::atomic<float>* lowCutHz;
-        std::atomic<float>* clip;
         std::atomic<float>* clockSync;
         std::atomic<float>* tempoBpm;
         std::atomic<float>* timeSignature;
@@ -143,7 +138,6 @@ private:
         std::array<LayerParams, openedmkick::core::kNumSoundLayers> layers;
         std::atomic<float>* reverseMode;
         std::atomic<float>* reverseMix;
-        std::atomic<float>* drive;
         std::atomic<float>* crushRate;
         std::atomic<float>* crushBits;
         std::atomic<float>* crushMix;
@@ -180,6 +174,12 @@ private:
         std::atomic<float>* subOctave;
         std::atomic<float>* clickPunch;
         std::atomic<float>* stereoWidth;
+        std::atomic<float>* eqLowFreq;
+        std::atomic<float>* eqLowDb;
+        std::atomic<float>* eqMidFreq;
+        std::atomic<float>* eqMidDb;
+        std::atomic<float>* eqHighFreq;
+        std::atomic<float>* eqHighDb;
     };
 
     static constexpr size_t kMaxMidiEvents = 65536;

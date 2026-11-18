@@ -40,7 +40,6 @@ using MidiInputEvent = std::variant<MidiTrigger, MidiCcEvent, MidiNoteOff>;
 struct EffectSettings {
     ReverseSyncMode reverseMode = ReverseSyncMode::Off;
     float reverseMix = 1.0f;
-    float drive = 0.15f;
     float crushRateHz = 8000.0f;
     int crushBits = 8;
     float crushMix = 0.0f;
@@ -69,6 +68,7 @@ struct EffectSettings {
     bool highPassMidi = false;
     bool lowPassMidi = false;
     float stereoWidth = 0.0f;
+    ThreeBandEqSettings eq{};
 };
 
 struct EngineSettings {
@@ -162,6 +162,7 @@ private:
     std::array<BeatStutter, 2> stutter_;
     std::array<SyncFilterPump, 2> filterPump_;
     std::array<ToneFilter, 2> toneFilter_;
+    ThreeBandEq eq_;
     PeakLimiter limiter_;
     std::vector<float> widthDelayBuffer_;
     size_t widthWriteIndex_ = 0;

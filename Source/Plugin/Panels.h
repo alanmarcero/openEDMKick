@@ -19,6 +19,16 @@ private:
     std::vector<float> samples_;
 };
 
+class PeakMeter final : public juce::Component, private juce::Timer {
+public:
+    explicit PeakMeter(OpenEdmKickProcessor& processor);
+    void paint(juce::Graphics& g) override;
+
+private:
+    void timerCallback() override { repaint(); }
+    OpenEdmKickProcessor& processor_;
+};
+
 class KickSynthPanel final : public juce::Component, private juce::Value::Listener {
 public:
     explicit KickSynthPanel(OpenEdmKickProcessor& processor);
@@ -30,7 +40,7 @@ public:
 
 private:
     void valueChanged(juce::Value&) override { setAdvancedMode(advancedMode_); }
-    [[nodiscard]] std::array<juce::Rectangle<int>, 6> sections() const;
+    [[nodiscard]] std::array<juce::Rectangle<int>, 7> sections() const;
     bool heldNotes_ = false;
     bool advancedMode_ = false;
     Knob sweepOctaves_;
@@ -39,11 +49,8 @@ private:
     Knob snapOctaves_;
     Knob snapMs_;
     Knob bodyTone_;
-    Knob bodyDrive_;
-    Choice saturation_;
     Knob knockHz_;
     Knob knockDb_;
-    Knob grit_;
     Knob toneHz_;
     Knob subLevel_;
     Knob subOctave_;
@@ -58,9 +65,17 @@ private:
     Knob decay_;
     Knob decayShape_;
     Knob lowCut_;
-    Knob clip_;
     Toggle ampEnabled_;
     Knob ampAttack_, ampDecay_, ampSustain_, ampRelease_;
+    DualEqKnob eqLow_;
+    DualEqKnob eqMid_;
+    DualEqKnob eqHigh_;
+    Knob stereoWidth_;
+    Knob output_;
+    Knob ceiling_;
+    Toggle limiter_;
+    Toggle masterBypass_;
+    PeakMeter meter_;
     std::vector<std::unique_ptr<SectionLock>> sectionLocks_;
     KickWaveformView waveform_;
 };
@@ -81,7 +96,7 @@ private:
     Knob decay_;
     Knob highPass_;
     Knob lowPass_;
-    std::array<std::unique_ptr<Knob>, 10> layerKnobs_;
+    std::array<std::unique_ptr<Knob>, 9> layerKnobs_;
     std::array<std::unique_ptr<Toggle>, 2> layerToggles_;
 };
 
@@ -141,16 +156,6 @@ private:
     juce::ParameterAttachment slotWatcher_;
 };
 
-class PeakMeter final : public juce::Component, private juce::Timer {
-public:
-    explicit PeakMeter(OpenEdmKickProcessor& processor);
-    void paint(juce::Graphics& g) override;
-
-private:
-    void timerCallback() override { repaint(); }
-    OpenEdmKickProcessor& processor_;
-};
-
 class EffectsPanel final : public juce::Component {
 public:
     explicit EffectsPanel(OpenEdmKickProcessor& processor);
@@ -167,8 +172,6 @@ private:
     std::vector<std::unique_ptr<SectionLock>> sectionLocks_;
     Choice reverseMode_;
     Knob reverseMix_;
-    Knob drive_;
-    Knob stereoWidth_;
     Knob crushRate_;
     Knob crushBits_;
     Knob crushMix_;
@@ -184,11 +187,6 @@ private:
     Choice highPassSyncRate_;
     Toggle lowPassSync_;
     Choice lowPassSyncRate_;
-    Knob output_;
-    Knob ceiling_;
-    Toggle limiter_;
-    Toggle masterBypass_;
-    PeakMeter meter_;
 };
 
 } // namespace openedmkick::ui

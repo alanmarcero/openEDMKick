@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <numeric>
 #include <ranges>
 
 namespace openedmkick::ui {
@@ -13,20 +14,38 @@ namespace core = openedmkick::core;
 namespace params = openedmkick::params;
 namespace theme = openedmkick::theme;
 
-constexpr int kCardGap = 10;
+constexpr int kCardGap = 8;
+constexpr int kCompactGap = 4;
 constexpr int kMidiModeWidth = 164;
-constexpr int kCardHeader = 48;
+constexpr int kCardHeader = 43;
 constexpr int kSectionLockWidth = 112;
 constexpr int kSectionLockHeight = 40;
 
 void setControlsVisible(std::initializer_list<juce::Component*> controls, bool visible) {
-    for (auto* control : controls) control->setVisible(visible);
+    std::ranges::for_each(controls, [visible](juce::Component* control) { control->setVisible(visible); });
+}
+
+void layoutWeightedRow(juce::Rectangle<int> area,
+                       std::initializer_list<std::pair<juce::Component*, float>> items, int gap) {
+    const float totalWeight = std::accumulate(items.begin(), items.end(), 0.0f,
+        [](float acc, const auto& item) { return acc + (item.first->isVisible() ? item.second : 0.0f); });
+    const int visibleCount = static_cast<int>(std::count_if(items.begin(), items.end(),
+        [](const auto& item) { return item.first->isVisible(); }));
+    if (visibleCount <= 0 || totalWeight <= 0.0f) return;
+    const int safeGap = std::max(0, gap);
+    const int available = std::max(0, area.getWidth() - safeGap * (visibleCount - 1));
+    std::ranges::for_each(items, [&](const auto& item) {
+        if (!item.first->isVisible()) return;
+        const int w = juce::roundToInt(static_cast<float>(available) * (item.second / totalWeight));
+        item.first->setBounds(area.removeFromLeft(w));
+        area.removeFromLeft(safeGap);
+    });
 }
 
 void placeRow(juce::Rectangle<int> card, int row, int rowCount,
               std::initializer_list<juce::Component*> controls) {
-    const int innerTop = card.getY() + kCardHeader + 5;
-    const int innerHeight = std::max(0, card.getHeight() - kCardHeader - 10);
+    const int innerTop = card.getY() + kCardHeader;
+    const int innerHeight = std::max(0, card.getHeight() - kCardHeader - 4);
     const int rowHeight = innerHeight / std::max(1, rowCount);
     auto bounds = juce::Rectangle<int>(card.getX() + 8, innerTop + row * rowHeight,
                                         card.getWidth() - 16, rowHeight);
@@ -57,15 +76,16 @@ void KickWaveformView::paint(juce::Graphics& g) {
     g.fillRoundedRectangle(getLocalBounds().toFloat(), 11.0f);
     g.setColour(theme::kEdge);
     g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(0.5f), 11.0f, 1.0f);
-    auto area = getLocalBounds().reduced(18, 12);
+    const bool compact = getHeight() < 110;
+    auto area = getLocalBounds().reduced(16, compact ? 6 : 12);
     auto readout = area.removeFromLeft(136);
     const int note = processor_.currentMidiNote();
     g.setColour(theme::kText);
-    g.setFont(juce::FontOptions(14.0f));
-    g.drawText("MIDI note", readout.removeFromTop(21), juce::Justification::centredLeft);
-    g.setFont(juce::FontOptions(40.0f, juce::Font::bold));
-    g.drawText(noteLabel(note), readout.removeFromTop(46), juce::Justification::centredLeft);
-    g.setFont(juce::FontOptions(17.0f));
+    g.setFont(juce::FontOptions(compact ? 12.0f : 14.0f));
+    g.drawText("MIDI note", readout.removeFromTop(compact ? 16 : 21), juce::Justification::centredLeft);
+    g.setFont(juce::FontOptions(compact ? 32.0f : 40.0f, juce::Font::bold));
+    g.drawText(noteLabel(note), readout.removeFromTop(compact ? 34 : 46), juce::Justification::centredLeft);
+    g.setFont(juce::FontOptions(compact ? 14.0f : 17.0f));
     g.drawText(params::formatHz(core::noteFrequencyHz(note)), readout, juce::Justification::topLeft);
 
     g.setFont(juce::FontOptions(14.0f, juce::Font::bold));
@@ -113,11 +133,8 @@ KickSynthPanel::KickSynthPanel(OpenEdmKickProcessor& processor)
       snapOctaves_(processor.parameters, params::kSnapOctaves, "Snap range", theme::kViolet),
       snapMs_(processor.parameters, params::kSnapMs, "Snap time", theme::kViolet),
       bodyTone_(processor.parameters, params::kBodyTone, "Harmonics", theme::kMint),
-      bodyDrive_(processor.parameters, params::kBodyDrive, "Body drive", theme::kMint),
-      saturation_(processor.parameters, params::kSaturation, "Saturation", theme::kMint),
       knockHz_(processor.parameters, params::kKnockHz, "Knock freq", theme::kMint),
       knockDb_(processor.parameters, params::kKnockDb, "Knock", theme::kMint),
-      grit_(processor.parameters, params::kGrit, "Tail grit", theme::kMint),
       toneHz_(processor.parameters, params::kToneHz, "Body tone", theme::kMint),
       subLevel_(processor.parameters, params::kSubLevel, "Sub level", theme::kMint),
       subOctave_(processor.parameters, params::kSubOctave, "Sub octave", theme::kMint),
@@ -132,38 +149,53 @@ KickSynthPanel::KickSynthPanel(OpenEdmKickProcessor& processor)
       decay_(processor.parameters, params::kDecayMs, "Decay", theme::kMint),
       decayShape_(processor.parameters, params::kDecayShape, "Decay curve", theme::kMint),
       lowCut_(processor.parameters, params::kLowCutHz, "Low cut", theme::kMint),
-      clip_(processor.parameters, params::kClip, "Clip", theme::kMint),
       ampEnabled_(processor.parameters, params::kAmpEnabled, "Hold MIDI notes", theme::kViolet),
       ampAttack_(processor.parameters, params::kAmpAttack, "Attack", theme::kMint),
       ampDecay_(processor.parameters, params::kAmpDecay, "Decay", theme::kMint),
       ampSustain_(processor.parameters, params::kAmpSustain, "Sustain", theme::kMint),
       ampRelease_(processor.parameters, params::kAmpRelease, "Release", theme::kMint),
+      eqLow_(processor.parameters, params::kEqLowFreq, params::kEqLowDb, "Low EQ", theme::kMint, theme::kViolet),
+      eqMid_(processor.parameters, params::kEqMidFreq, params::kEqMidDb, "Mid EQ", theme::kMint, theme::kViolet),
+      eqHigh_(processor.parameters, params::kEqHighFreq, params::kEqHighDb, "High EQ", theme::kMint, theme::kViolet),
+      stereoWidth_(processor.parameters, params::kStereoWidth, "Top width", theme::kMint),
+      output_(processor.parameters, params::kOutput, "Output", theme::kMint),
+      ceiling_(processor.parameters, params::kCeiling, "Ceiling", theme::kMint),
+      limiter_(processor.parameters, params::kLimiter, "Limiter", theme::kMint),
+      masterBypass_(processor.parameters, params::kMasterBypass, "Bypass", theme::kCoral),
+      meter_(processor),
       waveform_(processor) {
-    for (juce::Component* component : std::array<juce::Component*, 27>{
+    std::ranges::for_each(std::array<juce::Component*, 32>{
              &sweepOctaves_, &sweepMs_, &sweepShape_, &snapOctaves_, &snapMs_,
-             &bodyTone_, &bodyDrive_, &saturation_, &knockHz_, &knockDb_, &grit_, &toneHz_, &subLevel_, &subOctave_, &startPhase_,
-             &clickType_, &clickLevel_, &clickHz_, &clickMs_, &clickPunch_, &attack_, &hold_, &decay_, &decayShape_, &lowCut_, &clip_, &waveform_})
-        addAndMakeVisible(component);
+             &bodyTone_, &knockHz_, &knockDb_, &toneHz_, &subLevel_, &subOctave_, &startPhase_,
+             &clickType_, &clickLevel_, &clickHz_, &clickMs_, &clickPunch_, &attack_, &hold_, &decay_, &decayShape_, &lowCut_,
+             &eqLow_, &eqMid_, &eqHigh_, &stereoWidth_, &output_, &ceiling_, &limiter_, &masterBypass_, &meter_, &waveform_},
+        [this](juce::Component* component) { addAndMakeVisible(component); });
 
-    for (auto* component : std::array<juce::Component*, 5>{&ampEnabled_, &ampAttack_, &ampDecay_, &ampSustain_, &ampRelease_}) addAndMakeVisible(component);
-    const std::array<juce::StringArray, 5> groups{{
+    std::ranges::for_each(std::array<juce::Component*, 5>{&ampEnabled_, &ampAttack_, &ampDecay_, &ampSustain_, &ampRelease_},
+        [this](juce::Component* component) { addAndMakeVisible(component); });
+    const std::array<juce::StringArray, 6> groups{{
         {params::kSweepOctaves, params::kSweepMs, params::kSweepShape, params::kSnapOctaves, params::kSnapMs},
-        {params::kBodyTone, params::kBodyDrive, params::kSaturation, params::kKnockHz, params::kKnockDb, params::kGrit, params::kToneHz, params::kSubLevel, params::kSubOctave, params::kStartPhase},
+        {params::kBodyTone, params::kKnockHz, params::kKnockDb, params::kToneHz, params::kSubLevel, params::kSubOctave, params::kStartPhase},
         {params::kClickType, params::kClickLevel, params::kClickHz, params::kClickMs, params::kClickPunch},
-        {params::kAttackMs, params::kHoldMs, params::kDecayMs, params::kDecayShape, params::kLowCutHz, params::kClip},
-        {params::kAmpEnabled, params::kAmpAttack, params::kAmpDecay, params::kAmpSustain, params::kAmpRelease}
+        {params::kAttackMs, params::kHoldMs, params::kDecayMs, params::kDecayShape, params::kLowCutHz},
+        {params::kAmpEnabled, params::kAmpAttack, params::kAmpDecay, params::kAmpSustain, params::kAmpRelease},
+        {params::kEqLowFreq, params::kEqLowDb, params::kEqMidFreq, params::kEqMidDb, params::kEqHighFreq, params::kEqHighDb,
+         params::kStereoWidth, params::kOutput, params::kCeiling, params::kLimiter, params::kMasterBypass}
     }};
-    const std::array<juce::String, 5> names{"dive", "body", "transient", "tail", "adsr"};
-    for (size_t i = 0; i < groups.size(); ++i) {
+    const std::array<juce::String, 6> names{"dive", "body", "transient", "tail", "adsr", "output"};
+    std::ranges::for_each(std::views::iota(size_t{0}, groups.size()), [&](size_t i) {
         sectionLocks_.push_back(std::make_unique<SectionLock>(processor.parameters, names[i], groups[i]));
         addAndMakeVisible(*sectionLocks_.back());
-    }
+    });
     sweepOctaves_.setTooltip("How far above the played MIDI note the opening of the kick starts.");
     sweepMs_.setTooltip("Time for the pitch dive to reach the incoming MIDI note.");
     bodyTone_.setTooltip("Add harmonics to give the kick a more forceful, audible body.");
     knockDb_.setTooltip("A resonant mid-bass knock for more impact on smaller speakers.");
-    subLevel_.setTooltip("Blend a clean fundamental under the driven body.");
+    subLevel_.setTooltip("Blend a clean fundamental under the kick body.");
     clickLevel_.setTooltip("Add a short beater transient ahead of the body.");
+    eqLow_.setTooltip("Inner cap sets Low EQ gain (-12 to +12 dB); outer collar glides Low frequency smoothly.");
+    eqMid_.setTooltip("Inner cap sets Mid EQ gain (-12 to +12 dB); outer collar glides Mid frequency smoothly.");
+    eqHigh_.setTooltip("Inner cap sets High EQ gain (-12 to +12 dB); outer collar glides High frequency smoothly.");
     ampEnabled_.setTooltip("Hold incoming MIDI notes until note-off and shape them with attack, decay, sustain and release.");
     ampEnabled_.button().getToggleStateValue().addListener(this);
     setAdvancedMode(false);
@@ -175,8 +207,8 @@ KickSynthPanel::~KickSynthPanel() {
 
 void KickSynthPanel::setAdvancedMode(bool advanced) {
     advancedMode_ = advanced;
-    setControlsVisible({ &sweepShape_, &snapOctaves_, &snapMs_, &bodyDrive_, &saturation_, &knockHz_,
-                         &grit_, &toneHz_, &subOctave_, &startPhase_, &clickMs_, &clickPunch_, &attack_, &decayShape_, &lowCut_, &clip_ }, advanced);
+    setControlsVisible({ &sweepShape_, &snapOctaves_, &snapMs_, &knockHz_,
+                         &toneHz_, &subOctave_, &startPhase_, &attack_, &decayShape_, &lowCut_ }, advanced);
     heldNotes_ = ampEnabled_.button().getToggleState();
     setControlsVisible({ &hold_, &decay_, sectionLocks_[3].get() }, advanced || !heldNotes_);
     setControlsVisible({ &ampAttack_, &ampDecay_, &ampSustain_, &ampRelease_, sectionLocks_[4].get() }, advanced || heldNotes_);
@@ -184,23 +216,26 @@ void KickSynthPanel::setAdvancedMode(bool advanced) {
     repaint();
 }
 
-std::array<juce::Rectangle<int>, 6> KickSynthPanel::sections() const {
+std::array<juce::Rectangle<int>, 7> KickSynthPanel::sections() const {
     auto area = getLocalBounds();
-    const auto scope = area.removeFromTop(advancedMode_ ? 122 : 150);
-    area.removeFromTop(kCardGap);
+    const int gap = advancedMode_ ? kCardGap : kCompactGap;
+    const auto scope = area.removeFromTop(advancedMode_ ? 112 : 98);
+    area.removeFromTop(gap);
+    const auto output = area.removeFromBottom(advancedMode_ ? 190 : 162);
+    area.removeFromBottom(gap);
     juce::Rectangle<int> adsr;
     if (advancedMode_) {
-        adsr = area.removeFromBottom(164);
-        area.removeFromBottom(kCardGap);
+        adsr = area.removeFromBottom(176);
+        area.removeFromBottom(gap);
     }
-    auto top = area.removeFromTop((area.getHeight() - kCardGap) / 2);
-    area.removeFromTop(kCardGap);
+    auto top = area.removeFromTop((area.getHeight() - gap) / 2);
+    area.removeFromTop(gap);
     const int half = (area.getWidth() - kCardGap) / 2;
     const auto dive = top.removeFromLeft(half);
     const auto transient = area.removeFromLeft(half);
     const auto tail = area.withTrimmedLeft(kCardGap);
     if (!advancedMode_ && heldNotes_) adsr = tail;
-    return { dive, top.withTrimmedLeft(kCardGap), transient, tail, adsr, scope };
+    return { dive, top.withTrimmedLeft(kCardGap), transient, tail, adsr, output, scope };
 }
 
 void KickSynthPanel::paint(juce::Graphics& g) {
@@ -210,32 +245,45 @@ void KickSynthPanel::paint(juce::Graphics& g) {
     drawCard(g, cards[2], "Transient", theme::kCoral);
     if (advancedMode_ || !heldNotes_) drawCard(g, cards[3], "One-shot tail", theme::kMint);
     if (advancedMode_ || heldNotes_) drawCard(g, cards[4], "MIDI envelope", theme::kViolet);
-    auto mode = cards[5].withLeft(cards[5].getRight() - kMidiModeWidth);
+    drawCard(g, cards[5], "Output", theme::kMint);
+    g.setColour(theme::kText);
+    g.setFont(juce::FontOptions(13.0f, juce::Font::bold));
+    g.drawText("Output peak", meter_.getBounds().withY(meter_.getY() - 22).withHeight(18), juce::Justification::centred);
+    auto mode = cards[6].withLeft(cards[6].getRight() - kMidiModeWidth);
     g.setColour(theme::kSteel);
     g.fillRoundedRectangle(mode.toFloat(), 9);
-    drawSmallLabel(g, mode.reduced(14, 8).removeFromTop(20), "MIDI playback", theme::kTextDim);
+    drawSmallLabel(g, mode.reduced(12, 4).removeFromTop(16), "MIDI playback", theme::kTextDim);
 }
 
 void KickSynthPanel::resized() {
     const auto cards = sections();
     const int rows = advancedMode_ ? 2 : 1;
-    for (size_t i = 0; i < sectionLocks_.size(); ++i)
-        sectionLocks_[i]->setBounds(cards[i].getRight() - kSectionLockWidth - 10, cards[i].getY() + 6,
+    std::ranges::for_each(std::views::iota(size_t{0}, sectionLocks_.size()), [&](size_t i) {
+        sectionLocks_[i]->setBounds(cards[i].getRight() - kSectionLockWidth - 10, cards[i].getY() + 3,
                                     kSectionLockWidth, kSectionLockHeight);
-    auto scope = cards[5];
+    });
+    auto scope = cards[6];
     auto mode = scope.removeFromRight(kMidiModeWidth);
-    ampEnabled_.setBounds(mode.withTrimmedTop(32).reduced(10, 3));
+    ampEnabled_.setBounds(mode.withTrimmedTop(18).reduced(8, 0));
     waveform_.setBounds(scope.withTrimmedRight(kCardGap));
     placeRow(cards[0], 0, rows, { &sweepOctaves_, &sweepMs_, &sweepShape_ });
-    placeRow(cards[1], 0, rows, { &subLevel_, &knockDb_, &bodyTone_, &bodyDrive_ });
+    placeRow(cards[1], 0, rows, { &subLevel_, &knockDb_, &bodyTone_ });
     placeRow(cards[2], 0, 1, { &clickType_, &clickLevel_, &clickHz_, &clickMs_, &clickPunch_ });
     placeRow(cards[3], 0, rows, { &hold_, &decay_, &decayShape_ });
     if (advancedMode_ || heldNotes_)
         placeRow(cards[4], 0, 1, { &ampAttack_, &ampDecay_, &ampSustain_, &ampRelease_ });
+    auto outputRow = cards[5].withTrimmedTop(kCardHeader).reduced(8, 2);
+    layoutWeightedRow(outputRow, {
+        { &eqLow_, 13.0f }, { &eqMid_, 13.0f }, { &eqHigh_, 13.0f },
+        { &stereoWidth_, 9.5f }, { &output_, 9.5f }, { &ceiling_, 9.5f },
+        { &limiter_, 9.5f }, { &masterBypass_, 9.5f }, { &meter_, 10.5f }
+    }, 4);
+    const auto meterBox = meter_.getBounds().withTrimmedBottom(40);
+    meter_.setBounds(meterBox.withSizeKeepingCentre(std::max(24, meterBox.getWidth() - 8), 14));
     if (!advancedMode_) return;
     placeRow(cards[0], 1, 2, { &snapOctaves_, &snapMs_ });
-    placeRow(cards[1], 1, 2, { &saturation_, &knockHz_, &grit_, &toneHz_, &subOctave_, &startPhase_ });
-    placeRow(cards[3], 1, 2, { &attack_, &lowCut_, &clip_ });
+    placeRow(cards[1], 1, 2, { &knockHz_, &toneHz_, &subOctave_, &startPhase_ });
+    placeRow(cards[3], 1, 2, { &attack_, &lowCut_ });
 }
 
 LayerPage::LayerPage(OpenEdmKickProcessor& processor, int layer)
@@ -262,24 +310,23 @@ LayerPage::LayerPage(OpenEdmKickProcessor& processor, int layer)
     addAndMakeVisible(*layerKnobs_[4]);
     layerKnobs_[5] = std::make_unique<Knob>(processor.parameters, params::layerId(layer_, params::kLayerVelocityHigh), "Velocity high", theme::kMint);
     addAndMakeVisible(*layerKnobs_[5]);
-    layerKnobs_[6] = std::make_unique<Knob>(processor.parameters, params::layerId(layer_, params::kLayerDriveOffset), "Drive offset", theme::kMint);
+    layerKnobs_[6] = std::make_unique<Knob>(processor.parameters, params::layerId(layer_, params::kLayerToneScale), "Tone scale", theme::kMint);
     addAndMakeVisible(*layerKnobs_[6]);
-    layerKnobs_[7] = std::make_unique<Knob>(processor.parameters, params::layerId(layer_, params::kLayerToneScale), "Tone scale", theme::kMint);
+    layerKnobs_[7] = std::make_unique<Knob>(processor.parameters, params::layerId(layer_, params::kLayerSweepScale), "Sweep scale", theme::kMint);
     addAndMakeVisible(*layerKnobs_[7]);
-    layerKnobs_[8] = std::make_unique<Knob>(processor.parameters, params::layerId(layer_, params::kLayerSweepScale), "Sweep scale", theme::kMint);
+    layerKnobs_[8] = std::make_unique<Knob>(processor.parameters, params::layerId(layer_, params::kLayerPan), "Pan", theme::kMint);
     addAndMakeVisible(*layerKnobs_[8]);
-    layerKnobs_[9] = std::make_unique<Knob>(processor.parameters, params::layerId(layer_, params::kLayerPan), "Pan", theme::kMint);
-    addAndMakeVisible(*layerKnobs_[9]);
     layerToggles_[0] = std::make_unique<Toggle>(processor.parameters, params::layerId(layer_, params::kLayerSolo), "Solo", theme::kViolet);
     addAndMakeVisible(*layerToggles_[0]);
     layerToggles_[1] = std::make_unique<Toggle>(processor.parameters, params::layerId(layer_, params::kLayerPolarity), "Invert polarity", theme::kViolet);
     addAndMakeVisible(*layerToggles_[1]);
     juce::StringArray ids;
-    for (const auto* key : std::array<const char*, 19>{params::kLayerEnabled, params::kLayerSound, params::kLayerGain,
+    std::ranges::for_each(std::array<const char*, 18>{params::kLayerEnabled, params::kLayerSound, params::kLayerGain,
         params::kLayerTranspose, params::kLayerDecay, params::kLayerHighPass, params::kLayerLowPass,
         params::kLayerVelocityCurve, params::kLayerVelocityTimbre, params::kLayerKeyLow, params::kLayerKeyHigh,
-        params::kLayerVelocityLow, params::kLayerVelocityHigh, params::kLayerDriveOffset, params::kLayerToneScale,
-        params::kLayerSweepScale, params::kLayerSolo, params::kLayerPan, params::kLayerPolarity}) ids.add(params::layerId(layer_, key));
+        params::kLayerVelocityLow, params::kLayerVelocityHigh, params::kLayerToneScale,
+        params::kLayerSweepScale, params::kLayerSolo, params::kLayerPan, params::kLayerPolarity},
+        [&](const char* key) { ids.add(params::layerId(layer_, key)); });
     sectionLock_ = std::make_unique<SectionLock>(processor.parameters, "layer_" + juce::String(layer_), ids);
     addAndMakeVisible(*sectionLock_);
     enabled_.setTooltip("Include this sound layer in every kick hit.");
@@ -311,8 +358,8 @@ void LayerPage::resized() {
     auto area = getLocalBounds().withTrimmedLeft(140).withTrimmedRight(10);
     const int rowHeight = area.getHeight() / 4;
     layoutRow(area.removeFromTop(rowHeight).reduced(0, 4), { &enabled_, &sound_, &level_, layerToggles_[0].get(), layerToggles_[1].get() }, 8);
-    layoutRow(area.removeFromTop(rowHeight).reduced(0, 4), { &pitch_, &decay_, &highPass_, &lowPass_, layerKnobs_[9].get() }, 8);
-    layoutRow(area.removeFromTop(rowHeight).reduced(0, 4), { layerKnobs_[0].get(), layerKnobs_[1].get(), layerKnobs_[6].get(), layerKnobs_[7].get(), layerKnobs_[8].get() }, 8);
+    layoutRow(area.removeFromTop(rowHeight).reduced(0, 4), { &pitch_, &decay_, &highPass_, &lowPass_, layerKnobs_[8].get() }, 8);
+    layoutRow(area.removeFromTop(rowHeight).reduced(0, 4), { layerKnobs_[0].get(), layerKnobs_[1].get(), layerKnobs_[6].get(), layerKnobs_[7].get() }, 8);
     layoutRow(area.reduced(0, 4), { layerKnobs_[2].get(), layerKnobs_[3].get(), layerKnobs_[4].get(), layerKnobs_[5].get() }, 8);
 }
 
@@ -561,8 +608,6 @@ EffectsPanel::EffectsPanel(OpenEdmKickProcessor& processor)
       midiBrightness_(processor.parameters, params::kMidiBrightness, "Brightness", theme::kMint),
       reverseMode_(processor.parameters, params::kReverseMode, "Reverse", theme::kCoral),
       reverseMix_(processor.parameters, params::kReverseMix, "Reverse mix", theme::kCoral),
-      drive_(processor.parameters, params::kDrive, "Drive", theme::kMint),
-      stereoWidth_(processor.parameters, params::kStereoWidth, "Top width", theme::kMint),
       crushRate_(processor.parameters, params::kCrushRate, "Sample rate", theme::kMint),
       crushBits_(processor.parameters, params::kCrushBits, "Bit depth", theme::kMint),
       crushMix_(processor.parameters, params::kCrushMix, "Crush mix", theme::kMint),
@@ -577,29 +622,25 @@ EffectsPanel::EffectsPanel(OpenEdmKickProcessor& processor)
       highPassSync_(processor.parameters, params::kHighPassSyncEnabled, "High-pass sync", theme::kCoral),
       highPassSyncRate_(processor.parameters, params::kHighPassSyncRate, "HP rate", theme::kCoral),
       lowPassSync_(processor.parameters, params::kLowPassSyncEnabled, "Low-pass sync", theme::kViolet),
-      lowPassSyncRate_(processor.parameters, params::kLowPassSyncRate, "LP rate", theme::kViolet),
-      output_(processor.parameters, params::kOutput, "Output", theme::kMint),
-      ceiling_(processor.parameters, params::kCeiling, "Ceiling", theme::kMint),
-      limiter_(processor.parameters, params::kLimiter, "Limiter", theme::kMint),
-      masterBypass_(processor.parameters, params::kMasterBypass, "Bypass plug-in", theme::kCoral),
-      meter_(processor) {
-    std::ranges::for_each(std::array<juce::Component*, 24>{
-        &reverseMode_, &reverseMix_, &drive_, &stereoWidth_, &crushRate_, &crushBits_, &crushMix_,
+      lowPassSyncRate_(processor.parameters, params::kLowPassSyncRate, "LP rate", theme::kViolet) {
+    std::ranges::for_each(std::array<juce::Component*, 17>{
+        &reverseMode_, &reverseMix_, &crushRate_, &crushBits_, &crushMix_,
         &stutterRate_, &stutterMix_, &gateRate_, &gateMix_, &pumpRate_, &pumpMix_,
-        &highPass_, &lowPass_, &highPassSync_, &highPassSyncRate_, &lowPassSync_, &lowPassSyncRate_,
-        &output_, &ceiling_, &limiter_, &masterBypass_, &meter_},
+        &highPass_, &lowPass_, &highPassSync_, &highPassSyncRate_, &lowPassSync_, &lowPassSyncRate_},
         [this](juce::Component* component) { addAndMakeVisible(component); });
-    for (auto* component : std::array<juce::Component*, 9>{&highPassMidi_, &lowPassMidi_, &reverseEnabled_, &crushEnabled_, &stutterEnabled_, &gateEnabled_, &midiVolume_, &midiExpression_, &midiBrightness_}) addAndMakeVisible(component);
+    std::ranges::for_each(std::array<juce::Component*, 9>{
+        &highPassMidi_, &lowPassMidi_, &reverseEnabled_, &crushEnabled_, &stutterEnabled_, &gateEnabled_, &midiVolume_, &midiExpression_, &midiBrightness_},
+        [this](juce::Component* component) { addAndMakeVisible(component); });
     const std::array<juce::StringArray, 4> groups{{
-        {params::kReverseEnabled, params::kReverseMode, params::kReverseMix, params::kDrive, params::kMasterBypass},
-        {params::kCrushEnabled, params::kCrushRate, params::kCrushBits, params::kCrushMix, params::kStereoWidth},
+        {params::kReverseEnabled, params::kReverseMode, params::kReverseMix},
+        {params::kCrushEnabled, params::kCrushRate, params::kCrushBits, params::kCrushMix},
         {params::kStutterEnabled, params::kStutterRate, params::kStutterMix, params::kGateEnabled, params::kGateRate, params::kGateMix, params::kPumpRate, params::kPumpMix},
-        {params::kHighPassMidi, params::kLowPassMidi, params::kHighPass, params::kLowPass, params::kHighPassSyncEnabled, params::kHighPassSyncRate, params::kLowPassSyncEnabled, params::kLowPassSyncRate, params::kOutput, params::kCeiling, params::kLimiter, params::kMidiVolume, params::kMidiExpression, params::kMidiBrightness}
+        {params::kHighPassMidi, params::kLowPassMidi, params::kHighPass, params::kLowPass, params::kHighPassSyncEnabled, params::kHighPassSyncRate, params::kLowPassSyncEnabled, params::kLowPassSyncRate, params::kMidiVolume, params::kMidiExpression, params::kMidiBrightness}
     }};
-    for (size_t i = 0; i < groups.size(); ++i) {
+    std::ranges::for_each(std::views::iota(size_t{0}, groups.size()), [&](size_t i) {
         sectionLocks_.push_back(std::make_unique<SectionLock>(processor.parameters, "fx_" + juce::String(i), groups[i]));
         addAndMakeVisible(*sectionLocks_.back());
-    }
+    });
     reverseMode_.setTooltip("Reverse on defaults to CC20 and ends at the next quarter-note boundary. Right-click to reassign.");
     highPassMidi_.setTooltip("High-pass MIDI activation. CC21 enables the high-pass filter for incoming hits.");
     highPassSync_.setTooltip("High-pass sync starts an automated host-tempo sweep. The separate MIDI activation defaults to CC21.");
@@ -612,7 +653,7 @@ void EffectsPanel::setAdvancedMode(bool advanced) {
     advancedMode_ = advanced;
     setControlsVisible({ &crushRate_, &crushBits_, &stutterRate_, &gateRate_, &pumpRate_, &pumpMix_,
                          &highPass_, &lowPass_, &highPassSync_, &highPassSyncRate_, &lowPassSync_,
-                         &lowPassSyncRate_, &ceiling_, &midiVolume_, &midiExpression_, &midiBrightness_ }, advanced);
+                         &lowPassSyncRate_, &midiVolume_, &midiExpression_, &midiBrightness_ }, advanced);
     resized();
     repaint();
 }
@@ -630,43 +671,36 @@ std::array<juce::Rectangle<int>, 4> EffectsPanel::sections() const {
 
 void EffectsPanel::paint(juce::Graphics& g) {
     const auto cards = sections();
-    const std::array<juce::String, 4> titles{"Reverse & drive", "Bitcrusher", "Rhythm", "Tone & output"};
-    for (size_t i = 0; i < cards.size(); ++i) {
+    const std::array<juce::String, 4> titles{"Reverse", "Bitcrusher", "Rhythm", "Filters & MIDI"};
+    std::ranges::for_each(std::views::iota(size_t{0}, cards.size()), [&](size_t i) {
         g.setColour(theme::kSteel);
         g.fillRoundedRectangle(cards[i].toFloat(), 9);
         g.setColour(theme::kText);
         g.setFont(juce::FontOptions(18.0f, juce::Font::bold));
         g.drawText(titles[i], cards[i].reduced(14).removeFromTop(26), juce::Justification::centredLeft);
-    }
-    g.setColour(theme::kText);
-    g.setFont(juce::FontOptions(13.0f, juce::Font::bold));
-    g.drawText("Output peak", meter_.getBounds().withY(meter_.getY() - 24).withHeight(19), juce::Justification::centred);
+    });
 }
 
 void EffectsPanel::resized() {
     auto cards = sections();
-    for (size_t i = 0; i < cards.size(); ++i) {
+    std::ranges::for_each(std::views::iota(size_t{0}, cards.size()), [&](size_t i) {
         sectionLocks_[i]->setBounds(14, cards[i].getY() + 48, kSectionLockWidth, kSectionLockHeight);
         cards[i] = cards[i].withTrimmedLeft(154).reduced(8, 8);
-    }
-    layoutRow(cards[0], { &reverseEnabled_, &reverseMode_, &reverseMix_, &drive_, &masterBypass_ });
-    layoutRow(cards[1], { &crushEnabled_, &crushMix_, &crushRate_, &crushBits_, &stereoWidth_ });
-    if (advancedMode_) {
-        auto stutter = cards[2].removeFromTop(cards[2].getHeight() / 2);
-        layoutRow(stutter, { &stutterEnabled_, &stutterRate_, &stutterMix_, &pumpRate_, &pumpMix_ });
-        layoutRow(cards[2], { &gateEnabled_, &gateRate_, &gateMix_ });
-        const int third = cards[3].getHeight() / 3;
-        layoutRow(cards[3].removeFromTop(third), { &highPassMidi_, &highPass_, &highPassSync_, &highPassSyncRate_ });
-        layoutRow(cards[3].removeFromTop(third), { &lowPassMidi_, &lowPass_, &lowPassSync_, &lowPassSyncRate_ });
-    } else {
+    });
+    layoutRow(cards[0], { &reverseEnabled_, &reverseMode_, &reverseMix_ });
+    layoutRow(cards[1], { &crushEnabled_, &crushMix_, &crushRate_, &crushBits_ });
+    if (!advancedMode_) {
         layoutRow(cards[2], { &stutterEnabled_, &stutterMix_, &gateEnabled_, &gateMix_ });
+        layoutRow(cards[3], { &highPassMidi_, &lowPassMidi_ });
+        return;
     }
-    if (advancedMode_)
-        layoutRow(cards[3], { &output_, &ceiling_, &limiter_, &midiVolume_, &midiExpression_, &midiBrightness_, &meter_ });
-    else
-        layoutRow(cards[3], { &highPassMidi_, &lowPassMidi_, &output_, &limiter_, &meter_ });
-    const auto meter = meter_.getBounds().withTrimmedBottom(40);
-    meter_.setBounds(meter.withSizeKeepingCentre(meter.getWidth() - 8, 14));
+    auto stutter = cards[2].removeFromTop(cards[2].getHeight() / 2);
+    layoutRow(stutter, { &stutterEnabled_, &stutterRate_, &stutterMix_, &pumpRate_, &pumpMix_ });
+    layoutRow(cards[2], { &gateEnabled_, &gateRate_, &gateMix_ });
+    const int third = cards[3].getHeight() / 3;
+    layoutRow(cards[3].removeFromTop(third), { &highPassMidi_, &highPass_, &highPassSync_, &highPassSyncRate_ });
+    layoutRow(cards[3].removeFromTop(third), { &lowPassMidi_, &lowPass_, &lowPassSync_, &lowPassSyncRate_ });
+    layoutRow(cards[3], { &midiVolume_, &midiExpression_, &midiBrightness_ });
 }
 
 } // namespace openedmkick::ui

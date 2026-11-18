@@ -12,7 +12,7 @@ class ParameterControl final : public juce::Component,
                                public juce::SettableTooltipClient,
                                private juce::Timer {
 public:
-    ParameterControl(Apvts&, juce::String id, juce::Component& owner, juce::Component& input);
+    ParameterControl(Apvts&, juce::String id, juce::Component& owner, juce::Component& input, bool attachChildren = true);
     ~ParameterControl() override;
     void bind(juce::String id);
     void paint(juce::Graphics&) override;
@@ -24,6 +24,7 @@ private:
     juce::String id_;
     juce::Component& owner_;
     juce::Component& input_;
+    bool attachChildren_ = true;
 };
 
 class SectionLock final : public juce::TextButton, private juce::Timer {
@@ -68,6 +69,58 @@ private:
     Apvts* state_ = nullptr;
     juce::String parameterId_;
     std::unique_ptr<juce::ParameterAttachment> attachment_;
+};
+
+/** Dual concentric rotary control: inner cap adjusts dB gain, outer collar sweeps Hz frequency. */
+class DualEqKnob final : public juce::Component, private juce::Timer {
+public:
+    DualEqKnob(Apvts& state, const juce::String& freqId, const juce::String& dbId,
+               const juce::String& title, juce::Colour dbAccent, juce::Colour freqAccent);
+    void paint(juce::Graphics& g) override;
+    void resized() override;
+    void mouseDown(const juce::MouseEvent& event) override;
+    void mouseDrag(const juce::MouseEvent& event) override;
+    void mouseUp(const juce::MouseEvent& event) override;
+    void mouseDoubleClick(const juce::MouseEvent& event) override;
+    void mouseWheelMove(const juce::MouseEvent& event, const juce::MouseWheelDetails& wheel) override;
+    void mouseMove(const juce::MouseEvent& event) override;
+    void mouseExit(const juce::MouseEvent& event) override;
+    void setTooltip(const juce::String& text);
+    [[nodiscard]] juce::Slider& slider() noexcept { return dbSlider_; }
+
+private:
+    class GainSlider final : public RoutedSlider {
+    public:
+        using RoutedSlider::RoutedSlider;
+        bool hitTest(int x, int y) override;
+    };
+
+    void timerCallback() override;
+    [[nodiscard]] juce::Rectangle<float> dialBounds() const;
+    [[nodiscard]] juce::Rectangle<int> dbPillBounds() const;
+    [[nodiscard]] juce::Rectangle<int> freqPillBounds() const;
+    [[nodiscard]] bool hitsOuterRing(juce::Point<float> pos) const;
+    void updateReadoutText();
+
+    Apvts& state_;
+    juce::String freqId_;
+    juce::String dbId_;
+    juce::Colour dbAccent_;
+    juce::Colour freqAccent_;
+    juce::Label title_;
+    juce::Label dbReadout_;
+    GainSlider dbSlider_;
+    juce::Slider freqMirror_;
+    std::unique_ptr<ParameterControl> dbRouting_;
+    std::unique_ptr<ParameterControl> freqRouting_;
+    std::unique_ptr<juce::ParameterAttachment> dbAttachment_;
+    std::unique_ptr<juce::ParameterAttachment> freqAttachment_;
+    float freqHz_ = 1000.0f;
+    float displayedDb_ = 0.0f;
+    float dragStartNorm_ = 0.5f;
+    float dragStartY_ = 0.0f;
+    bool draggingFreq_ = false;
+    bool hoveringFreq_ = false;
 };
 
 class Choice : public juce::Component {

@@ -159,10 +159,8 @@ TEST_CASE("Hot kicks stay finite and under the limiter ceiling", "[engine]") {
     core::KickEngine engine;
     engine.prepare(48000.0);
     core::EngineSettings settings{};
-    settings.synth.drive = 1.0f;
     settings.synth.clickLevel = 1.0f;
     settings.synth.sweepOctaves = 5.0f;
-    settings.effects.drive = 1.0f;
     settings.effects.outputGain = 2.0f;
     settings.effects.limiterEnabled = true;
     settings.effects.ceilingGain = 0.5f;
@@ -188,7 +186,6 @@ namespace {
     core::KickEngine engine;
     engine.prepare(48000.0);
     core::EngineSettings settings{};
-    settings.effects.drive = 0.0f;
     settings.effects.limiterEnabled = false;
     settings.effects.highPassHz = highPassHz;
     settings.effects.lowPassHz = lowPassHz;
@@ -254,11 +251,8 @@ TEST_CASE("MIDI note-on follows the exact note and octave", "[engine][midi]") {
         settings.synth.knockDb = 0.0f;
         settings.synth.subLevel = 0.0f;
         settings.synth.clickLevel = 0.0f;
-        settings.synth.drive = 0.0f;
-        settings.synth.clip = 0.0f;
         settings.synth.holdMs = 0.0f;
         settings.synth.decayMs = 360.0f;
-        settings.effects.drive = 0.0f;
         settings.effects.limiterEnabled = false;
         const core::Transport transport{ 120.0, 0.0, 4.0, true };
         const std::array<core::MidiTrigger, 1> trigger{ { { 0, midiNote, 1.0f, false } } };
@@ -286,12 +280,9 @@ TEST_CASE("MIDI velocity gives soft and hard kick hits a useful level range", "[
         settings.synth.knockDb = 0.0f;
         settings.synth.subLevel = 0.0f;
         settings.synth.clickLevel = 0.0f;
-        settings.synth.drive = 0.0f;
-        settings.synth.clip = 0.0f;
         settings.synth.holdMs = 0.0f;
         settings.synth.decayMs = 120.0f;
         settings.effects.limiterEnabled = false;
-        settings.effects.drive = 0.0f;
         const std::array<core::MidiTrigger, 1> trigger{ { { 0, 36, velocity, false } } };
         std::vector<float> output(8192, 0.0f);
         float* channel = output.data();
@@ -314,7 +305,6 @@ TEST_CASE("MIDI CC and automation activate host-synced filter sweeps", "[engine]
         engine.prepare(48000.0);
         core::EngineSettings settings{};
         settings.synth.decayMs = 360.0f;
-        settings.effects.drive = 0.0f;
         settings.effects.limiterEnabled = false;
         settings.effects.highPassSyncEnabled = highPassAutomation;
         settings.effects.lowPassSyncEnabled = lowPassAutomation;
@@ -421,7 +411,6 @@ namespace {
 std::array<std::vector<float>, 2> renderImprovedLayers(core::EngineSettings settings, int note = 36, float velocity = 0.5f) {
     core::KickEngine engine;
     engine.prepare(48000);
-    settings.effects.drive = 0;
     settings.effects.limiterEnabled = false;
     std::array<std::vector<float>, 2> audio{std::vector<float>(4096), std::vector<float>(4096)};
     float* channels[]{audio[0].data(), audio[1].data()};
@@ -461,11 +450,9 @@ TEST_CASE("Layer MIDI zones include boundaries and reject outside hits", "[layer
 TEST_CASE("Layer synthesis offsets leave other layers independent", "[layer-improvements]") {
     core::EngineSettings settings;
     const auto original = renderImprovedLayers(settings);
-    settings.layers[1].driveOffset = 0.4f;
     settings.layers[1].toneScale = 0.2f;
     settings.layers[1].sweepScale = 0;
     REQUIRE(renderImprovedLayers(settings) == original);
-    settings.layers[0].driveOffset = 0.4f;
     settings.layers[0].toneScale = 0.2f;
     settings.layers[0].sweepScale = 0;
     REQUIRE(renderImprovedLayers(settings) != original);
@@ -487,11 +474,11 @@ TEST_CASE("Layer solo pan and polarity act before the stereo effects", "[layer-i
     REQUIRE(renderImprovedLayers(settings) == solo);
 }
 
-TEST_CASE("Snare drive offset changes its own synthesized signal", "[layer-improvements]") {
+TEST_CASE("Snare tone scale changes its own synthesized signal", "[layer-improvements]") {
     core::EngineSettings settings;
     settings.layers[0].sound = core::DrumSoundType::snare;
     const double original = layerEnergy(renderImprovedLayers(settings)[0]);
-    settings.layers[0].driveOffset = 0.7f;
+    settings.layers[0].toneScale = 0.4f;
     REQUIRE(layerEnergy(renderImprovedLayers(settings)[0]) != original);
 }
 
@@ -504,7 +491,6 @@ TEST_CASE("Layer sequencer routing only starts the addressed voice", "[layer-imp
     settings.layers[1].enabled = true;
     settings.layers[1].pan = 1;
     settings.effects.limiterEnabled = false;
-    settings.effects.drive = 0;
     std::array<float, 4096> left{}, right{};
     float* channels[]{left.data(), right.data()};
     engine.process(settings, {120, 0.0, 4, true}, {}, channels, 2, 4096);

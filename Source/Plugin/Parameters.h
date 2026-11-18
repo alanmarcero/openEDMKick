@@ -13,11 +13,8 @@ inline constexpr const char* kSweepShape = "sweep_shape";
 inline constexpr const char* kSnapOctaves = "snap_octaves";
 inline constexpr const char* kSnapMs = "snap_ms";
 inline constexpr const char* kBodyTone = "body_tone";
-inline constexpr const char* kBodyDrive = "body_drive";
-inline constexpr const char* kSaturation = "saturation";
 inline constexpr const char* kKnockHz = "knock_hz";
 inline constexpr const char* kKnockDb = "knock_db";
-inline constexpr const char* kGrit = "grit";
 inline constexpr const char* kToneHz = "tone_hz";
 inline constexpr const char* kSubLevel = "sub_level";
 inline constexpr const char* kStartPhase = "start_phase";
@@ -30,7 +27,6 @@ inline constexpr const char* kHoldMs = "hold_ms";
 inline constexpr const char* kDecayMs = "decay_ms";
 inline constexpr const char* kDecayShape = "decay_shape";
 inline constexpr const char* kLowCutHz = "low_cut_hz";
-inline constexpr const char* kClip = "clip";
 
 inline constexpr const char* kLayerEnabled = "enabled";
 inline constexpr const char* kLayerSound = "sound";
@@ -46,7 +42,6 @@ inline constexpr const char* kLayerKeyLow = "key_low";
 inline constexpr const char* kLayerKeyHigh = "key_high";
 inline constexpr const char* kLayerVelocityLow = "velocity_low";
 inline constexpr const char* kLayerVelocityHigh = "velocity_high";
-inline constexpr const char* kLayerDriveOffset = "drive_offset";
 inline constexpr const char* kLayerToneScale = "tone_scale";
 inline constexpr const char* kLayerSweepScale = "sweep_scale";
 inline constexpr const char* kLayerSolo = "solo";
@@ -89,7 +84,6 @@ inline constexpr std::array<const char*, 5> kAutoSlotIds{
 
 inline constexpr const char* kReverseMode = "reverse_mode";
 inline constexpr const char* kReverseMix = "reverse_mix";
-inline constexpr const char* kDrive = "drive";
 inline constexpr const char* kCrushRate = "crush_rate";
 inline constexpr const char* kCrushBits = "crush_bits";
 inline constexpr const char* kCrushMix = "crush_mix";
@@ -109,6 +103,12 @@ inline constexpr const char* kOutput = "output";
 inline constexpr const char* kLimiter = "limiter";
 inline constexpr const char* kCeiling = "ceiling";
 inline constexpr const char* kMasterBypass = "master_bypass";
+inline constexpr const char* kEqLowFreq = "eq_low_freq";
+inline constexpr const char* kEqLowDb = "eq_low_db";
+inline constexpr const char* kEqMidFreq = "eq_mid_freq";
+inline constexpr const char* kEqMidDb = "eq_mid_db";
+inline constexpr const char* kEqHighFreq = "eq_high_freq";
+inline constexpr const char* kEqHighDb = "eq_high_db";
 
 inline constexpr std::array<std::pair<int, int>, 9> kTimeSignatures = { {
     { 4, 4 }, { 3, 4 }, { 2, 4 }, { 5, 4 }, { 6, 4 }, { 6, 8 }, { 7, 8 }, { 9, 8 }, { 12, 8 }

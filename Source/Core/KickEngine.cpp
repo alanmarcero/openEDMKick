@@ -29,6 +29,7 @@ void KickEngine::prepare(double sampleRate) {
     std::ranges::for_each(forwardVoices_, [this](KickVoice& voice) { voice.prepare(sampleRate_); });
     std::ranges::for_each(reverseVoices_, [this](KickVoice& voice) { voice.prepare(sampleRate_); });
     for (auto& effect : stutter_) effect.prepare(sampleRate_);
+    eq_.prepare(sampleRate_);
     limiter_.prepare(sampleRate_);
     widthDelayBuffer_.assign(std::max<size_t>(16, static_cast<size_t>(sampleRate_ * 0.015)), 0.0f);
     toneSmooth_ = static_cast<float>(1.0 - std::exp(-1.0 / (0.012 * sampleRate_)));
@@ -47,6 +48,7 @@ void KickEngine::reset() noexcept {
     for (auto& effect : stutter_) effect.reset();
     for (auto& effect : filterPump_) effect.reset();
     for (auto& effect : toneFilter_) effect.reset();
+    eq_.reset();
     limiter_.reset();
     std::fill(widthDelayBuffer_.begin(), widthDelayBuffer_.end(), 0.0f);
     widthWriteIndex_ = 0;
@@ -445,13 +447,12 @@ void KickEngine::process(
         effectTailAllowance_ = filterMemory ? 0.5 : (crushMemory ? 2.0 / crusherRate : 0);
         for (size_t side = 0; side < static_cast<size_t>(std::min(2, numChannels)); ++side) {
             const float input = numChannels == 1 ? (raw[0] + raw[1]) * 0.5f : raw[side];
-            const float driven = saturate(input, settings.effects.drive);
             const float ramp = autoActive ? unit(autoSettings.crushSweep) * sequencer_.currentWindowPhase() : 0.0f;
             const float crushMix = std::clamp(activationAmount(settings.effects.crushMix, crushCcEnabled_ || settings.effects.crushEnabled) + ramp, 0.0f, 1.0f);
-            float postCrush = driven;
+            float postCrush = input;
             if (crushMix > 0.001f) {
-                const float crushed = crusher_[side].process(driven, settings.effects.crushRateHz, settings.effects.crushBits, sampleRate_);
-                postCrush = driven + crushMix * (crushed - driven);
+                const float crushed = crusher_[side].process(input, settings.effects.crushRateHz, settings.effects.crushBits, sampleRate_);
+                postCrush = input + crushMix * (crushed - input);
             }
             const float repeated = stutter_[side].process(postCrush, ppq, division(settings.effects.stutterDivision), bpm, sampleRate_);
             const float postRepeat = postCrush + (stutterArmed_ ? activationAmount(settings.effects.stutterMix, stutterCcEnabled_ || settings.effects.stutterEnabled) : 0.0f) * (repeated - postCrush);
@@ -465,7 +466,6 @@ void KickEngine::process(
                 effectTailRemaining_ = static_cast<int64_t>(std::ceil(effectTailAllowance_ * sampleRate_));
             out = toneFilter_[side].process(out, smoothedHighPassHz_, std::min(smoothedLowPassHz_, brightnessMax), sampleRate_);
             if (!std::isfinite(out) || settings.masterBypass) out = 0.0f;
-            peak = std::max(peak, std::abs(out));
             channels[side][sample] = out;
         }
         if (numChannels > 1 && !widthDelayBuffer_.empty() && !settings.masterBypass) {
@@ -481,10 +481,16 @@ void KickEngine::process(
                 const float sideSignal = delayedHigh * widthAmount * 0.55f;
                 channels[0][sample] += sideSignal;
                 channels[1][sample] -= sideSignal;
-                peak = std::max({peak, std::abs(channels[0][sample]), std::abs(channels[1][sample])});
                 widthWriteIndex_ = (widthWriteIndex_ + 1) % widthDelayBuffer_.size();
             }
         }
+        if (!settings.masterBypass) {
+            float dummyRight = channels[0][sample];
+            float& rightRef = numChannels > 1 ? channels[1][sample] : dummyRight;
+            eq_.process(channels[0][sample], rightRef, settings.effects.eq);
+        }
+        peak = std::max(peak, std::abs(channels[0][sample]));
+        if (numChannels > 1) peak = std::max(peak, std::abs(channels[1][sample]));
         if (effectTailRemaining_ > 0) --effectTailRemaining_;
         if (settings.effects.limiterEnabled) {
             const std::array<float*, 2> frame{channels[0] + sample, numChannels > 1 ? channels[1] + sample : nullptr};

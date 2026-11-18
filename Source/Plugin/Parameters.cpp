@@ -24,7 +24,7 @@ const Formatter kFormatBipolar = [](float value, int) {
 const Formatter kFormatMs = [](float ms, int) {
     return (ms < 10.0f ? juce::String(ms, 1) : juce::String(juce::roundToInt(ms))) + " ms";
 };
-const Formatter kFormatDb = [](float db, int) { return juce::String(db, 1) + " dB"; };
+const Formatter kFormatDb = [](float db, int) { return (db > 0.05f ? "+" : "") + juce::String(db, 1) + " dB"; };
 const Formatter kFormatSemitones = [](float semitones, int) {
     const int value = juce::roundToInt(semitones);
     return (value > 0 ? "+" : "") + juce::String(value) + " st";
@@ -100,11 +100,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout() {
     addFloat(layout, kSnapOctaves, "Snap", { 0.0f, 5.0f }, 2.0f, kFormatOctaves);
     addFloat(layout, kSnapMs, "Snap Time", skewedRange(0.2f, 12.0f, 2.0f), 2.0f, kFormatMs);
     addFloat(layout, kBodyTone, "Harmonics", { 0.0f, 1.0f }, 0.65f, kFormatPercent);
-    addFloat(layout, kBodyDrive, "Body Drive", { 0.0f, 1.0f }, 0.55f, kFormatPercent);
-    addChoice(layout, kSaturation, "Saturation", { "Warm", "Tube", "Crunch", "Fold" }, 0);
     addFloat(layout, kKnockHz, "Knock Frequency", skewedRange(60.0f, 800.0f, 180.0f), 180.0f, kFormatHz);
     addFloat(layout, kKnockDb, "Knock", { 0.0f, 18.0f }, 6.0f, kFormatDb);
-    addFloat(layout, kGrit, "Tail Grit", { 0.0f, 1.0f }, 0.35f, kFormatPercent);
     addFloat(layout, kToneHz, "Body Tone", skewedRange(300.0f, 20000.0f, 9000.0f), 9000.0f, kFormatHz);
     addFloat(layout, kSubLevel, "Sub", { 0.0f, 1.0f }, 0.35f, kFormatPercent);
     addFloat(layout, kStartPhase, "Start Phase", { 0.0f, 1.0f }, 0.5f, kFormatPercent);
@@ -117,7 +114,6 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout() {
     addFloat(layout, kDecayMs, "Decay", skewedRange(1.0f, 1500.0f, 300.0f), 300.0f, kFormatMs);
     addFloat(layout, kDecayShape, "Decay Shape", { -1.0f, 1.0f }, 0.5f, kFormatBipolar);
     addFloat(layout, kLowCutHz, "Low Cut", skewedRange(10.0f, 90.0f, 25.0f), 25.0f, kFormatHz);
-    addFloat(layout, kClip, "Clip", { 0.0f, 1.0f }, 0.45f, kFormatPercent);
 
     const std::array<float, 4> layerEnabled{ 1.0f, 0.0f, 0.0f, 0.0f };
     const std::array<float, 4> layerSound{ 0.0f, 1.0f, 2.0f, 3.0f };
@@ -161,7 +157,6 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout() {
 
     addChoice(layout, kReverseMode, "Reverse Sync Mode", reverseModes, 0);
     addFloat(layout, kReverseMix, "Reverse Mix", { 0.0f, 1.0f }, 1.0f, kFormatPercent);
-    addFloat(layout, kDrive, "Drive", { 0.0f, 1.0f }, 0.15f, kFormatPercent);
     addFloat(layout, kCrushRate, "Crush Rate", skewedRange(200.0f, 48000.0f, 4000.0f), 8000.0f, kFormatHz);
     layout.add(std::make_unique<juce::AudioParameterInt>(juce::ParameterID{ kCrushBits, kVersion }, "Crush Bits", 1, 16, 8));
     addFloat(layout, kCrushMix, "Crush Mix", { 0.0f, 1.0f }, 0.0f, kFormatPercent);
@@ -190,7 +185,6 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout() {
         addFloat(layout, layerId(layer, kLayerKeyHigh), prefix + "Key high", { 0.0f, 127.0f, 1.0f }, 127.0f, kFormatMidi, 3);
         addFloat(layout, layerId(layer, kLayerVelocityLow), prefix + "Velocity low", { 1.0f, 127.0f, 1.0f }, 1.0f, kFormatMidi, 3);
         addFloat(layout, layerId(layer, kLayerVelocityHigh), prefix + "Velocity high", { 1.0f, 127.0f, 1.0f }, 127.0f, kFormatMidi, 3);
-        addFloat(layout, layerId(layer, kLayerDriveOffset), prefix + "Drive offset", { -1.0f, 1.0f }, 0.0f, kFormatPercent, 3);
         addFloat(layout, layerId(layer, kLayerToneScale), prefix + "Tone scale", { 0.1f, 2.0f }, 1.0f, kFormatPercent, 3);
         addFloat(layout, layerId(layer, kLayerSweepScale), prefix + "Sweep scale", { 0.0f, 2.0f }, 1.0f, kFormatPercent, 3);
         addBool(layout, layerId(layer, kLayerSolo), prefix + "Solo", false, 3);
@@ -214,6 +208,12 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout() {
     addFloat(layout, kSubOctave, "Sub Octave", { 0.0f, 1.0f }, 0.0f, kFormatPercent, 5);
     addFloat(layout, kClickPunch, "Transient Punch", { 0.0f, 1.0f }, 0.0f, kFormatPercent, 5);
     addFloat(layout, kStereoWidth, "Stereo Width", { 0.0f, 1.0f }, 0.0f, kFormatPercent, 5);
+    addFloat(layout, kEqLowFreq, "EQ Low Frequency", skewedRange(25.0f, 400.0f, 90.0f), 80.0f, kFormatHz, 6);
+    addFloat(layout, kEqLowDb, "EQ Low Level", { -12.0f, 12.0f, 0.1f }, 0.0f, kFormatDb, 6);
+    addFloat(layout, kEqMidFreq, "EQ Mid Frequency", skewedRange(200.0f, 6000.0f, 1000.0f), 1000.0f, kFormatHz, 6);
+    addFloat(layout, kEqMidDb, "EQ Mid Level", { -12.0f, 12.0f, 0.1f }, 0.0f, kFormatDb, 6);
+    addFloat(layout, kEqHighFreq, "EQ High Frequency", skewedRange(2000.0f, 18000.0f, 6000.0f), 7500.0f, kFormatHz, 6);
+    addFloat(layout, kEqHighDb, "EQ High Level", { -12.0f, 12.0f, 0.1f }, 0.0f, kFormatDb, 6);
     return layout;
 }
 
