@@ -14,6 +14,8 @@
 #include <new>
 #include <ranges>
 #include <ranges>
+#include <cstdlib>
+#include <fstream>
 #include <string>
 #include <vector>
 
@@ -438,6 +440,61 @@ TEST_CASE("Factory trance one-shots have a defined attack, tuned sub and short t
             CHECK(fundamentalPower > 0.55 * energy / count);
         }
     }
+}
+
+TEST_CASE("Factory kicks stay off the limiter and in a usable level range", "[plugin][presets][quality]") {
+    constexpr int rate = 48000;
+    OpenEdmKickProcessor processor;
+    juce::AudioBuffer<float> hit(2, rate / 2);
+    processor.prepareToPlay(rate, hit.getNumSamples());
+    float minPeak = 10.0f;
+    float maxPeak = 0.0f;
+    float minRms = 10.0f;
+    float maxRms = 0.0f;
+    for (int index = 0; index < processor.getNumPrograms(); ++index) {
+        processor.setCurrentProgram(index);
+        juce::MidiBuffer midi;
+        midi.addEvent(juce::MidiMessage::noteOn(1, 36, 1.0f), 0);
+        processor.processBlock(hit, midi);
+        const float peak = hit.getMagnitude(0, hit.getNumSamples());
+        double energy = 0.0;
+        int nans = 0;
+        for (int i = 0; i < hit.getNumSamples(); ++i) {
+            const float sample = hit.getSample(0, i);
+            if (!std::isfinite(sample)) ++nans;
+            energy += static_cast<double>(sample) * sample;
+        }
+        INFO(processor.getProgramName(index).toStdString());
+        CHECK(nans == 0);
+        CHECK(peak < 0.90f);
+        CHECK(peak > 0.12f);
+        const float rms = std::sqrt(static_cast<float>(energy / hit.getNumSamples()));
+        minPeak = std::min(minPeak, peak);
+        maxPeak = std::max(maxPeak, peak);
+        minRms = std::min(minRms, rms);
+        maxRms = std::max(maxRms, rms);
+        if (const char* dir = std::getenv("OEK_AUDITION_DIR")) {
+            const auto path = std::string(dir) + "/" + (index < 9 ? "0" : "") + std::to_string(index + 1) + ".wav";
+            std::ofstream out(path, std::ios::binary);
+            const uint32_t dataBytes = static_cast<uint32_t>(hit.getNumSamples() * 6);
+            auto u16 = [&](uint16_t v) { out.put(static_cast<char>(v)); out.put(static_cast<char>(v >> 8)); };
+            auto u32 = [&](uint32_t v) {
+                out.put(static_cast<char>(v)); out.put(static_cast<char>(v >> 8));
+                out.put(static_cast<char>(v >> 16)); out.put(static_cast<char>(v >> 24));
+            };
+            out.write("RIFF", 4); u32(36 + dataBytes); out.write("WAVE", 4);
+            out.write("fmt ", 4); u32(16); u16(1); u16(2); u32(rate); u32(rate * 6); u16(6); u16(24);
+            out.write("data", 4); u32(dataBytes);
+            for (int i = 0; i < hit.getNumSamples(); ++i) {
+                for (int channel = 0; channel < 2; ++channel) {
+                    const int v = std::clamp(static_cast<int>(std::lround(hit.getSample(channel, i) * 8388607.0)), -8388608, 8388607);
+                    out.put(static_cast<char>(v)); out.put(static_cast<char>(v >> 8)); out.put(static_cast<char>(v >> 16));
+                }
+            }
+        }
+    }
+    CHECK(maxPeak / std::max(minPeak, 1.0e-6f) < 3.2f);
+    CHECK(maxRms / std::max(minRms, 1.0e-6f) < 4.0f);
 }
 
 TEST_CASE("New layer controls automate and restore independently", "[layer-improvements]") {
