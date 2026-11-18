@@ -6,7 +6,7 @@
 
 namespace openedmkick::presets {
 
-inline constexpr int kCatalogVersion = 6;
+inline constexpr int kCatalogVersion = 7;
 
 struct FactoryPreset {
     const char* name;

@@ -1,3 +1,4 @@
+#include "KickEngine.h"
 #include "KickSynth.h"
 
 #include <array>
@@ -192,4 +193,85 @@ TEST_CASE("Knock emphasizes the selected frequency while preserving the distant 
         settings.knockHz = core::noteFrequencyHz(core::kDefaultMidiNote);
         CHECK(bodyRms(settings, rate, core::kDefaultMidiNote) > dry * 1.15);
     }
+}
+
+namespace {
+
+double goertzel(const std::vector<float>& samples, size_t start, size_t count, double hz, double rate) {
+    const double coeff = 2.0 * std::cos(2.0 * std::numbers::pi * hz / rate);
+    double s1 = 0.0, s2 = 0.0;
+    for (size_t i = 0; i < count && start + i < samples.size(); ++i) {
+        const double s0 = samples[start + i] + coeff * s1 - s2;
+        s2 = s1;
+        s1 = s0;
+    }
+    return std::sqrt(std::max(0.0, s1 * s1 + s2 * s2 - coeff * s1 * s2));
+}
+
+} // namespace
+
+TEST_CASE("Kick harmonics fall away after the pitch dive", "[synth][quality]") {
+    core::KickSettings settings{};
+    settings.bodyTone = 1.0f;
+    settings.sweepOctaves = 2.0f;
+    settings.sweepMs = 24.0f;
+    settings.snapOctaves = 1.0f;
+    settings.clickLevel = 0.0f;
+    settings.subLevel = 0.7f;
+    settings.holdMs = 4.0f;
+    settings.decayMs = 180.0f;
+    settings.knockDb = 0.0f;
+    const auto hit = core::renderKick(settings, 48000.0, 36);
+    const double fundamental = core::noteFrequencyHz(36);
+    const double early = goertzel(hit, static_cast<size_t>(48000 * 0.004), 512, fundamental * 3.0, 48000.0);
+    const double late = goertzel(hit, static_cast<size_t>(48000 * 0.08), 2048, fundamental * 3.0, 48000.0);
+    const double lateFund = goertzel(hit, static_cast<size_t>(48000 * 0.08), 2048, fundamental, 48000.0);
+    CHECK(late < early * 0.35);
+    CHECK(late < lateFund * 0.15);
+    for (float sample : hit) {
+        CHECK(std::isfinite(sample));
+        CHECK(std::abs(sample) <= 1.0f);
+    }
+}
+
+TEST_CASE("Retriggering a sustaining kick does not jump", "[synth][quality]") {
+    core::KickEngine engine;
+    engine.prepare(48000.0);
+    core::EngineSettings settings{};
+    settings.synth.sweepOctaves = 0.4f;
+    settings.synth.snapOctaves = 0.1f;
+    settings.synth.clickLevel = 0.0f;
+    settings.synth.bodyTone = 0.1f;
+    settings.synth.holdMs = 8.0f;
+    settings.synth.decayMs = 400.0f;
+    settings.synth.subLevel = 0.8f;
+    settings.effects.limiterEnabled = false;
+    settings.layers[1].enabled = settings.layers[2].enabled = settings.layers[3].enabled = false;
+    const int at = static_cast<int>(48000 * 0.08);
+    std::vector<float> left(static_cast<size_t>(48000 * 0.16));
+    float* channel = left.data();
+    const std::array<core::MidiTrigger, 2> notes{{ { 0, 36, 1.0f, false, 1 }, { at, 36, 1.0f, false, 1 } }};
+    engine.process(settings, { 128.0, 0.0, 4.0, true }, notes, &channel, 1, static_cast<int>(left.size()));
+    float step = 0.0f;
+    for (int i = at; i < at + 30; ++i)
+        step = std::max(step, std::abs(left[static_cast<size_t>(i)] - left[static_cast<size_t>(i - 1)]));
+    CHECK(step < 0.05f);
+}
+
+TEST_CASE("Hat partials do not ring through the noise decay", "[synth][layers][quality]") {
+    core::KickSettings settings{};
+    settings.clickLevel = settings.subLevel = settings.bodyTone = 0.0f;
+    core::DrumLayerSettings hat{};
+    hat.enabled = true;
+    hat.sound = core::DrumSoundType::hat;
+    hat.gain = 1.0f;
+    hat.decayMs = 80.0f;
+    hat.highPassHz = 4000.0f;
+    hat.lowPassHz = 16000.0f;
+    std::array<core::DrumLayerSettings, core::kNumSoundLayers> layers{};
+    layers[0] = hat;
+    const auto hit = core::renderLayeredKick(settings, layers, 48000.0, 36);
+    const double early = goertzel(hit, 0, 400, 6500.0, 48000.0);
+    const double late = goertzel(hit, static_cast<size_t>(48000 * 0.03), 600, 6500.0, 48000.0);
+    CHECK(late < early * 0.45);
 }

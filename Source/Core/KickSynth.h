@@ -123,6 +123,7 @@ private:
     [[nodiscard]] float ampLevel() const noexcept;
     [[nodiscard]] float renderHostSample() noexcept;
     [[nodiscard]] float renderOversampled() noexcept;
+    [[nodiscard]] float declick(float sample) noexcept;
     [[nodiscard]] float renderClick(float timeMs) noexcept;
     [[nodiscard]] float renderDrumLayer(float timeMs) noexcept;
 
@@ -149,6 +150,9 @@ private:
     float releaseLevel_ = 0;
     int64_t hostIndex_ = 0;
     int64_t hostLength_ = 0;
+    int64_t declickLeft_ = 0;
+    int64_t declickLength_ = 1;
+    float declickFrom_ = 0.0f;
     int64_t chokeRemaining_ = -1;
     int64_t chokeLength_ = 1;
     bool reversing_ = false;

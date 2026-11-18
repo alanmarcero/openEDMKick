@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <array>
+#include <string_view>
 #include <ranges>
 #include <iterator>
 
@@ -129,6 +130,17 @@ void appendLayer(std::vector<std::pair<juce::String, float>>& values, int layerI
     values.emplace_back(id(params::kLayerPolarity), 0.0f);
 }
 
+[[nodiscard]] float outputTrimDb(const char* name) {
+    // These hits were reaching the limiter. The trim keeps that ceiling out of the sound.
+    if (std::string_view(name) == "Uplifting / Skyward") return -2.4f;
+    if (std::string_view(name) == "Progressive / Undercurrent") return -4.0f;
+    if (std::string_view(name) == "Psy / Short Circuit") return -3.6f;
+    if (std::string_view(name) == "Psy / Acid Tick") return -4.0f;
+    if (std::string_view(name) == "Tech / Machined") return -3.6f;
+    if (std::string_view(name) == "Tech / Pressure Plate") return -4.0f;
+    return 0.0f;
+}
+
 [[nodiscard]] FactoryPreset makeFactoryPreset(const KickProfile& kick) {
     std::vector<std::pair<juce::String, float>> values{
         { params::kSweepOctaves, kick.sweepOct }, { params::kSweepMs, kick.sweepMs },
@@ -146,6 +158,7 @@ void appendLayer(std::vector<std::pair<juce::String, float>>& values, int layerI
         { params::kAmpSustain, 0.8f }, { params::kAmpRelease, 300 },
         { params::kSubOctave, kick.subOctave }, { params::kClickPunch, kick.clickPunch },
         { params::kStereoWidth, kick.width },
+        { params::kOutput, outputTrimDb(kick.name) },
         { params::kEqLowFreq, 80.0f }, { params::kEqLowDb, 0.0f },
         { params::kEqMidFreq, 1000.0f }, { params::kEqMidDb, 0.0f },
         { params::kEqHighFreq, 7500.0f }, { params::kEqHighDb, 0.0f },
