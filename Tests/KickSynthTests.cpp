@@ -120,6 +120,17 @@ TEST_CASE("Kick, snare, clap, and hat layers render and filter independently", "
     REQUIRE(difference(sounds[1], sounds[2]) > 10.0);
     REQUIRE(difference(sounds[2], sounds[3]) > 10.0);
 
+    // Drum layers (snare, clap, hat) must add substantial audible energy on top of a kick
+    for (int extra = 1; extra <= 3; ++extra) {
+        std::array<core::DrumLayerSettings, core::kNumSoundLayers> baseLayers{};
+        baseLayers[0] = { true, core::DrumSoundType::kick, 1.0f, 0.0f, 180.0f };
+        auto layered = baseLayers;
+        layered[1] = { true, static_cast<core::DrumSoundType>(extra), 0.7f, 0.0f, 120.0f };
+        const auto kickOnly = core::renderLayeredKick(settings, baseLayers, 48000.0, 36);
+        const auto withLayer = core::renderLayeredKick(settings, layered, 48000.0, 36);
+        REQUIRE(difference(kickOnly, withLayer) > 40.0);
+    }
+
     settings.sweepOctaves = settings.snapOctaves = 0.0f;
     settings.drive = settings.clip = settings.clickLevel = settings.subLevel = 0.0f;
     layers[0] = { true, core::DrumSoundType::kick, 1.0f, 0.0f, 300.0f };
