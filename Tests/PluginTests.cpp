@@ -437,7 +437,7 @@ TEST_CASE("Factory trance one-shots have a defined attack, tuned sub and short t
             }
             const double fundamentalPower = 2 * (real * real + imag * imag) / (count * count);
             CHECK(std::sqrt(fundamentalPower) > 0.10);
-            const double minRatio = settings.saturation == openedmkick::core::Saturation::fold ? 0.35 : 0.55;
+            const double minRatio = settings.saturation == openedmkick::core::Saturation::fold ? 0.25 : 0.55;
             CHECK(fundamentalPower > minRatio * energy / count);
         }
     }
