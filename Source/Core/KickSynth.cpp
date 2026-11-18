@@ -135,6 +135,7 @@ void KickVoice::startState(const KickSettings& settings, int midiNote, float vel
     const float layerGain = finiteClamp(layer_.gain, 1.0f, 0.0f, 1.0f);
     gain_ = std::pow(hitVelocity, finiteClamp(layer.velocityCurve, 1.45f, 0.1f, 4)) * layerGain * finiteClamp(gainScale, 1.0f, 0.0f, 1.0f);
     noteHz_ = noteFrequencyHz(midiNote) * std::exp2(transpose / 12.0f);
+    if (layer_.sound == DrumSoundType::snare) noteHz_ = 195.0f * std::exp2(transpose / 12.0f);
     if (layer_.sound == DrumSoundType::hat) noteHz_ = 6500.0f * pitchRatio;
     noteHz_ = std::clamp(noteHz_, 1.0f, static_cast<float>(std::max(1000.0, osRate_ * 0.12)));
     phase_ = static_cast<double>(finiteClamp(settings_.startPhase, 0.5f, 0.0f, 1.0f) * 0.25f);
@@ -168,6 +169,8 @@ void KickVoice::startState(const KickSettings& settings, int midiNote, float vel
     const float safeLowCut = track(finiteClamp(settings_.lowCutHz, 25.0f, 10.0f, 90.0f));
     clickFrequencyHz_ = track(finiteClamp(settings_.clickHz, 3500.0f, 500.0f, 14000.0f));
     float safeClickHz = clickFrequencyHz_;
+    if (layer_.sound == DrumSoundType::snare) safeClickHz = std::clamp(2600.0f * toneScale * std::exp2(transpose / 12.0f), 200.0f, static_cast<float>(hostRate_ * 0.45));
+    if (layer_.sound == DrumSoundType::clap) safeClickHz = std::clamp(1650.0f * toneScale * std::exp2(transpose / 12.0f), 200.0f, static_cast<float>(hostRate_ * 0.45));
     if (layer_.sound == DrumSoundType::hat) safeClickHz = std::clamp(noteHz_ * toneScale, 5.0f, static_cast<float>(hostRate_ * 0.45));
     knock_.c = dsp::peakCoeffs(safeKnockHz, 1.05, safeKnockDb, osRate_);
     tone_.c = dsp::lowpassCoeffs(safeTone, 0.707, osRate_);
@@ -275,7 +278,8 @@ float KickVoice::renderClick(float timeMs) noexcept {
     const float hz = clickFrequencyHz_;
     const float attack = std::min(1.0f, timeMs / 0.18f);
     const float envelope = std::exp(-timeMs * 5.0f / duration) * attack;
-    const float noise = clickFilter_.process(nextNoise(noise_));
+    const float osNoiseGain = std::sqrt(static_cast<float>(std::max(1, decimator_.factor()))) * 1.4f;
+    const float noise = clickFilter_.process(nextNoise(noise_)) * osNoiseGain;
     float oscillatorHz = hz;
     if (settings_.clickType == ClickType::analog) {
         oscillatorHz *= 1.0f + 0.8f * shapedFall(timeMs / duration, 0.5f);
@@ -295,33 +299,34 @@ float KickVoice::renderDrumLayer(float timeMs) noexcept {
     const float decay = settings_.ampEnabled && !reversing_ ? 1.0f : shapedFall(progress, 0.15f);
     const float bright = 0.45f + 0.55f * velocity_;
     const float noise = nextNoise(noise_);
+    const float osNoiseGain = std::sqrt(static_cast<float>(std::max(1, decimator_.factor()))) * 2.2f;
     const float phase = static_cast<float>(phase_) * kTwoPi;
 
     switch (layer_.sound) {
         case DrumSoundType::snare: {
             const float noiseTail = settings_.ampEnabled && !reversing_ ? 1.0f : std::exp(-timeMs * (3.8f + bright * 2.0f) / decayMs);
             const float body = std::sin(phase) * (settings_.ampEnabled && !reversing_ ? 1.0f : std::exp(-timeMs * 9.0f / decayMs));
-            const float snareNoise = clickFilter_.process(noise);
-            return decay * (body * 0.48f + snareNoise * noiseTail * (0.72f + bright * 0.2f));
+            const float snareNoise = clickFilter_.process(noise) * osNoiseGain;
+            return decay * (body * 0.52f + snareNoise * noiseTail * (0.75f + bright * 0.25f));
         }
         case DrumSoundType::clap: {
             float burst = 0.0f;
             std::ranges::for_each(std::views::iota(0, 4), [&](int tap) {
-                const float startMs = static_cast<float>(tap) * 8.0f;
-                if (timeMs >= startMs) burst += std::exp(-(timeMs - startMs) * 1.25f);
+                const float startMs = static_cast<float>(tap) * 6.0f;
+                if (timeMs >= startMs) burst += std::exp(-(timeMs - startMs) * 1.1f);
             });
-            const float clapNoise = clickFilter_.process(noise);
+            const float clapNoise = clickFilter_.process(noise) * osNoiseGain;
             const float diffuseTail = settings_.ampEnabled && !reversing_ ? 1.0f : std::exp(-timeMs * 5.0f / decayMs);
-            const float texture = std::min(1.0f, burst * 0.38f) * 0.78f + diffuseTail * 0.22f;
-            return clapNoise * texture * decay * (0.8f + bright * 0.2f);
+            const float texture = std::min(1.0f, burst * 0.48f) * 0.78f + diffuseTail * 0.26f;
+            return clapNoise * texture * decay * (0.85f + bright * 0.25f);
         }
         case DrumSoundType::hat: {
             const float metal = std::sin(static_cast<float>(phase_) * kTwoPi)
                 + 0.72f * std::sin(static_cast<float>(phase_) * kTwoPi * 1.342f)
                 + 0.51f * std::sin(static_cast<float>(phase_) * kTwoPi * 1.817f)
                 + 0.38f * std::sin(static_cast<float>(phase_) * kTwoPi * 2.311f);
-            const float hatNoise = clickFilter_.process(noise) * (0.85f + bright * 0.3f);
-            return (hatNoise * 0.72f + metal * 0.16f) * decay;
+            const float hatNoise = clickFilter_.process(noise) * osNoiseGain * (0.85f + bright * 0.3f);
+            return (hatNoise * 0.78f + metal * 0.20f) * decay;
         }
         case DrumSoundType::kick:
             break;

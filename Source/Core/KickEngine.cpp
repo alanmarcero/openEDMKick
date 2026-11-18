@@ -448,12 +448,16 @@ void KickEngine::process(
             const float driven = saturate(input, settings.effects.drive);
             const float ramp = autoActive ? unit(autoSettings.crushSweep) * sequencer_.currentWindowPhase() : 0.0f;
             const float crushMix = std::clamp(activationAmount(settings.effects.crushMix, crushCcEnabled_ || settings.effects.crushEnabled) + ramp, 0.0f, 1.0f);
-            const float crushed = crusher_[side].process(driven, settings.effects.crushRateHz, settings.effects.crushBits, sampleRate_);
-            const float postCrush = driven + crushMix * (crushed - driven);
+            float postCrush = driven;
+            if (crushMix > 0.001f) {
+                const float crushed = crusher_[side].process(driven, settings.effects.crushRateHz, settings.effects.crushBits, sampleRate_);
+                postCrush = driven + crushMix * (crushed - driven);
+            }
             const float repeated = stutter_[side].process(postCrush, ppq, division(settings.effects.stutterDivision), bpm, sampleRate_);
             const float postRepeat = postCrush + (stutterArmed_ ? activationAmount(settings.effects.stutterMix, stutterCcEnabled_ || settings.effects.stutterEnabled) : 0.0f) * (repeated - postCrush);
-            const float pumped = filterPump_[side].process(postRepeat, ppq, division(settings.effects.pumpDivision),
-                                                      settings.effects.pumpMix, sampleRate_);
+            const float pumped = settings.effects.pumpMix > 0.001f
+                ? filterPump_[side].process(postRepeat, ppq, division(settings.effects.pumpDivision), settings.effects.pumpMix, sampleRate_)
+                : postRepeat;
             const float gated = pumped * TempoGate::gainAt(ppq, division(settings.effects.gateDivision), activationAmount(settings.effects.gateMix, gateCcEnabled_ || settings.effects.gateEnabled));
             float out = gated * settings.effects.outputGain * midiVolume_ * midiExpression_ * settings.effects.midiVolume * settings.effects.midiExpression;
 
@@ -465,21 +469,21 @@ void KickEngine::process(
             channels[side][sample] = out;
         }
         if (numChannels > 1 && !widthDelayBuffer_.empty() && !settings.masterBypass) {
-            const float monoMid = 0.5f * (channels[0][sample] + channels[1][sample]);
-            const float lpCoeff = static_cast<float>(1.0 - std::exp(-2.0 * std::numbers::pi * 450.0 / sampleRate_));
-            widthLowPassState_ += lpCoeff * (monoMid - widthLowPassState_);
-            const float highBand = monoMid - widthLowPassState_;
-            widthDelayBuffer_[widthWriteIndex_] = highBand;
             const float widthAmount = unit(settings.effects.stereoWidth);
             if (widthAmount > 0.001f) {
+                const float monoMid = 0.5f * (channels[0][sample] + channels[1][sample]);
+                const float lpCoeff = static_cast<float>(1.0 - std::exp(-2.0 * std::numbers::pi * 450.0 / sampleRate_));
+                widthLowPassState_ += lpCoeff * (monoMid - widthLowPassState_);
+                const float highBand = monoMid - widthLowPassState_;
+                widthDelayBuffer_[widthWriteIndex_] = highBand;
                 const size_t delayTap = std::clamp<size_t>(static_cast<size_t>(sampleRate_ * 0.0065), 1, widthDelayBuffer_.size() - 1);
                 const float delayedHigh = widthDelayBuffer_[(widthWriteIndex_ + widthDelayBuffer_.size() - delayTap) % widthDelayBuffer_.size()];
                 const float sideSignal = delayedHigh * widthAmount * 0.55f;
                 channels[0][sample] += sideSignal;
                 channels[1][sample] -= sideSignal;
                 peak = std::max({peak, std::abs(channels[0][sample]), std::abs(channels[1][sample])});
+                widthWriteIndex_ = (widthWriteIndex_ + 1) % widthDelayBuffer_.size();
             }
-            widthWriteIndex_ = (widthWriteIndex_ + 1) % widthDelayBuffer_.size();
         }
         if (effectTailRemaining_ > 0) --effectTailRemaining_;
         if (settings.effects.limiterEnabled) {
