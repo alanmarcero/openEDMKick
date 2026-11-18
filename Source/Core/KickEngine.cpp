@@ -30,6 +30,7 @@ void KickEngine::prepare(double sampleRate) {
     std::ranges::for_each(reverseVoices_, [this](KickVoice& voice) { voice.prepare(sampleRate_); });
     for (auto& effect : stutter_) effect.prepare(sampleRate_);
     limiter_.prepare(sampleRate_);
+    widthDelayBuffer_.assign(std::max<size_t>(16, static_cast<size_t>(sampleRate_ * 0.015)), 0.0f);
     toneSmooth_ = static_cast<float>(1.0 - std::exp(-1.0 / (0.012 * sampleRate_)));
     reset();
 }
@@ -47,6 +48,9 @@ void KickEngine::reset() noexcept {
     for (auto& effect : filterPump_) effect.reset();
     for (auto& effect : toneFilter_) effect.reset();
     limiter_.reset();
+    std::fill(widthDelayBuffer_.begin(), widthDelayBuffer_.end(), 0.0f);
+    widthWriteIndex_ = 0;
+    widthLowPassState_ = 0.0f;
     smoothedHighPassHz_ = ToneFilter::kHighPassBypassHz;
     smoothedLowPassHz_ = ToneFilter::kLowPassBypassHz;
     toneSnap_ = true;
@@ -459,6 +463,23 @@ void KickEngine::process(
             if (!std::isfinite(out) || settings.masterBypass) out = 0.0f;
             peak = std::max(peak, std::abs(out));
             channels[side][sample] = out;
+        }
+        if (numChannels > 1 && !widthDelayBuffer_.empty() && !settings.masterBypass) {
+            const float monoMid = 0.5f * (channels[0][sample] + channels[1][sample]);
+            const float lpCoeff = static_cast<float>(1.0 - std::exp(-2.0 * std::numbers::pi * 450.0 / sampleRate_));
+            widthLowPassState_ += lpCoeff * (monoMid - widthLowPassState_);
+            const float highBand = monoMid - widthLowPassState_;
+            widthDelayBuffer_[widthWriteIndex_] = highBand;
+            const float widthAmount = unit(settings.effects.stereoWidth);
+            if (widthAmount > 0.001f) {
+                const size_t delayTap = std::clamp<size_t>(static_cast<size_t>(sampleRate_ * 0.0065), 1, widthDelayBuffer_.size() - 1);
+                const float delayedHigh = widthDelayBuffer_[(widthWriteIndex_ + widthDelayBuffer_.size() - delayTap) % widthDelayBuffer_.size()];
+                const float sideSignal = delayedHigh * widthAmount * 0.55f;
+                channels[0][sample] += sideSignal;
+                channels[1][sample] -= sideSignal;
+                peak = std::max({peak, std::abs(channels[0][sample]), std::abs(channels[1][sample])});
+            }
+            widthWriteIndex_ = (widthWriteIndex_ + 1) % widthDelayBuffer_.size();
         }
         if (effectTailRemaining_ > 0) --effectTailRemaining_;
         if (settings.effects.limiterEnabled) {

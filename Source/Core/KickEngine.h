@@ -68,6 +68,7 @@ struct EffectSettings {
     float midiBrightness = 1;
     bool highPassMidi = false;
     bool lowPassMidi = false;
+    float stereoWidth = 0.0f;
 };
 
 struct EngineSettings {
@@ -162,6 +163,9 @@ private:
     std::array<SyncFilterPump, 2> filterPump_;
     std::array<ToneFilter, 2> toneFilter_;
     PeakLimiter limiter_;
+    std::vector<float> widthDelayBuffer_;
+    size_t widthWriteIndex_ = 0;
+    float widthLowPassState_ = 0.0f;
     float smoothedHighPassHz_ = ToneFilter::kHighPassBypassHz;
     float smoothedLowPassHz_ = ToneFilter::kLowPassBypassHz;
     float toneSmooth_ = 0.0f;

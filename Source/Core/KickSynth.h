@@ -81,6 +81,8 @@ struct KickSettings {
     float ampDecayMs = 100.0f;
     float ampSustain = 0.8f;
     float ampReleaseMs = 300.0f;
+    float subOctave = 0.0f;       // 0..1, phase-locked sub-octave reinforcement
+    float clickPunch = 0.0f;      // 0..1, fast attack transient punch boost
 
 };
 
@@ -151,6 +153,7 @@ private:
     float previousSample_ = 0.0f;
     double phase_ = 0.0;
     double subPhase_ = 0.0;
+    double subOctavePhase_ = 0.0;
     double clickPhase_ = 0.0;
     int64_t osIndex_ = 0;
     int64_t ampIndex_ = 0;

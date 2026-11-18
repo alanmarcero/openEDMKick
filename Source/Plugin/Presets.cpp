@@ -99,7 +99,8 @@ constexpr std::array<KickProfile, 48> kProfiles{{
         { params::kDecayMs, kick.decayMs }, { params::kDecayShape, voice.decayShape },
         { params::kLowCutHz, 20 }, { params::kClip, 0.035f },
         { params::kAmpEnabled, 0 }, { params::kAmpAttack, 0 }, { params::kAmpDecay, 100 },
-        { params::kAmpSustain, 0.8f }, { params::kAmpRelease, 300 }
+        { params::kAmpSustain, 0.8f }, { params::kAmpRelease, 300 },
+        { params::kSubOctave, 0.0f }, { params::kClickPunch, 0.0f }, { params::kStereoWidth, 0.0f }
     } };
 }
 

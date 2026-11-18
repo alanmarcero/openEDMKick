@@ -139,6 +139,7 @@ void KickVoice::startState(const KickSettings& settings, int midiNote, float vel
     noteHz_ = std::clamp(noteHz_, 1.0f, static_cast<float>(std::max(1000.0, osRate_ * 0.12)));
     phase_ = static_cast<double>(finiteClamp(settings_.startPhase, 0.5f, 0.0f, 1.0f) * 0.25f);
     subPhase_ = 0.0;
+    subOctavePhase_ = 0.0;
     clickPhase_ = 0.0;
     osIndex_ = 0;
     ampIndex_ = 0;
@@ -197,6 +198,8 @@ void KickVoice::startReverse(const KickSettings& settings, int midiNote, float v
     phase_ = cycles - std::floor(cycles);
     subPhase_ = noteHz_ * sourceSeconds;
     subPhase_ -= std::floor(subPhase_);
+    subOctavePhase_ = 0.5 * noteHz_ * sourceSeconds;
+    subOctavePhase_ -= std::floor(subOctavePhase_);
     clickPhase_ = clickFrequencyHz_ * std::min(sourceMs, static_cast<double>(settings_.clickMs)) * 0.001;
     clickPhase_ -= std::floor(clickPhase_);
     reverseSourcePosition_ = std::max(0.0, std::ceil(sourceSeconds * osRate_) - 1.0);
@@ -350,7 +353,9 @@ float KickVoice::renderOversampled() noexcept {
         const float blend = std::min(1.0f, 2.0f * diveOctaves);
         const float attackWeight = blend * blend * (3.0f - 2.0f * blend);
         const float attackSub = std::sin(static_cast<float>(subPhase_) * kTwoPi);
-        const float sub = subLevel * std::lerp(fundamental, attackSub, attackWeight);
+        const float subOctAmount = finiteClamp(settings_.subOctave, 0.0f, 0.0f, 1.0f);
+        const float subOctSine = std::sin(static_cast<float>(subOctavePhase_) * kTwoPi);
+        const float sub = subLevel * std::lerp(fundamental, attackSub, attackWeight) + subOctAmount * 0.38f * subOctSine;
         const float drive = finiteClamp(settings_.drive, 0.55f, 0.0f, 1.0f);
         const float grit = finiteClamp(settings_.grit, 0.35f, 0.0f, 1.0f);
         const float attackMs = finiteClamp(settings_.attackMs, 0.15f, 0.05f, 10.0f);
@@ -363,7 +368,9 @@ float KickVoice::renderOversampled() noexcept {
         const float shaped = saturate(body * driveAmount, settings_.saturation) / std::sqrt(driveAmount);
         const float mixed = shaped * (1.0f - subLevel * 0.45f) + sub * 0.45f;
         const float click = renderClick(timeMs);
-        sample = tone_.process(mixed + click);
+        const float punchAmount = finiteClamp(settings_.clickPunch, 0.0f, 0.0f, 1.0f);
+        const float punchGain = 1.0f + punchAmount * 0.75f * std::exp(-timeMs / 4.5f);
+        sample = tone_.process((mixed + click) * punchGain);
         sample = lowCut_.process(sample);
         const float clip = finiteClamp(settings_.clip, 0.45f, 0.0f, 1.0f);
         sample += clip * (dsp::softClip(sample * 1.35f) - sample);
@@ -387,6 +394,8 @@ float KickVoice::renderOversampled() noexcept {
     phase_ -= std::floor(phase_);
     subPhase_ += static_cast<double>(noteHz_) / osRate_ * phaseDirection_;
     subPhase_ -= std::floor(subPhase_);
+    subOctavePhase_ += 0.5 * static_cast<double>(noteHz_) / osRate_ * phaseDirection_;
+    subOctavePhase_ -= std::floor(subOctavePhase_);
     ++osIndex_;
     ++ampIndex_;
     return std::isfinite(sample) ? sample : 0.0f;

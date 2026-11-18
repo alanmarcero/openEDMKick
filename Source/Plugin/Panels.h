@@ -46,11 +46,13 @@ private:
     Knob grit_;
     Knob toneHz_;
     Knob subLevel_;
+    Knob subOctave_;
     Knob startPhase_;
     Choice clickType_;
     Knob clickLevel_;
     Knob clickHz_;
     Knob clickMs_;
+    Knob clickPunch_;
     Knob attack_;
     Knob hold_;
     Knob decay_;
@@ -166,6 +168,7 @@ private:
     Choice reverseMode_;
     Knob reverseMix_;
     Knob drive_;
+    Knob stereoWidth_;
     Knob crushRate_;
     Knob crushBits_;
     Knob crushMix_;
