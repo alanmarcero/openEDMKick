@@ -591,8 +591,8 @@ EffectsPanel::EffectsPanel(OpenEdmKickProcessor& processor)
         [this](juce::Component* component) { addAndMakeVisible(component); });
     for (auto* component : std::array<juce::Component*, 9>{&highPassMidi_, &lowPassMidi_, &reverseEnabled_, &crushEnabled_, &stutterEnabled_, &gateEnabled_, &midiVolume_, &midiExpression_, &midiBrightness_}) addAndMakeVisible(component);
     const std::array<juce::StringArray, 4> groups{{
-        {params::kReverseEnabled, params::kReverseMode, params::kReverseMix, params::kDrive, params::kStereoWidth, params::kMasterBypass},
-        {params::kCrushEnabled, params::kCrushRate, params::kCrushBits, params::kCrushMix},
+        {params::kReverseEnabled, params::kReverseMode, params::kReverseMix, params::kDrive, params::kMasterBypass},
+        {params::kCrushEnabled, params::kCrushRate, params::kCrushBits, params::kCrushMix, params::kStereoWidth},
         {params::kStutterEnabled, params::kStutterRate, params::kStutterMix, params::kGateEnabled, params::kGateRate, params::kGateMix, params::kPumpRate, params::kPumpMix},
         {params::kHighPassMidi, params::kLowPassMidi, params::kHighPass, params::kLowPass, params::kHighPassSyncEnabled, params::kHighPassSyncRate, params::kLowPassSyncEnabled, params::kLowPassSyncRate, params::kOutput, params::kCeiling, params::kLimiter, params::kMidiVolume, params::kMidiExpression, params::kMidiBrightness}
     }};
@@ -649,8 +649,8 @@ void EffectsPanel::resized() {
         sectionLocks_[i]->setBounds(14, cards[i].getY() + 48, kSectionLockWidth, kSectionLockHeight);
         cards[i] = cards[i].withTrimmedLeft(154).reduced(8, 8);
     }
-    layoutRow(cards[0], { &reverseEnabled_, &reverseMode_, &reverseMix_, &drive_, &stereoWidth_, &masterBypass_ });
-    layoutRow(cards[1], { &crushEnabled_, &crushMix_, &crushRate_, &crushBits_ });
+    layoutRow(cards[0], { &reverseEnabled_, &reverseMode_, &reverseMix_, &drive_, &masterBypass_ });
+    layoutRow(cards[1], { &crushEnabled_, &crushMix_, &crushRate_, &crushBits_, &stereoWidth_ });
     if (advancedMode_) {
         auto stutter = cards[2].removeFromTop(cards[2].getHeight() / 2);
         layoutRow(stutter, { &stutterEnabled_, &stutterRate_, &stutterMix_, &pumpRate_, &pumpMix_ });
