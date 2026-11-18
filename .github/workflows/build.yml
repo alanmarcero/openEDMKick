@@ -18,6 +18,7 @@ env:
 
 jobs:
   macos:
+    if: false
     # macos-14 was retired on 2026-11-02. macos-15 is arm64 and still builds the universal binary.
     runs-on: macos-15
     steps:
@@ -102,6 +103,7 @@ jobs:
             openEDMKick-Windows.zip
 
   linux:
+    if: false
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -139,7 +141,7 @@ jobs:
             openEDMKick-Linux.zip
 
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: ${{ always() && startsWith(github.ref, 'refs/tags/v') && needs.windows.result == 'success' && (needs.macos.result == 'skipped' || needs.macos.result == 'success') && (needs.linux.result == 'skipped' || needs.linux.result == 'success') }}
     needs: [macos, windows, linux]
     runs-on: ubuntu-latest
     permissions:
