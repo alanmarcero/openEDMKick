@@ -15,3 +15,13 @@ cmake --build build --target openedmkick_screenshots --config Release
 The target builds `openedmkick_plugin_tests` and runs `[capture]` with `OEK_CAPTURE_DIR` set to this repository's `assets` directory. Existing PNGs are truncated and replaced. Normal CTest skips the capture-only case when that environment variable is absent. To run it directly, set `OEK_CAPTURE_DIR` to an absolute output directory and invoke `openedmkick_plugin_tests '[capture]'`.
 
 The tests verify output size and PNG writing. Every final image is also visually inspected. These are native component snapshots, not promotional images or mockups.
+
+
+## OpenVST Manager preview
+
+OpenVST Manager shows `docs/screenshots/preview.png` from `main` (see `screenshotPath` in its catalog), and the GitHub release body and README hero point at the same file. This is the single image to keep current. Refresh it with the main editor capture whenever the UI changes, and commit it before tagging a release:
+
+```sh
+mkdir -p build/shots && OEK_CAPTURE_DIR="$PWD/build/shots" build/openedmkick_plugin_tests '[capture]'
+cp build/shots/openKicker-kick.png docs/screenshots/preview.png
+```

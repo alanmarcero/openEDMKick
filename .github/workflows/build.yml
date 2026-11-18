@@ -156,5 +156,5 @@ jobs:
           files: |
             openKicker-*.zip
             openEDMKick-*.zip
-          body: '![Native editor](https://raw.githubusercontent.com/alanmarcero/openEDMKick/${{ github.ref_name }}/assets/openKicker-kick.png)'
+          body: '![Native editor](https://raw.githubusercontent.com/alanmarcero/openEDMKick/${{ github.ref_name }}/docs/screenshots/preview.png)'
           generate_release_notes: true
