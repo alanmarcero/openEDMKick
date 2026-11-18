@@ -1,4 +1,4 @@
-# openKicker v3.6.0
+# openKicker v3.7.0
 
 [Install with OpenVST Manager](https://github.com/alanmarcero/alan-m-OpenVSTManager/releases/latest)
 
