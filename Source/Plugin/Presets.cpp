@@ -47,7 +47,7 @@ constexpr LayerPreset punchSnare{ true, DrumSoundType::snare, 0.44f, 2.0f, 48.0f
 constexpr LayerPreset snapSnare{ true, DrumSoundType::snare, 0.52f, 5.0f, 32.0f, 450.0f, 12000.0f };
 constexpr LayerPreset subLayer{ true, DrumSoundType::kick, 0.45f, -12.0f, 240.0f, 20.0f, 160.0f };
 
-constexpr std::array<KickProfile, 48> kProfiles{{
+constexpr std::array<KickProfile, 56> kProfiles{{
     // Uplifting: punchy, airy, melodic trance kicks
     { "Uplifting / First Light",    Saturation::warm,   ClickType::beater, 2.4f, 33,  0.16f, 0.49f, 0.14f, 0.06f, 142, 3.2f, 12500, 0.06f, 0.34f, 4600, 3.1f, 0.15f, 17, 155, -0.22f, 0.65f, 0.00f, 20, 0.05f, none, none },
     { "Uplifting / Glass Beater",   Saturation::tube,   ClickType::tick,   2.8f, 26,  0.35f, 0.62f, 0.28f, 0.12f, 165, 5.0f, 15500, 0.18f, 0.48f, 7400, 2.2f, 0.42f, 14, 132, -0.35f, 0.56f, 0.00f, 24, 0.18f, crispHat, none },
@@ -57,6 +57,14 @@ constexpr std::array<KickProfile, 48> kProfiles{{
     { "Uplifting / Clean Lift",     Saturation::warm,   ClickType::beater, 1.9f, 38,  0.10f, 0.26f, 0.08f, 0.03f, 118, 2.0f,  9200, 0.03f, 0.25f, 4100, 3.4f, 0.05f, 22, 185, -0.18f, 0.72f, 0.12f, 20, 0.00f, none, none },
     { "Uplifting / Short Arc",      Saturation::tube,   ClickType::tick,   2.6f, 21,  0.40f, 0.58f, 0.36f, 0.18f, 170, 5.5f, 13800, 0.22f, 0.44f, 5800, 1.8f, 0.38f, 10, 105, -0.45f, 0.58f, 0.00f, 26, 0.12f, none, none },
     { "Uplifting / Main Room",      Saturation::tube,   ClickType::beater, 2.7f, 36,  0.20f, 0.66f, 0.44f, 0.24f, 148, 6.8f, 14500, 0.32f, 0.46f, 5200, 3.5f, 0.45f, 32, 240, -0.12f, 0.70f, 0.28f, 20, 0.32f, wideClap, crispHat },
+    { "Uplifting / Euphoria",       Saturation::tube,   ClickType::beater, 2.9f, 29,  0.28f, 0.60f, 0.30f, 0.14f, 156, 4.8f, 16000, 0.16f, 0.45f, 6200, 2.6f, 0.36f, 16, 142, -0.28f, 0.64f, 0.10f, 22, 0.22f, crispHat, none },
+    { "Uplifting / Morning Sun",    Saturation::warm,   ClickType::analog, 2.2f, 34,  0.14f, 0.40f, 0.16f, 0.08f, 136, 3.0f, 10600, 0.08f, 0.30f, 3700, 3.3f, 0.12f, 20, 168, -0.20f, 0.72f, 0.16f, 20, 0.08f, none, none },
+    { "Uplifting / Skyward",        Saturation::tube,   ClickType::tick,   3.0f, 24,  0.42f, 0.68f, 0.34f, 0.16f, 175, 5.8f, 16800, 0.20f, 0.50f, 7800, 2.1f, 0.44f, 13, 128, -0.36f, 0.58f, 0.00f, 26, 0.26f, openHat, tightClap },
+    { "Uplifting / Pure 138",       Saturation::warm,   ClickType::beater, 2.3f, 28,  0.22f, 0.46f, 0.18f, 0.07f, 144, 3.4f, 11800, 0.09f, 0.36f, 4900, 2.8f, 0.24f, 15, 138, -0.30f, 0.68f, 0.00f, 24, 0.06f, none, none },
+    { "Uplifting / Silver Lining",  Saturation::tube,   ClickType::tick,   2.7f, 20,  0.38f, 0.56f, 0.26f, 0.11f, 178, 5.2f, 14600, 0.15f, 0.46f, 6700, 1.9f, 0.40f, 11, 112, -0.42f, 0.60f, 0.00f, 26, 0.14f, crispHat, none },
+    { "Uplifting / Afterglow",      Saturation::warm,   ClickType::analog, 2.0f, 40,  0.08f, 0.34f, 0.20f, 0.11f, 124, 3.8f,  9800, 0.12f, 0.26f, 3400, 4.0f, 0.08f, 26, 205, -0.16f, 0.78f, 0.24f, 20, 0.12f, snapSnare, none },
+    { "Uplifting / Starlight",      Saturation::tube,   ClickType::noise,  3.2f, 25,  0.36f, 0.64f, 0.38f, 0.19f, 168, 6.0f, 15800, 0.24f, 0.52f, 7100, 2.7f, 0.46f, 18, 150, -0.25f, 0.62f, 0.08f, 24, 0.30f, wideClap, none },
+    { "Uplifting / Horizon",        Saturation::warm,   ClickType::beater, 2.4f, 35,  0.18f, 0.44f, 0.22f, 0.12f, 134, 3.6f, 13200, 0.13f, 0.35f, 4500, 3.2f, 0.18f, 24, 192, -0.19f, 0.70f, 0.18f, 20, 0.22f, openHat, none },
 
     // Rolling: tight, rhythmic, sub-locked bass-friendly kicks
     { "Rolling / Pocket",           Saturation::warm,   ClickType::tick,   1.9f, 26,  0.20f, 0.35f, 0.12f, 0.05f, 118, 2.2f,  7600, 0.06f, 0.28f, 3800, 2.0f, 0.20f, 13, 120, -0.35f, 0.75f, 0.00f, 25, 0.00f, none, none },

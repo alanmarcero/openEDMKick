@@ -207,8 +207,8 @@ TEST_CASE("Editor shows the new sound pages and current MIDI note", "[plugin][ui
     auto* presets = dynamic_cast<juce::ComboBox*>(editor->findChildWithID("factoryPreset"));
     REQUIRE(presets != nullptr);
     CHECK(presets->getRootMenu()->getNumItems() == 6);
-    presets->setSelectedId(48, juce::sendNotificationSync);
-    REQUIRE(processor.getCurrentProgram() == 47);
+    presets->setSelectedId(56, juce::sendNotificationSync);
+    REQUIRE(processor.getCurrentProgram() == 55);
     auto* next = dynamic_cast<juce::TextButton*>(editor->findChildWithID("nextPreset"));
     REQUIRE(next != nullptr);
     next->onClick();
@@ -321,7 +321,7 @@ TEST_CASE("MIDI CC21 activates the host-synced high-pass in the plug-in", "[plug
 TEST_CASE("V3 factory bank contains the new kick and fill catalogs", "[plugin][presets]") {
     const auto& programs = openedmkick::presets::factoryPresets();
     const auto& fills = openedmkick::presets::fillBuildPresets();
-    REQUIRE(programs.size() == 48u);
+    REQUIRE(programs.size() == 56u);
     REQUIRE(fills.size() == 28u);
     REQUIRE(std::string(programs.front().name) == "Uplifting / First Light");
     REQUIRE(std::string(programs.back().name) == "Classic / Final Press");
@@ -386,10 +386,10 @@ TEST_CASE("A previous bank restores its saved sound as custom", "[plugin][preset
     REQUIRE_THAT(processor.currentSynthSettings().decayMs, WithinAbs(347.0f, 0.01f));
 }
 
-TEST_CASE("All 48 trance kick presets load and report valid program names", "[plugin][presets]") {
+TEST_CASE("All 56 trance kick presets load and report valid program names", "[plugin][presets]") {
     OpenEdmKickProcessor processor;
     const auto& presets = openedmkick::presets::factoryPresets();
-    REQUIRE(processor.getNumPrograms() == 48);
+    REQUIRE(processor.getNumPrograms() == 56);
 
     std::vector<std::string> names;
     for (int index = 0; index < processor.getNumPrograms(); ++index) {
@@ -401,7 +401,7 @@ TEST_CASE("All 48 trance kick presets load and report valid program names", "[pl
     }
     std::ranges::sort(names);
     REQUIRE(std::ranges::adjacent_find(names) == names.end());
-    REQUIRE(presets.size() == 48u);
+    REQUIRE(presets.size() == 56u);
 }
 
 TEST_CASE("Factory trance one-shots have a defined attack, tuned sub and short tail", "[plugin][presets][audio]") {
