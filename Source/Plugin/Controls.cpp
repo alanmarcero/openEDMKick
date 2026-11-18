@@ -3,6 +3,8 @@
 #include "PluginProcessor.h"
 
 #include <algorithm>
+#include <cmath>
+#include <ranges>
 
 namespace openedmkick::ui {
 
@@ -13,17 +15,25 @@ constexpr int kRoutingHeight = 40;
 constexpr float kLabelFont = 13.0f;
 }
 
-ParameterControl::ParameterControl(Apvts& state, juce::String id, juce::Component& owner, juce::Component& input)
-    : state_(state), id_(std::move(id)), owner_(owner), input_(input) {
+ParameterControl::ParameterControl(Apvts& state, juce::String id, juce::Component& owner, juce::Component& input, bool attachChildren)
+    : state_(state), id_(std::move(id)), owner_(owner), input_(input), attachChildren_(attachChildren) {
     setComponentID("routing_" + id_);
     setTooltip("Click the lock to keep this value when loading a preset. Right-click to assign a MIDI CC.");
     owner_.addMouseListener(this, false);
-    for (auto* child : owner_.getChildren()) if (child != this) child->addMouseListener(this, true);
+    if (attachChildren_) {
+        std::ranges::for_each(owner_.getChildren(), [this](juce::Component* child) {
+            if (child != this) child->addMouseListener(this, true);
+        });
+    }
     startTimerHz(25);
 }
 ParameterControl::~ParameterControl() {
     owner_.removeMouseListener(this);
-    for (auto* child : owner_.getChildren()) if (child != this) child->removeMouseListener(this);
+    if (attachChildren_) {
+        std::ranges::for_each(owner_.getChildren(), [this](juce::Component* child) {
+            if (child != this) child->removeMouseListener(this);
+        });
+    }
 }
 void ParameterControl::bind(juce::String id) { id_ = std::move(id); setComponentID("routing_" + id_); refresh(); }
 void ParameterControl::paint(juce::Graphics& g) {
@@ -150,6 +160,271 @@ void Knob::resized() {
     const int boxHeight = std::min(kKnobValueHeight, std::max(0, area.getHeight() / 4));
     slider_.setTextBoxStyle(juce::Slider::TextBoxBelow, false, std::min(78, area.getWidth()), boxHeight);
     slider_.setBounds(area.withSizeKeepingCentre(std::min(112, area.getWidth()), std::min(92, area.getHeight())));
+}
+
+bool DualEqKnob::GainSlider::hitTest(int x, int y) {
+    const auto centre = getLocalBounds().toFloat().getCentre();
+    const float radius = static_cast<float>(std::min(getWidth(), getHeight())) * 0.5f;
+    return juce::Point<float>(static_cast<float>(x), static_cast<float>(y)).getDistanceFrom(centre) <= radius;
+}
+
+DualEqKnob::DualEqKnob(Apvts& state, const juce::String& freqId, const juce::String& dbId,
+                       const juce::String& title, juce::Colour dbAccent, juce::Colour freqAccent)
+    : state_(state), freqId_(freqId), dbId_(dbId), dbAccent_(dbAccent), freqAccent_(freqAccent),
+      title_({}, title),
+      dbSlider_(juce::Slider::RotaryHorizontalVerticalDrag, juce::Slider::NoTextBox) {
+    title_.setFont(juce::FontOptions(kLabelFont, juce::Font::bold));
+    title_.setColour(juce::Label::textColourId, theme::kText);
+    title_.setJustificationType(juce::Justification::centred);
+    addAndMakeVisible(title_);
+
+    dbReadout_.setFont(juce::FontOptions(12.0f, juce::Font::bold));
+    dbReadout_.setColour(juce::Label::textColourId, theme::kText);
+    dbReadout_.setColour(juce::Label::backgroundColourId, theme::kInk.brighter(0.04f));
+    dbReadout_.setJustificationType(juce::Justification::centred);
+    dbReadout_.setEditable(false, true, false);
+    addAndMakeVisible(dbReadout_);
+
+    auto* dbParam = state.getParameter(dbId);
+    const auto& dbRange = dbParam->getNormalisableRange();
+    dbSlider_.setName(title + " Gain");
+    dbSlider_.setComponentID(dbId);
+    dbSlider_.setRange(dbRange.start, dbRange.end, dbRange.interval);
+    dbSlider_.setSkewFactor(dbRange.skew, dbRange.symmetricSkew);
+    dbSlider_.setDoubleClickReturnValue(true, dbParam->convertFrom0to1(dbParam->getDefaultValue()));
+    dbSlider_.setColour(juce::Slider::rotarySliderFillColourId, dbAccent_);
+    dbSlider_.setColour(juce::Slider::rotarySliderOutlineColourId, theme::kTrack);
+    addAndMakeVisible(dbSlider_);
+
+    auto* freqParam = state.getParameter(freqId);
+    const auto& freqRange = freqParam->getNormalisableRange();
+    freqMirror_.setName(title + " Freq");
+    freqMirror_.setComponentID(freqId);
+    freqMirror_.setRange(freqRange.start, freqRange.end, freqRange.interval);
+    freqMirror_.setSkewFactor(freqRange.skew, freqRange.symmetricSkew);
+    addChildComponent(freqMirror_);
+
+    dbRouting_ = std::make_unique<ParameterControl>(state, dbId, dbSlider_, dbSlider_, true);
+    dbReadout_.addMouseListener(dbRouting_.get(), false);
+    addAndMakeVisible(*dbRouting_);
+
+    freqRouting_ = std::make_unique<ParameterControl>(state, freqId, *this, freqMirror_, false);
+    addAndMakeVisible(*freqRouting_);
+
+    dbAttachment_ = std::make_unique<juce::ParameterAttachment>(*dbParam, [this](float value) {
+        dbSlider_.setValue(value, juce::dontSendNotification);
+        displayedDb_ = value;
+        updateReadoutText();
+    });
+    freqAttachment_ = std::make_unique<juce::ParameterAttachment>(*freqParam, [this](float value) {
+        freqHz_ = value;
+        freqMirror_.setValue(value, juce::dontSendNotification);
+        repaint();
+    });
+
+    dbSlider_.onDragStart = [this] { dbAttachment_->beginGesture(); };
+    dbSlider_.onDragEnd = [this] { dbAttachment_->endGesture(); };
+    dbSlider_.onValueChange = [this] {
+        const float value = static_cast<float>(dbSlider_.getValue());
+        static_cast<OpenEdmKickProcessor&>(state_.processor).routing().manualValue(dbId_, value);
+        displayedDb_ = value;
+        updateReadoutText();
+        if (dbSlider_.isMouseButtonDown()) {
+            dbAttachment_->setValueAsPartOfGesture(value);
+            return;
+        }
+        dbAttachment_->setValueAsCompleteGesture(value);
+    };
+    dbReadout_.onTextChange = [this, dbParam] {
+        const float parsed = dbParam->convertFrom0to1(dbParam->getValueForText(dbReadout_.getText()));
+        static_cast<OpenEdmKickProcessor&>(state_.processor).routing().manualValue(dbId_, parsed);
+        dbAttachment_->setValueAsCompleteGesture(parsed);
+        updateReadoutText();
+    };
+
+    dbAttachment_->sendInitialUpdate();
+    freqAttachment_->sendInitialUpdate();
+    startTimerHz(20);
+}
+
+void DualEqKnob::timerCallback() {
+    auto& routing = static_cast<OpenEdmKickProcessor&>(state_.processor).routing();
+    const float routedDb = routing.displayValue(dbId_);
+    const float routedFreq = routing.displayValue(freqId_);
+    if (std::abs(routedDb - displayedDb_) > 0.01f) {
+        displayedDb_ = routedDb;
+        updateReadoutText();
+    }
+    if (std::abs(routedFreq - freqHz_) > 0.1f) {
+        freqHz_ = routedFreq;
+        repaint();
+    }
+}
+
+void DualEqKnob::updateReadoutText() {
+    auto* dbParam = state_.getParameter(dbId_);
+    if (dbParam == nullptr) return;
+    dbReadout_.setText(dbParam->getText(dbParam->convertTo0to1(displayedDb_), 32), juce::dontSendNotification);
+}
+
+juce::Rectangle<float> DualEqKnob::dialBounds() const {
+    const auto middle = getLocalBounds().withTrimmedTop(16).withTrimmedBottom(kRoutingHeight);
+    const float size = static_cast<float>(std::min(62, std::min(middle.getWidth() - 52, middle.getHeight())));
+    return juce::Rectangle<float>(static_cast<float>(middle.getX()) + 2.0f,
+                                  middle.toFloat().getCentreY() - size * 0.5f,
+                                  size, size);
+}
+
+juce::Rectangle<int> DualEqKnob::dbPillBounds() const {
+    const auto middle = getLocalBounds().withTrimmedTop(16).withTrimmedBottom(kRoutingHeight);
+    const int left = juce::roundToInt(dialBounds().getRight()) + 4;
+    const int width = std::max(0, middle.getRight() - left - 2);
+    const int cy = middle.getCentreY();
+    return { left, cy - 22, width, 20 };
+}
+
+juce::Rectangle<int> DualEqKnob::freqPillBounds() const {
+    const auto middle = getLocalBounds().withTrimmedTop(16).withTrimmedBottom(kRoutingHeight);
+    const int left = juce::roundToInt(dialBounds().getRight()) + 4;
+    const int width = std::max(0, middle.getRight() - left - 2);
+    const int cy = middle.getCentreY();
+    return { left, cy + 2, width, 20 };
+}
+
+bool DualEqKnob::hitsOuterRing(juce::Point<float> pos) const {
+    const auto dial = dialBounds();
+    const float dist = pos.getDistanceFrom(dial.getCentre());
+    const float outerR = dial.getWidth() * 0.5f + 3.0f;
+    const float innerR = dial.getWidth() * 0.30f;
+    return (dist >= innerR && dist <= outerR) || freqPillBounds().toFloat().contains(pos);
+}
+
+void DualEqKnob::paint(juce::Graphics& g) {
+    const auto dial = dialBounds();
+    const auto centre = dial.getCentre();
+    const float outerR = dial.getWidth() * 0.5f - 2.0f;
+    constexpr float startAngle = juce::MathConstants<float>::pi * 1.25f;
+    constexpr float endAngle = juce::MathConstants<float>::pi * 2.75f;
+
+    auto* freqParam = state_.getParameter(freqId_);
+    const float norm = freqParam != nullptr ? freqParam->convertTo0to1(freqHz_) : 0.5f;
+    const float angle = startAngle + norm * (endAngle - startAngle);
+    const auto ringColour = (hoveringFreq_ || draggingFreq_) ? freqAccent_.brighter(0.25f) : freqAccent_;
+
+    juce::Path base;
+    base.addCentredArc(centre.x, centre.y, outerR, outerR, 0.0f, startAngle, endAngle, true);
+    g.setColour(theme::kTrack);
+    g.strokePath(base, juce::PathStrokeType(3.2f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+
+    juce::Path value;
+    value.addCentredArc(centre.x, centre.y, outerR, outerR, 0.0f, startAngle, angle, true);
+    g.setColour(ringColour);
+    g.strokePath(value, juce::PathStrokeType(3.2f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+
+    const float dotX = centre.x + outerR * std::sin(angle);
+    const float dotY = centre.y - outerR * std::cos(angle);
+    g.setColour(theme::kText);
+    g.fillEllipse(dotX - 2.3f, dotY - 2.3f, 4.6f, 4.6f);
+
+    const auto freqPill = freqPillBounds().toFloat();
+    g.setColour(theme::kInk.brighter(hoveringFreq_ || draggingFreq_ ? 0.1f : 0.04f));
+    g.fillRoundedRectangle(freqPill, 4.0f);
+    g.setColour(ringColour.withAlpha(hoveringFreq_ || draggingFreq_ ? 0.9f : 0.45f));
+    g.drawRoundedRectangle(freqPill.reduced(0.5f), 4.0f, 1.0f);
+    g.setColour(theme::kText);
+    g.setFont(juce::FontOptions(11.5f, juce::Font::bold));
+    g.drawFittedText(params::formatHz(freqHz_), freqPill.toNearestInt(), juce::Justification::centred, 1);
+
+    g.setColour(theme::kTextDim);
+    g.setFont(juce::FontOptions(9.5f, juce::Font::bold));
+    g.drawText("dB", dbRouting_->getBounds().getX(), dbRouting_->getY() - 2, dbRouting_->getWidth(), 11, juce::Justification::centred);
+    g.drawText("Hz", freqRouting_->getBounds().getX(), freqRouting_->getY() - 2, freqRouting_->getWidth(), 11, juce::Justification::centred);
+}
+
+void DualEqKnob::resized() {
+    auto area = getLocalBounds();
+    auto bottom = area.removeFromBottom(kRoutingHeight);
+    const int centerX = bottom.getCentreX();
+    dbRouting_->setBounds(centerX - 42, bottom.getY(), 40, kRoutingHeight);
+    freqRouting_->setBounds(centerX + 2, bottom.getY(), 40, kRoutingHeight);
+    title_.setBounds(area.removeFromTop(16));
+    const auto dial = dialBounds();
+    const float innerSize = dial.getWidth() * 0.72f;
+    dbSlider_.setBounds(juce::Rectangle<float>(innerSize, innerSize).withCentre(dial.getCentre()).toNearestInt());
+    dbReadout_.setBounds(dbPillBounds());
+}
+
+void DualEqKnob::mouseMove(const juce::MouseEvent& event) {
+    const bool over = hitsOuterRing(event.position);
+    if (over != hoveringFreq_) {
+        hoveringFreq_ = over;
+        repaint();
+    }
+}
+
+void DualEqKnob::mouseExit(const juce::MouseEvent&) {
+    if (!hoveringFreq_) return;
+    hoveringFreq_ = false;
+    repaint();
+}
+
+void DualEqKnob::mouseDown(const juce::MouseEvent& event) {
+    if (event.mods.isPopupMenu() || !hitsOuterRing(event.position)) return;
+    auto* param = state_.getParameter(freqId_);
+    if (param == nullptr) return;
+    draggingFreq_ = true;
+    dragStartNorm_ = param->convertTo0to1(freqHz_);
+    dragStartY_ = event.position.y;
+    freqAttachment_->beginGesture();
+    repaint();
+}
+
+void DualEqKnob::mouseDrag(const juce::MouseEvent& event) {
+    if (!draggingFreq_) return;
+    auto* param = state_.getParameter(freqId_);
+    if (param == nullptr) return;
+    const float norm = std::clamp(dragStartNorm_ + (dragStartY_ - event.position.y) / 140.0f, 0.0f, 1.0f);
+    const float nextHz = param->convertFrom0to1(norm);
+    freqHz_ = nextHz;
+    static_cast<OpenEdmKickProcessor&>(state_.processor).routing().manualValue(freqId_, nextHz);
+    freqAttachment_->setValueAsPartOfGesture(nextHz);
+    repaint();
+}
+
+void DualEqKnob::mouseUp(const juce::MouseEvent&) {
+    if (!draggingFreq_) return;
+    draggingFreq_ = false;
+    freqAttachment_->endGesture();
+    repaint();
+}
+
+void DualEqKnob::mouseDoubleClick(const juce::MouseEvent& event) {
+    if (!hitsOuterRing(event.position)) return;
+    auto* param = state_.getParameter(freqId_);
+    if (param == nullptr) return;
+    const float defaultHz = param->convertFrom0to1(param->getDefaultValue());
+    freqHz_ = defaultHz;
+    static_cast<OpenEdmKickProcessor&>(state_.processor).routing().manualValue(freqId_, defaultHz);
+    freqAttachment_->setValueAsCompleteGesture(defaultHz);
+    repaint();
+}
+
+void DualEqKnob::mouseWheelMove(const juce::MouseEvent& event, const juce::MouseWheelDetails& wheel) {
+    if (!hitsOuterRing(event.position)) return;
+    auto* param = state_.getParameter(freqId_);
+    if (param == nullptr) return;
+    const float nextNorm = std::clamp(param->convertTo0to1(freqHz_) + wheel.deltaY * 0.08f, 0.0f, 1.0f);
+    const float nextHz = param->convertFrom0to1(nextNorm);
+    freqHz_ = nextHz;
+    static_cast<OpenEdmKickProcessor&>(state_.processor).routing().manualValue(freqId_, nextHz);
+    freqAttachment_->setValueAsCompleteGesture(nextHz);
+    repaint();
+}
+
+void DualEqKnob::setTooltip(const juce::String& text) {
+    dbSlider_.setTooltip(text);
+    dbReadout_.setTooltip(text);
+    title_.setTooltip(text);
 }
 
 Choice::Choice(Apvts& state, const juce::String& parameterId, const juce::String& title, juce::Colour accent)

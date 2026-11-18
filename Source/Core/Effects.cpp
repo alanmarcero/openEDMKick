@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <numbers>
+#include <ranges>
 
 namespace openedmkick::core {
 namespace {
@@ -69,15 +70,6 @@ int samplesUntilPpq(double ppqPosition, double targetPpq, double bpm, double sam
 
 int computeSyncedReverseSamples(ReverseSyncMode mode, double ppqPosition, double bpm, double beatsPerBar, double sampleRate) noexcept {
     return samplesUntilPpq(ppqPosition, reverseTargetPpq(mode, ppqPosition, beatsPerBar), bpm, sampleRate);
-}
-
-float saturate(float input, float drive) noexcept {
-    const float dry = finiteOr(input);
-    const float amount = std::clamp(finiteOr(drive), 0.0f, 1.0f);
-    if (amount < 1.0e-5f) return dry;
-    const float gain = 1.0f + amount * 10.0f;
-    const float wet = std::tanh(dry * gain) / std::tanh(gain);
-    return dry + amount * (wet - dry);
 }
 
 void BitCrusher::reset() noexcept {
@@ -201,6 +193,110 @@ float ToneFilter::process(float input, float highPassHz, float lowPassHz, double
     if (std::isfinite(lowPassHz) && lowPassHz < kLowPassBypassHz - 1.0f) return lowPass(shaped, lowPassHz, sampleRate);
     lpState1_ = lpState2_ = shaped;
     return shaped;
+}
+
+void ThreeBandEq::prepare(double sampleRate) noexcept {
+    sampleRate_ = std::max(kMinRate, std::isfinite(sampleRate) ? sampleRate : 48000.0);
+    glideCoeff_ = static_cast<float>(1.0 - std::exp(-1.0 / (0.020 * sampleRate_)));
+    reset();
+}
+
+void ThreeBandEq::reset() noexcept {
+    std::ranges::for_each(bands_, [](Band& band) {
+        band = Band{};
+    });
+}
+
+void ThreeBandEq::updateBand(Band& band, BandType type, float minHz, float maxHz, float targetHz, float targetDb) noexcept {
+    const float nyquistLimit = static_cast<float>(sampleRate_ * 0.45);
+    const float clampedHz = std::clamp(finiteOr(targetHz, minHz), minHz, std::min(maxHz, nyquistLimit));
+    const float clampedDb = std::clamp(finiteOr(targetDb, 0.0f), -12.0f, 12.0f);
+    const float targetLog = std::log(std::max(10.0f, clampedHz));
+    const bool firstSample = !band.initialized;
+    const bool changing = std::abs(band.smoothedLogFreq - targetLog) > 1.0e-5f
+        || std::abs(band.smoothedDb - clampedDb) > 1.0e-4f;
+
+    if (!firstSample && !changing) return;
+
+    band.smoothedLogFreq = firstSample ? targetLog : band.smoothedLogFreq + glideCoeff_ * (targetLog - band.smoothedLogFreq);
+    band.smoothedDb = firstSample ? clampedDb : band.smoothedDb + glideCoeff_ * (clampedDb - band.smoothedDb);
+    band.initialized = true;
+
+    if (std::abs(band.smoothedDb) < 0.002f) {
+        band.b0 = 1.0;
+        band.b1 = band.b2 = band.a1 = band.a2 = 0.0;
+        return;
+    }
+
+    const double hz = std::clamp(static_cast<double>(std::exp(band.smoothedLogFreq)), 10.0, sampleRate_ * 0.45);
+    const double w0 = 2.0 * std::numbers::pi * hz / sampleRate_;
+    const double c = std::cos(w0);
+    const double s = std::sin(w0);
+    const double a = std::pow(10.0, static_cast<double>(band.smoothedDb) / 40.0);
+
+    struct Coeffs { double b0, b1, b2, a0, a1, a2; };
+    const auto design = [&](BandType kind) noexcept -> Coeffs {
+        if (kind == BandType::peak) {
+            const double alpha = s / (2.0 * 0.9);
+            return { 1.0 + alpha * a, -2.0 * c, 1.0 - alpha * a, 1.0 + alpha / a, -2.0 * c, 1.0 - alpha / a };
+        }
+        const double alpha = s / std::numbers::sqrt2;
+        const double t = 2.0 * std::sqrt(a) * alpha;
+        if (kind == BandType::lowShelf) {
+            return {
+                a * ((a + 1.0) - (a - 1.0) * c + t),
+                2.0 * a * ((a - 1.0) - (a + 1.0) * c),
+                a * ((a + 1.0) - (a - 1.0) * c - t),
+                (a + 1.0) + (a - 1.0) * c + t,
+                -2.0 * ((a - 1.0) + (a + 1.0) * c),
+                (a + 1.0) + (a - 1.0) * c - t
+            };
+        }
+        return {
+            a * ((a + 1.0) + (a - 1.0) * c + t),
+            -2.0 * a * ((a - 1.0) + (a + 1.0) * c),
+            a * ((a + 1.0) + (a - 1.0) * c - t),
+            (a + 1.0) - (a - 1.0) * c + t,
+            2.0 * ((a - 1.0) - (a + 1.0) * c),
+            (a + 1.0) - (a - 1.0) * c - t
+        };
+    };
+    const auto coeffs = design(type);
+    const double invA0 = 1.0 / coeffs.a0;
+    band.b0 = coeffs.b0 * invA0;
+    band.b1 = coeffs.b1 * invA0;
+    band.b2 = coeffs.b2 * invA0;
+    band.a1 = coeffs.a1 * invA0;
+    band.a2 = coeffs.a2 * invA0;
+}
+
+void ThreeBandEq::filterBand(Band& band, float& left, float& right) noexcept {
+    if (std::abs(band.smoothedDb) < 0.002f) {
+        band.z1L = band.z2L = band.z1R = band.z2R = 0.0;
+        return;
+    }
+    const auto tick = [&](float in, double& z1, double& z2) noexcept {
+        const double x = static_cast<double>(finiteOr(in));
+        const double y = band.b0 * x + z1;
+        z1 = band.b1 * x - band.a1 * y + z2;
+        z2 = band.b2 * x - band.a2 * y;
+        if (!std::isfinite(y) || !std::isfinite(z1) || !std::isfinite(z2)) {
+            z1 = z2 = 0.0;
+            return 0.0f;
+        }
+        return static_cast<float>(y);
+    };
+    left = tick(left, band.z1L, band.z2L);
+    right = tick(right, band.z1R, band.z2R);
+}
+
+void ThreeBandEq::process(float& left, float& right, const ThreeBandEqSettings& settings) noexcept {
+    updateBand(bands_[0], BandType::lowShelf, 25.0f, 400.0f, settings.lowFreqHz, settings.lowGainDb);
+    updateBand(bands_[1], BandType::peak, 200.0f, 6000.0f, settings.midFreqHz, settings.midGainDb);
+    updateBand(bands_[2], BandType::highShelf, 2000.0f, 18000.0f, settings.highFreqHz, settings.highGainDb);
+    filterBand(bands_[0], left, right);
+    filterBand(bands_[1], left, right);
+    filterBand(bands_[2], left, right);
 }
 
 void PeakLimiter::prepare(double sampleRate) noexcept {

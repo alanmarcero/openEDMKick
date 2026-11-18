@@ -31,24 +31,24 @@ OpenEdmKickProcessor::OpenEdmKickProcessor()
                                   layerRaw(params::kLayerVelocityCurve), layerRaw(params::kLayerVelocityTimbre),
                                   layerRaw(params::kLayerKeyLow), layerRaw(params::kLayerKeyHigh),
                                   layerRaw(params::kLayerVelocityLow), layerRaw(params::kLayerVelocityHigh),
-                                  layerRaw(params::kLayerDriveOffset), layerRaw(params::kLayerToneScale),
+                                  layerRaw(params::kLayerToneScale),
                                   layerRaw(params::kLayerSweepScale), layerRaw(params::kLayerSolo),
                                   layerRaw(params::kLayerPan), layerRaw(params::kLayerPolarity) };
           };
           return ParameterValues{
               raw(params::kSweepOctaves), raw(params::kSweepMs), raw(params::kSweepShape),
               raw(params::kSnapOctaves), raw(params::kSnapMs), raw(params::kBodyTone),
-              raw(params::kBodyDrive), raw(params::kSaturation), raw(params::kKnockHz),
-              raw(params::kKnockDb), raw(params::kGrit), raw(params::kToneHz),
+              raw(params::kKnockHz),
+              raw(params::kKnockDb), raw(params::kToneHz),
               raw(params::kSubLevel), raw(params::kStartPhase), raw(params::kClickType),
               raw(params::kClickLevel), raw(params::kClickHz), raw(params::kClickMs),
               raw(params::kAttackMs), raw(params::kHoldMs), raw(params::kDecayMs),
-              raw(params::kDecayShape), raw(params::kLowCutHz), raw(params::kClip),
+              raw(params::kDecayShape), raw(params::kLowCutHz),
               raw(params::kClockSync), raw(params::kTempoBpm), raw(params::kTimeSignature),
               raw(params::kAutoEnabled), raw(params::kAutoBypass), raw(params::kAutoSlot),
               { slotParams(0), slotParams(1), slotParams(2), slotParams(3) },
               { layerParams(0), layerParams(1), layerParams(2), layerParams(3) },
-              raw(params::kReverseMode), raw(params::kReverseMix), raw(params::kDrive),
+              raw(params::kReverseMode), raw(params::kReverseMix),
               raw(params::kCrushRate), raw(params::kCrushBits), raw(params::kCrushMix),
               raw(params::kStutterRate), raw(params::kStutterMix), raw(params::kGateRate),
               raw(params::kGateMix), raw(params::kPumpRate), raw(params::kPumpMix),
@@ -57,7 +57,9 @@ OpenEdmKickProcessor::OpenEdmKickProcessor()
               raw(params::kOutput),
               raw(params::kLimiter), raw(params::kCeiling), raw(params::kMasterBypass),
               raw(params::kAmpEnabled), raw(params::kAmpAttack), raw(params::kAmpDecay), raw(params::kAmpSustain), raw(params::kAmpRelease), raw(params::kReverseEnabled), raw(params::kCrushEnabled), raw(params::kStutterEnabled), raw(params::kGateEnabled), raw(params::kMidiVolume), raw(params::kMidiExpression), raw(params::kMidiBrightness), raw(params::kHighPassMidi), raw(params::kLowPassMidi),
-              raw(params::kSubOctave), raw(params::kClickPunch), raw(params::kStereoWidth)
+              raw(params::kSubOctave), raw(params::kClickPunch), raw(params::kStereoWidth),
+              raw(params::kEqLowFreq), raw(params::kEqLowDb), raw(params::kEqMidFreq),
+              raw(params::kEqMidDb), raw(params::kEqHighFreq), raw(params::kEqHighDb)
           };
       }()) {
     for (int slot = 0; slot < core::kNumAutoSlots; ++slot) {
@@ -90,13 +92,12 @@ core::KickSettings OpenEdmKickProcessor::currentSynthSettings() const noexcept {
     return core::KickSettings{
         values_.sweepOctaves->load(), values_.sweepMs->load(), values_.sweepShape->load(),
         values_.snapOctaves->load(), values_.snapMs->load(), values_.bodyTone->load(),
-        values_.bodyDrive->load(), static_cast<core::Saturation>(choice(values_.saturation)),
-        values_.knockHz->load(), values_.knockDb->load(), values_.grit->load(),
+        values_.knockHz->load(), values_.knockDb->load(),
         values_.toneHz->load(), values_.subLevel->load(), values_.startPhase->load(),
         static_cast<core::ClickType>(choice(values_.clickType)), values_.clickLevel->load(),
         values_.clickHz->load(), values_.clickMs->load(), values_.attackMs->load(),
         values_.holdMs->load(), values_.decayMs->load(), values_.decayShape->load(),
-        values_.lowCutHz->load(), values_.clip->load(),
+        values_.lowCutHz->load(),
         values_.ampEnabled->load() > 0.5f, values_.ampAttackMs->load(), values_.ampDecayMs->load(), values_.ampSustain->load(), values_.ampReleaseMs->load(),
         values_.subOctave->load(), values_.clickPunch->load()
     };
@@ -114,7 +115,7 @@ std::array<core::DrumLayerSettings, core::kNumSoundLayers> OpenEdmKickProcessor:
             layer.velocityCurve->load(), layer.velocityTimbre->load(),
             static_cast<int>(layer.keyLow->load()), static_cast<int>(layer.keyHigh->load()),
             static_cast<int>(layer.velocityLow->load()), static_cast<int>(layer.velocityHigh->load()),
-            layer.driveOffset->load(), layer.toneScale->load(), layer.sweepScale->load(),
+            layer.toneScale->load(), layer.sweepScale->load(),
             layer.solo->load() > 0.5f, layer.pan->load(), layer.invertPolarity->load() > 0.5f
         };
     });
@@ -248,7 +249,7 @@ core::EngineSettings OpenEdmKickProcessor::currentEngineSettings() const noexcep
     settings.autoSlots = {autoSlotSettings(0), autoSlotSettings(1), autoSlotSettings(2), autoSlotSettings(3)};
     settings.effects = core::EffectSettings{
         static_cast<core::ReverseSyncMode>(std::clamp(choice(values_.reverseMode), 0, 4)),
-        values_.reverseMix->load(), values_.drive->load(), values_.crushRate->load(),
+        values_.reverseMix->load(), values_.crushRate->load(),
         choice(values_.crushBits), values_.crushMix->load(), choice(values_.stutterRate),
         values_.stutterMix->load(), choice(values_.gateRate), values_.gateMix->load(),
         choice(values_.pumpRate), values_.pumpMix->load(),
@@ -257,7 +258,12 @@ core::EngineSettings OpenEdmKickProcessor::currentEngineSettings() const noexcep
         values_.lowPass->load(), isOn(values_.highPassSyncEnabled), choice(values_.highPassSyncRate),
         isOn(values_.lowPassSyncEnabled), choice(values_.lowPassSyncRate),
         values_.reverseEnabled->load() > 0.5f, values_.crushEnabled->load() > 0.5f, values_.stutterEnabled->load() > 0.5f, values_.gateEnabled->load() > 0.5f, values_.midiVolume->load(), values_.midiExpression->load(), values_.midiBrightness->load(), values_.highPassMidi->load() > 0.5f, values_.lowPassMidi->load() > 0.5f,
-        values_.stereoWidth->load()
+        values_.stereoWidth->load(),
+        core::ThreeBandEqSettings{
+            values_.eqLowFreq->load(), values_.eqLowDb->load(),
+            values_.eqMidFreq->load(), values_.eqMidDb->load(),
+            values_.eqHighFreq->load(), values_.eqHighDb->load()
+        }
     };
     settings.masterBypass = isOn(values_.masterBypass);
     const int signature = choice(values_.timeSignature);

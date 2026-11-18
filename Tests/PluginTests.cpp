@@ -231,7 +231,6 @@ TEST_CASE("Editor shows the new sound pages and current MIDI note", "[plugin][ui
 TEST_CASE("MIDI input tracks pitch and octave, including notes from other channels", "[plugin][midi]") {
     OpenEdmKickProcessor processor;
     processor.prepareToPlay(48000.0, 512);
-    setParam(processor, "drive", 0.0f);
     setParam(processor, "limiter", 0.0f);
 
     juce::AudioBuffer<float> buffer(2, 512);
@@ -299,7 +298,6 @@ TEST_CASE("MIDI CC21 activates the host-synced high-pass in the plug-in", "[plug
         OpenEdmKickProcessor processor;
         processor.prepareToPlay(48000.0, 8192);
         setParam(processor, "limiter", 0.0f);
-        setParam(processor, "drive", 0.0f);
         juce::AudioBuffer<float> buffer(2, 8192);
         juce::MidiBuffer midi;
         midi.addEvent(juce::MidiMessage::noteOn(1, 48, 1.0f), 0);
@@ -437,8 +435,7 @@ TEST_CASE("Factory trance one-shots have a defined attack, tuned sub and short t
             }
             const double fundamentalPower = 2 * (real * real + imag * imag) / (count * count);
             CHECK(std::sqrt(fundamentalPower) > 0.10);
-            const double minRatio = settings.saturation == openedmkick::core::Saturation::fold ? 0.25 : 0.55;
-            CHECK(fundamentalPower > minRatio * energy / count);
+            CHECK(fundamentalPower > 0.55 * energy / count);
         }
     }
 }
@@ -452,7 +449,6 @@ TEST_CASE("New layer controls automate and restore independently", "[layer-impro
     setParam(processor, "layer_a_key_high", 48);
     setParam(processor, "layer_a_velocity_low", 32);
     setParam(processor, "layer_a_velocity_high", 96);
-    setParam(processor, "layer_a_drive_offset", 0.3f);
     setParam(processor, "layer_a_tone_scale", 0.4f);
     setParam(processor, "layer_a_sweep_scale", 0.6f);
     setParam(processor, "layer_a_solo", 1);
@@ -469,7 +465,6 @@ TEST_CASE("New layer controls automate and restore independently", "[layer-impro
     REQUIRE(layers[0].keyHigh == 48);
     REQUIRE(layers[0].velocityLow == 32);
     REQUIRE(layers[0].velocityHigh == 96);
-    REQUIRE_THAT(layers[0].driveOffset, WithinAbs(0.3f, 0.001));
     REQUIRE_THAT(layers[0].toneScale, WithinAbs(0.4f, 0.001));
     REQUIRE_THAT(layers[0].sweepScale, WithinAbs(0.6f, 0.001));
     REQUIRE(layers[0].solo);
@@ -511,7 +506,7 @@ TEST_CASE("Older state fills additive layer controls with neutral defaults", "[l
     const auto isNewControl = [](const juce::String& id) {
         return id.startsWith("layer_") && (id.endsWith("velocity_curve") || id.endsWith("velocity_timbre")
             || id.endsWith("key_low") || id.endsWith("key_high") || id.endsWith("velocity_low")
-            || id.endsWith("velocity_high") || id.endsWith("drive_offset") || id.endsWith("tone_scale")
+            || id.endsWith("velocity_high") || id.endsWith("tone_scale")
             || id.endsWith("sweep_scale") || id.endsWith("solo") || id.endsWith("pan") || id.endsWith("polarity"));
     };
     for (int index = state.getNumChildren() - 1; index >= 0; --index)
@@ -599,13 +594,13 @@ TEST_CASE("Parameter and section locks preserve the latest edit through presets"
     setParam(processor, "body_tone", 0.321f);
     processor.setCurrentProgram(2);
     REQUIRE_THAT(processor.currentSynthSettings().bodyTone, WithinAbs(0.321f, 0.0001f));
-    processor.routing().toggleSection({"body_tone", "body_drive"});
+    processor.routing().toggleSection({"body_tone", "sub_level"});
     REQUIRE(processor.routing().isLocked("body_tone"));
-    REQUIRE(processor.routing().isLocked("body_drive"));
-    REQUIRE_FALSE(processor.routing().isLocked("clip"));
-    processor.routing().toggleSection({"body_tone", "body_drive"});
+    REQUIRE(processor.routing().isLocked("sub_level"));
+    REQUIRE_FALSE(processor.routing().isLocked("decay_ms"));
+    processor.routing().toggleSection({"body_tone", "sub_level"});
     REQUIRE_FALSE(processor.routing().isLocked("body_tone"));
-    REQUIRE_FALSE(processor.routing().isLocked("body_drive"));
+    REQUIRE_FALSE(processor.routing().isLocked("sub_level"));
 }
 
 TEST_CASE("CC menus expose all controllers and retain factory assignments", "[routing]") {
@@ -631,7 +626,7 @@ TEST_CASE("Routing metadata survives state restore without overriding project va
     OpenEdmKickProcessor source;
     setParam(source, "body_tone", 0.234f);
     source.routing().setLocked("body_tone", true);
-    source.routing().assignCc("clip", 35);
+    source.routing().assignCc("low_cut_hz", 35);
     juce::MemoryBlock saved;
     source.getStateInformation(saved);
     OpenEdmKickProcessor restored;
@@ -640,27 +635,27 @@ TEST_CASE("Routing metadata survives state restore without overriding project va
     restored.setStateInformation(saved.getData(), static_cast<int>(saved.getSize()));
     REQUIRE_THAT(restored.currentSynthSettings().bodyTone, WithinAbs(0.234f, 0.0001f));
     REQUIRE(restored.routing().isLocked("body_tone"));
-    REQUIRE(restored.routing().assignment("clip") == 35);
+    REQUIRE(restored.routing().assignment("low_cut_hz") == 35);
 }
 
 TEST_CASE("Assigned CC endpoints and discrete values reach runtime without APVTS writes", "[routing]") {
     OpenEdmKickProcessor processor;
     processor.prepareToPlay(48000, 64);
-    processor.routing().assignCc("clip", 35);
+    processor.routing().assignCc("limiter", 35);
     processor.routing().assignCc("click_type", 35);
-    const float hostClip = processor.parameters.getRawParameterValue("clip")->load();
+    const float hostLimiter = processor.parameters.getRawParameterValue("limiter")->load();
     juce::AudioBuffer<float> audio(2, 64);
     juce::MidiBuffer midi;
-    midi.addEvent(juce::MidiMessage::controllerEvent(1, 35, 127), 16);
+    midi.addEvent(juce::MidiMessage::controllerEvent(1, 35, 0), 16);
     processor.processBlock(audio, midi);
-    REQUIRE_THAT(processor.routing().displayValue("clip"), WithinAbs(1.0f, 0.0001f));
-    REQUIRE_THAT(processor.routing().displayValue("click_type"), WithinAbs(3.0f, 0.0001f));
-    REQUIRE_THAT(processor.parameters.getRawParameterValue("clip")->load(), WithinAbs(hostClip, 0.0001f));
-    midi.clear();
-    midi.addEvent(juce::MidiMessage::controllerEvent(1, 35, 0), 0);
-    processor.processBlock(audio, midi);
-    REQUIRE_THAT(processor.routing().displayValue("clip"), WithinAbs(0.0f, 0.0001f));
+    REQUIRE_THAT(processor.routing().displayValue("limiter"), WithinAbs(0.0f, 0.0001f));
     REQUIRE_THAT(processor.routing().displayValue("click_type"), WithinAbs(0.0f, 0.0001f));
+    REQUIRE_THAT(processor.parameters.getRawParameterValue("limiter")->load(), WithinAbs(hostLimiter, 0.0001f));
+    midi.clear();
+    midi.addEvent(juce::MidiMessage::controllerEvent(1, 35, 127), 0);
+    processor.processBlock(audio, midi);
+    REQUIRE_THAT(processor.routing().displayValue("limiter"), WithinAbs(1.0f, 0.0001f));
+    REQUIRE_THAT(processor.routing().displayValue("click_type"), WithinAbs(3.0f, 0.0001f));
 }
 
 TEST_CASE("Parameter controls show MIDI mirrors without editing host automation", "[routing][ui]") {
@@ -761,14 +756,14 @@ TEST_CASE("Routing restores legacy defaults and maps boolean/shared controllers"
     processor.routing().applyCc(35, 0);
     REQUIRE_THAT(processor.routing().displayValue("amp_enabled"), WithinAbs(0.0f, 0.0001f));
     REQUIRE_THAT(processor.routing().displayValue("click_type"), WithinAbs(0.0f, 0.0001f));
-    processor.routing().setLocked("clip", true);
+    processor.routing().setLocked("limiter", true);
     processor.routing().assignCc("reverse_on", 90);
     auto state = processor.parameters.copyState();
     state.removeChild(state.getChildWithName("ParameterRouting"), nullptr);
     juce::MemoryBlock saved;
     juce::AudioProcessor::copyXmlToBinary(*state.createXml(), saved);
     processor.setStateInformation(saved.getData(), static_cast<int>(saved.getSize()));
-    REQUIRE_FALSE(processor.routing().isLocked("clip"));
+    REQUIRE_FALSE(processor.routing().isLocked("limiter"));
     REQUIRE(processor.routing().assignment("reverse_on") == 20);
     REQUIRE(processor.routing().assignment("amp_enabled") == -1);
 }
@@ -980,4 +975,35 @@ TEST_CASE("Sub-octave, transient punch, and stereo width shape the kick output",
     }
     REQUIRE(diff > 1.0f);
     REQUIRE(stereoSide > 0.1f);
+}
+
+TEST_CASE("Main page shows Output controls + 3-band EQ while drive/distortion params are removed", "[plugin][ui][eq]") {
+    OpenEdmKickProcessor processor;
+    std::ranges::for_each(std::array<const char*, 7>{
+        "body_drive", "saturation", "grit", "clip", "drive", "layer_a_drive_offset", "layer_d_drive_offset"},
+        [&](const char* id) { REQUIRE(processor.parameters.getParameter(id) == nullptr); });
+    std::ranges::for_each(std::array<const char*, 6>{
+        "eq_low_freq", "eq_low_db", "eq_mid_freq", "eq_mid_db", "eq_high_freq", "eq_high_db"},
+        [&](const char* id) { REQUIRE(processor.parameters.getParameter(id) != nullptr); });
+
+    juce::ScopedJuceInitialiser_GUI gui;
+    std::unique_ptr<juce::AudioProcessorEditor> editor(processor.createEditor());
+    REQUIRE(editor != nullptr);
+    const auto findById = [](auto&& self, juce::Component& parent, const juce::String& id) -> juce::Component* {
+        if (parent.getComponentID() == id) return &parent;
+        for (auto* child : parent.getChildren()) {
+            if (auto* found = self(self, *child, id)) return found;
+        }
+        return nullptr;
+    };
+    std::ranges::for_each(std::array<const char*, 11>{
+        "routing_eq_low_db", "routing_eq_low_freq", "routing_eq_mid_db", "routing_eq_mid_freq",
+        "routing_eq_high_db", "routing_eq_high_freq", "routing_output", "routing_stereo_width",
+        "routing_ceiling", "routing_limiter", "routing_master_bypass"},
+        [&](const char* id) {
+            auto* control = findById(findById, *editor, id);
+            REQUIRE(control != nullptr);
+            CHECK(control->isVisible());
+            CHECK(control->findParentComponentOfClass<openedmkick::ui::KickSynthPanel>() != nullptr);
+        });
 }

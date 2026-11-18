@@ -68,12 +68,10 @@ TEST_CASE("Kick synthesis stays finite at parameter and sample-rate extremes", "
     core::KickSettings settings{};
     settings.sweepOctaves = 6.0f;
     settings.snapOctaves = 5.0f;
-    settings.drive = 1.0f;
     settings.clickLevel = 1.0f;
     settings.clickHz = 14000.0f;
     settings.decayMs = 1200.0f;
     settings.subLevel = 1.0f;
-    settings.clip = 1.0f;
 
     std::ranges::for_each(rates, [&](double rate) {
         const auto buffer = core::renderKick(settings, rate, 93);
@@ -94,8 +92,6 @@ TEST_CASE("Kick, snare, clap, and hat layers render and filter independently", "
     settings.knockDb = 0.0f;
     settings.subLevel = 0.0f;
     settings.clickLevel = 0.0f;
-    settings.drive = 0.0f;
-    settings.clip = 0.0f;
 
     std::array<core::DrumLayerSettings, core::kNumSoundLayers> layers{};
     std::ranges::for_each(layers, [](core::DrumLayerSettings& layer) { layer.enabled = false; });
@@ -132,7 +128,7 @@ TEST_CASE("Kick, snare, clap, and hat layers render and filter independently", "
     }
 
     settings.sweepOctaves = settings.snapOctaves = 0.0f;
-    settings.drive = settings.clip = settings.clickLevel = settings.subLevel = 0.0f;
+    settings.clickLevel = settings.subLevel = 0.0f;
     layers[0] = { true, core::DrumSoundType::kick, 1.0f, 0.0f, 300.0f };
     const auto dry = core::renderLayeredKick(settings, layers, 48000.0, 36);
     layers[0].highPassHz = 1500.0f;
@@ -163,10 +159,9 @@ double bodyRms(const core::KickSettings& settings, double rate, int note) {
 TEST_CASE("The sub reinforces the settled kick across pitches and gate modes", "[synth][sub]") {
     core::KickSettings settings;
     settings.sweepMs = 42;
-    settings.drive = 0.1f;
     settings.bodyTone = 0.24f;
     settings.holdMs = 220;
-    settings.knockDb = settings.clip = 0;
+    settings.knockDb = 0;
     settings.ampDecayMs = 10;
     settings.ampSustain = 0.8f;
     for (double rate : {44100., 96000.}) {
@@ -186,7 +181,7 @@ TEST_CASE("The sub reinforces the settled kick across pitches and gate modes", "
 TEST_CASE("Knock emphasizes the selected frequency while preserving the distant sub", "[synth][knock]") {
     core::KickSettings settings;
     settings.sweepOctaves = settings.snapOctaves = settings.clickLevel = 0;
-    settings.drive = settings.bodyTone = settings.subLevel = settings.clip = 0;
+    settings.bodyTone = settings.subLevel = 0;
     settings.holdMs = 220;
     for (double rate : {44100., 96000.}) {
         settings.knockDb = 0;

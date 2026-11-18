@@ -77,27 +77,6 @@ float hitLengthMs(const KickSettings& settings) noexcept {
     return std::clamp(attack + hold + decay, kMinHitMs, kMaxHitMs);
 }
 
-float saturate(float x, Saturation type) noexcept {
-    const float input = std::clamp(std::isfinite(x) ? x : 0.0f, -32.0f, 32.0f);
-    switch (type) {
-        case Saturation::warm:
-            return std::tanh(input * 1.2f) / std::tanh(1.2f);
-        case Saturation::tube:
-            return std::tanh(input * 2.0f) / std::tanh(2.0f);
-        case Saturation::crunch:
-            return std::clamp(input * 1.6f, -1.0f, 1.0f);
-        case Saturation::fold:
-            return 2.0f * std::asin(std::sin(input * 1.6f)) / std::numbers::pi_v<float>;
-    }
-    return input;
-}
-
-float driveGain(float drive, Saturation type) noexcept {
-    const float amount = finiteClamp(drive, 0.55f, 0.0f, 1.0f);
-    const float curveScale = type == Saturation::crunch ? 0.7f : (type == Saturation::fold ? 0.55f : 1.0f);
-    return 1.0f + amount * 11.0f * curveScale;
-}
-
 void KickVoice::prepare(double hostRate) {
     hostRate_ = std::max(8000.0, std::isfinite(hostRate) ? hostRate : 48000.0);
     const int factor = dsp::oversamplingFactorFor(hostRate_);
@@ -115,7 +94,6 @@ void KickVoice::startState(const KickSettings& settings, int midiNote, float vel
     layer_ = layer;
     if (layer_.highPassHz > ToneFilter::kHighPassBypassHz + 0.5f) layer_.highPassHz = track(layer_.highPassHz);
     if (layer_.lowPassHz < ToneFilter::kLowPassBypassHz - 1) layer_.lowPassHz = track(layer_.lowPassHz);
-    settings_.drive = std::clamp(settings_.drive + finiteClamp(layer.driveOffset, 0, -1, 1), 0.0f, 1.0f);
     const float toneScale = finiteClamp(layer.toneScale, 1, 0.1f, 2);
     settings_.toneHz *= toneScale;
     settings_.clickHz *= toneScale;
@@ -361,34 +339,19 @@ float KickVoice::renderOversampled() noexcept {
         const float subOctAmount = finiteClamp(settings_.subOctave, 0.0f, 0.0f, 1.0f);
         const float subOctSine = std::sin(static_cast<float>(subOctavePhase_) * kTwoPi);
         const float sub = subLevel * std::lerp(fundamental, attackSub, attackWeight) + subOctAmount * 0.38f * subOctSine;
-        const float drive = finiteClamp(settings_.drive, 0.55f, 0.0f, 1.0f);
-        const float grit = finiteClamp(settings_.grit, 0.35f, 0.0f, 1.0f);
-        const float attackMs = finiteClamp(settings_.attackMs, 0.15f, 0.05f, 10.0f);
-        const float holdMs = finiteClamp(settings_.holdMs, 45.0f, 0.0f, 400.0f);
-        const float decayMs = finiteClamp(settings_.decayMs, 300.0f, 1.0f, 1500.0f);
-        const float decayProgress = std::clamp((timeMs - attackMs - holdMs) / decayMs, 0.0f, 1.0f);
-        const float velocityDrive = 0.55f + 0.45f * velocity_;
-        const float currentDrive = drive * velocityDrive * (1.0f - (1.0f - grit) * decayProgress);
-        const float driveAmount = driveGain(currentDrive, settings_.saturation);
-        const float shaped = saturate(body * driveAmount, settings_.saturation) / std::sqrt(driveAmount);
-        const float mixed = shaped * (1.0f - subLevel * 0.45f) + sub * 0.45f;
-        const float click = renderClick(timeMs);
+        const float velocityScale = 0.65f + 0.35f * velocity_;
+        const float bodyLinear = body * 0.45f * velocityScale;
+        const float mixed = bodyLinear * (1.0f - subLevel * 0.45f) + sub * 0.42f;
+        const float click = renderClick(timeMs) * 0.42f;
         const float punchAmount = finiteClamp(settings_.clickPunch, 0.0f, 0.0f, 1.0f);
-        const float punchGain = 1.0f + punchAmount * 0.75f * std::exp(-timeMs / 4.5f);
+        const float punchGain = 1.0f + punchAmount * 0.55f * std::exp(-timeMs / 4.5f);
         sample = tone_.process((mixed + click) * punchGain);
         sample = lowCut_.process(sample);
-        const float clip = finiteClamp(settings_.clip, 0.45f, 0.0f, 1.0f);
-        sample += clip * (dsp::softClip(sample * 1.35f) - sample);
         sample *= envelope * reverseGate;
         phase_ += static_cast<double>(frequency) / osRate_ * phaseDirection_;
     }
     if (layer_.sound != DrumSoundType::kick) {
         sample = renderDrumLayer(timeMs);
-        const float driveOffset = finiteClamp(layer_.driveOffset, 0, -1, 1);
-        if (std::abs(driveOffset) > 0.0001f) {
-            const float gain = std::exp2(driveOffset * 3.0f);
-            sample = std::tanh(sample * gain) / std::max(1.0f, gain * 0.4f);
-        }
         sample = tone_.process(sample);
         sample = lowCut_.process(sample);
         if (settings_.ampEnabled) sample *= ampLevel();

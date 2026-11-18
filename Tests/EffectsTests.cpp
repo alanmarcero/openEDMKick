@@ -77,7 +77,6 @@ TEST_CASE("Beat synced reverse ends on the target sample across clocks and block
         core::EngineSettings settings{};
         settings.effects.reverseMode = mode;
         settings.effects.reverseMix = 1.0f;
-        settings.effects.drive = 0.0f;
         settings.effects.limiterEnabled = false;
         settings.synth.decayMs = 400.0f;
         const int expected = core::computeSyncedReverseSamples(mode, startPpq, bpm, beats, rate);
@@ -136,7 +135,6 @@ TEST_CASE("Beat synced reverse ends on the target sample across clocks and block
     core::EngineSettings crossingSettings{};
     crossingSettings.effects.reverseMode = core::ReverseSyncMode::Beat4Auto;
     crossingSettings.effects.reverseMix = 1.0f;
-    crossingSettings.effects.drive = 0.0f;
     crossingSettings.effects.limiterEnabled = false;
     const int beatSamples = core::computeSyncedReverseSamples(core::ReverseSyncMode::Beat4Auto, 3.0, 120.0, 4.0, 48000.0);
     std::vector<float> longBlock(static_cast<size_t>(beatSamples + 300), 0.0f);
@@ -210,8 +208,49 @@ TEST_CASE("Bitcrusher quantizer stays on the bit grid and rejects NaNs", "[effec
     crusher.reset();
     const float recovered = crusher.process(std::numeric_limits<float>::quiet_NaN(), 1000.0f, 4, 48000.0);
     REQUIRE(std::isfinite(recovered));
-    REQUIRE_THAT(core::saturate(1.0f, core::Saturation::warm), WithinAbs(1.0f, 1.0e-4f));
-    REQUIRE_THAT(core::saturate(std::numeric_limits<float>::quiet_NaN(), core::Saturation::tube), WithinAbs(0.0f, 1.0e-6f));
+}
+
+TEST_CASE("ThreeBandEq boosts/cuts +/-12 dB and glides smoothly between frequencies", "[effects][eq]") {
+    core::ThreeBandEq boostEq, cutEq;
+    boostEq.prepare(48000.0);
+    cutEq.prepare(48000.0);
+    const core::ThreeBandEqSettings boost{ 80.0f, 12.0f, 1000.0f, 0.0f, 7500.0f, 0.0f };
+    const core::ThreeBandEqSettings cut{ 80.0f, -12.0f, 1000.0f, 0.0f, 7500.0f, 0.0f };
+
+    double boostRms = 0.0;
+    double cutRms = 0.0;
+    std::ranges::for_each(std::views::iota(0, 4800), [&](int i) {
+        const float x = 0.25f * std::sin(2.0f * std::numbers::pi_v<float> * 50.0f * static_cast<float>(i) / 48000.0f);
+        float yBoost = x;
+        float rightBoost = x;
+        boostEq.process(yBoost, rightBoost, boost);
+        float yCut = x;
+        float rightCut = x;
+        cutEq.process(yCut, rightCut, cut);
+        if (i >= 2400) {
+            boostRms += static_cast<double>(yBoost) * yBoost;
+            cutRms += static_cast<double>(yCut) * yCut;
+        }
+    });
+    const double ratioDb = 10.0 * std::log10(boostRms / cutRms);
+    REQUIRE(ratioDb > 20.0);
+
+    core::ThreeBandEq glideEq;
+    glideEq.prepare(48000.0);
+    core::ThreeBandEqSettings step{ 200.0f, 0.0f, 300.0f, 12.0f, 7500.0f, 0.0f };
+    std::ranges::for_each(std::views::iota(0, 2400), [&](int i) {
+        float l = 0.3f * std::sin(0.15f * static_cast<float>(i));
+        float r = l;
+        glideEq.process(l, r, step);
+    });
+    float before = 0.0f;
+    float beforeR = 0.0f;
+    glideEq.process(before, beforeR, step);
+    step.midFreqHz = 5000.0f;
+    float immediateNext = 0.0f;
+    float immediateNextR = 0.0f;
+    glideEq.process(immediateNext, immediateNextR, step);
+    REQUIRE(std::abs(immediateNext - before) < 0.05f);
 }
 
 TEST_CASE("Limiter catches the peak on the same sample and stays at the ceiling", "[effects]") {

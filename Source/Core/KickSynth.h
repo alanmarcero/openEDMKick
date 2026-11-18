@@ -10,11 +10,9 @@
 
 namespace openedmkick::core {
 
-enum class Saturation : int { warm = 0, tube, crunch, fold };
 enum class ClickType : int { beater = 0, noise, tick, analog };
 enum class DrumSoundType : int { kick = 0, snare, clap, hat };
 
-inline constexpr std::array<std::string_view, 4> kSaturationNames{ "Warm", "Tube", "Crunch", "Fold" };
 inline constexpr std::array<std::string_view, 4> kClickTypeNames{ "Beater", "Noise", "Tick", "Analog" };
 inline constexpr std::array<std::string_view, 4> kDrumSoundNames{ "Kick", "Snare", "Clap", "Hat" };
 inline constexpr int kNumSoundLayers = 4;
@@ -33,7 +31,6 @@ struct DrumLayerSettings {
     int keyHigh = 127;
     int velocityLow = 1;
     int velocityHigh = 127;
-    float driveOffset = 0.0f;
     float toneScale = 1.0f;
     float sweepScale = 1.0f;
     bool solo = false;
@@ -50,14 +47,11 @@ struct KickSettings {
     float snapOctaves = 2.0f;     // 0..5, extra drop in the first milliseconds
     float snapMs = 2.0f;          // 0.2..12
 
-    // Body harmonics, resonant knock, and saturation.
+    // Body harmonics and resonant knock.
     float bodyTone = 0.65f;       // 0 round .. 1 harmonic
-    float drive = 0.55f;          // 0..1
-    Saturation saturation = Saturation::warm;
-    float knockHz = 180.0f;       // 60..800, pre-drive emphasis frequency
+    float knockHz = 180.0f;       // 60..800, emphasis frequency
     float knockDb = 6.0f;         // 0..18
-    float grit = 0.35f;           // 0 = tail cleans up, 1 = tail stays saturated
-    float toneHz = 9000.0f;       // 300..20000, post-drive low-pass
+    float toneHz = 9000.0f;       // 300..20000, low-pass
     float subLevel = 0.35f;       // 0..1, clean phase-locked sine under the body
     float startPhase = 0.5f;      // 0..1 maps to 0..90 degrees
 
@@ -75,7 +69,6 @@ struct KickSettings {
 
     // Voice output.
     float lowCutHz = 25.0f;       // 10..90
-    float clip = 0.45f;           // 0..1
     bool ampEnabled = false;
     float ampAttackMs = 0.0f;
     float ampDecayMs = 100.0f;
@@ -106,12 +99,6 @@ inline constexpr int kDefaultMidiNote = 36; // C2, 65.41 Hz
 
 // Total audible duration of one hit, including the transient layer.
 [[nodiscard]] float hitLengthMs(const KickSettings& settings) noexcept;
-
-// Waveshaper for the body. Level compensation is applied by the caller.
-[[nodiscard]] float saturate(float x, Saturation type) noexcept;
-
-// Input gain into the saturation stage for a Drive amount.
-[[nodiscard]] float driveGain(float drive, Saturation type) noexcept;
 
 // One kick voice. Renders at an internal oversampled rate and returns host-rate samples.
 class KickVoice {

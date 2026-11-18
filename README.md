@@ -12,17 +12,17 @@ The drum badge pulses on each quarter note. It follows the host playhead, tempo 
 
 Choose a style under **Factory preset**, then press **Audition C2** to hear a hit. **Previous** and **Next** step through the bank from any page. The 56 factory kicks come in six dance styles: 16 Uplifting and eight each of Rolling, Progressive, Psy, Tech, and Classic. Try *First Light* for a firm beater, *Velvet Sub* for a soft attack, or *Triplet* for a running bass line.
 
-On the **Kick** page, **Pitch dive** sets how quickly the pitch drops to the played note. Adjust **Body & sub** for low-end weight, **Transient** for the attack, and **One-shot tail** for the space before the bass enters. The waveform shows the length of the hit in milliseconds. Factory kicks use 10–23 ms of hold and 105–168 ms of decay.
+On the **Kick** page, **Pitch dive** sets how quickly the pitch drops to the played note. Adjust **Body & sub** for low-end weight, **Transient** for the attack, **One-shot tail** for the space before the bass enters, and **Output** for the dual-layer 3-band EQ (±12 dB inner cap, smoothly gliding outer frequency collar), **Top width**, **Output**, **Ceiling**, **Limiter**, **Bypass**, and **Output peak** meter. The waveform shows the length of the hit in milliseconds. Factory kicks use 10–23 ms of hold and 105–168 ms of decay.
 
-Switch on **Hold MIDI notes** beside the waveform to play openKicker as a pitched synthesizer. The Kick page shows attack, decay, sustain, and release. Hold a chord on your keyboard and release each note independently. **Audition C2** and the sequencer play one-shots. **Advanced controls** exposes both envelopes, saturation, filters, and snap.
+Switch on **Hold MIDI notes** beside the waveform to play openKicker as a pitched synthesizer. The Kick page shows attack, decay, sustain, and release. Hold a chord on your keyboard and release each note independently. **Audition C2** and the sequencer play one-shots. **Advanced controls** exposes both envelopes, filters, and snap.
 
 ![Held-note mode with the attack, decay, sustain and release controls](assets/openKicker-held.png)
 
-The clean sub starts at the played pitch and blends into the body's phase as the dive settles. This keeps the low end consistent as you change notes. **Knock** now boosts its selected frequency band, so you can add impact without driving the entire body harder.
+The clean sub starts at the played pitch and blends into the body's phase as the dive settles. This keeps the low end consistent as you change notes. **Knock** now boosts its selected frequency band cleanly without adding distortion.
 
 ## Add drum layers
 
-The **Layers** pages A–D each add a Kick, Snare, Clap, or Hat voice. Set level, pitch, decay, and filters for each layer. Key and velocity ranges choose which notes activate it. Set the velocity response and timbre, then adjust tone, drive, and pitch-sweep offsets. Solo, pan, or invert layers to shape the mix.
+The **Layers** pages A–D each add a Kick, Snare, Clap, or Hat voice. Set level, pitch, decay, and filters for each layer. Key and velocity ranges choose which notes activate it. Set the velocity response and timbre, then adjust tone and pitch-sweep offsets. Solo, pan, or invert layers to shape the mix.
 
 ## Play and automate
 
@@ -36,7 +36,7 @@ The pattern sequencer has four scenes, A–D. Each scene has its own pattern, le
 
 ## Add effects
 
-Use the Effects page for reverse, high-pass and low-pass sweeps, drive, bitcrushing, stutter, gate, filter pump, and output trim. The peak meter and limiter help control output. Reverse, stutter, and filter sweeps can follow host timing. MIDI CCs can activate the glitch effects while you play.
+Use the Effects page for reverse, high-pass and low-pass sweeps, bitcrushing, stutter, gate, and filter pump. Reverse, stutter, and filter sweeps can follow host timing. MIDI CCs can activate the glitch effects while you play.
 
 ## More screenshots
 

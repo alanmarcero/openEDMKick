@@ -198,13 +198,13 @@ void OpenEdmKickEditor::resized() {
         nav.removeFromLeft(4);
     }
     viewToggleBtn_.setBounds(nav.removeFromRight(164));
-    bounds.removeFromBottom(16);
+    bounds.removeFromBottom(8);
     workspace_.setBounds(bounds);
     auto* panel = workspace_.getViewedComponent();
     if (panel == nullptr) return;
-    int contentHeight = 560;
-    if (page_ == Page::kick && isAdvancedView()) contentHeight = 920;
-    if (page_ == Page::effects) contentHeight = isAdvancedView() ? 995 : 560;
+    int contentHeight = 576;
+    if (page_ == Page::kick && isAdvancedView()) contentHeight = 1040;
+    if (page_ == Page::effects) contentHeight = isAdvancedView() ? 920 : 560;
     const bool scroll = bounds.getHeight() < contentHeight;
     panel->setSize(bounds.getWidth() - (scroll ? workspace_.getScrollBarThickness() : 0),
                    std::max(bounds.getHeight(), contentHeight));
