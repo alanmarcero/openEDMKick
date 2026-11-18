@@ -1,4 +1,4 @@
-# openKicker v3.5.0 native editor screenshots
+# openKicker v3.7.0 native editor screenshots
 
 The images come from the compiled JUCE editor. Kick, held-note mode, Layers, and Pattern use the 1080 × 716 default window. Effects uses a taller window to show all advanced controls.
 
