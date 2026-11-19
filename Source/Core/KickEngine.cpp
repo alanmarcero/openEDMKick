@@ -33,6 +33,7 @@ void KickEngine::prepare(double sampleRate) {
     limiter_.prepare(sampleRate_);
     widthDelayBuffer_.assign(std::max<size_t>(16, static_cast<size_t>(sampleRate_ * 0.015)), 0.0f);
     toneSmooth_ = static_cast<float>(1.0 - std::exp(-1.0 / (0.012 * sampleRate_)));
+    clickPlayer_.prepare(sampleRate_);
     reset();
 }
 
@@ -62,6 +63,18 @@ void KickEngine::reset() noexcept {
     crushCcEnabled_ = stutterCcEnabled_ = gateCcEnabled_ = false;
     lastPpqStep_ = 0.0;
     hasLastPpq_ = false;
+    clickPlayer_.stop();
+}
+
+void KickEngine::setClickSampleSource(const float* samples, int length, double sampleRate) noexcept {
+    clickPlayer_.setSource(samples, length, sampleRate);
+}
+
+void KickEngine::startClickSample(const EngineSettings& settings, float velocity) noexcept {
+    if (!settings.clickSample.enabled) return;
+    const float gain = std::clamp(settings.clickSample.level, 0.0f, 1.0f) * unit(velocity);
+    clickPlayer_.trigger(settings.clickSample.start, settings.clickSample.pitchSemitones, gain,
+                         settings.clickSample.highPassHz);
 }
 
 int KickEngine::activeNoteCount() const noexcept {
@@ -84,7 +97,8 @@ double KickEngine::remainingTailSeconds() const noexcept {
         remaining = std::max(remaining, std::max(0.0, stutterEndPpq_ - lastSamplePpq_) * 60.0 / currentBpm_);
         active = true;
     }
-    if (active) remaining += effectTailAllowance_;
+    if (clickPlayer_.isActive()) remaining = std::max(remaining, clickPlayer_.remainingSeconds());
+    if (active || clickPlayer_.isActive()) remaining += effectTailAllowance_;
     return std::max(remaining, static_cast<double>(effectTailRemaining_) / sampleRate_);
 }
 
@@ -209,6 +223,7 @@ void KickEngine::process(
     EngineSettings liveSettings = inputSettings;
     const EngineSettings& settings = liveSettings;
     if (channels == nullptr || numChannels <= 0 || numSamples <= 0) return;
+    if (!settings.clickSample.enabled) clickPlayer_.stop();
 
     synchronizeAmpMode(settings.synth.ampEnabled);
     const double hostBpm = safeTempo(transport.bpm);
@@ -271,6 +286,7 @@ void KickEngine::process(
                     std::ranges::for_each(forwardVoices_, [](KickVoice& voice) { voice.reset(); });
                     std::ranges::for_each(reverseVoices_, [](KickVoice& voice) { voice.reset(); });
                     reverseArmed_ = stutterArmed_ = false;
+                    clickPlayer_.stop();
                     break;
                 case 121:
                     midiVolume_ = midiExpression_ = midiBrightness_ = 1.0f;
@@ -288,6 +304,7 @@ void KickEngine::process(
             const double noteBpm = settings.manualBpm > 0 ? safeTempo(settings.manualBpm) : hostBpm;
             const double noteMeter = settings.manualBeatsPerBar > 0 ? settings.manualBeatsPerBar : hostBeatsPerBar;
             triggerNote(settings, ppq, noteBpm, noteMeter, note, trigger.velocity, -1.0f, false, -1, trigger.audition ? 0 : trigger.midiChannel);
+            startClickSample(settings, trigger.velocity);
         };
 
         const float savedMidiVolume = midiVolume_;
@@ -337,6 +354,12 @@ void KickEngine::process(
                 bpm, beatsPerBar, sampleRate_, true, ppq);
             if (event.triggered) {
                 ++triggerSerial_;
+                float clickVelocity = 0.0f;
+                for (int layer = 0; layer < kNumSoundLayers; ++layer) {
+                    if ((event.layerMask & (1u << layer)) == 0) continue;
+                    clickVelocity = std::max(clickVelocity, event.layerVelocities[static_cast<size_t>(layer)]);
+                }
+                startClickSample(settings, clickVelocity);
                 for (int layer = 0; layer < kNumSoundLayers; ++layer) {
                     if ((event.layerMask & (1u << layer)) == 0) continue;
                     const auto index = static_cast<size_t>(layer);
@@ -407,6 +430,11 @@ void KickEngine::process(
             const float pan = std::clamp(std::isfinite(layer.pan) ? layer.pan : 0.0f, -1.0f, 1.0f);
             raw[0] += signedVoice * (1.0f - std::max(0.0f, pan));
             raw[1] += signedVoice * (1.0f + std::min(0.0f, pan));
+        }
+        if (clickPlayer_.isActive()) {
+            const float click = clickPlayer_.nextSample();
+            raw[0] += click;
+            raw[1] += click;
         }
         const bool highPassSync = settings.effects.highPassSyncEnabled || highPassCcEnabled_ || settings.effects.highPassMidi;
         const bool lowPassSync = settings.effects.lowPassSyncEnabled || lowPassCcEnabled_ || settings.effects.lowPassMidi;

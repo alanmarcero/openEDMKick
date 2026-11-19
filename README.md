@@ -1,4 +1,4 @@
-# openKicker v3.8.0
+# openKicker v3.9.0
 
 [Install with OpenVST Manager](https://github.com/alanmarcero/alan-m-OpenVSTManager/releases/latest)
 
@@ -11,6 +11,12 @@ The drum badge pulses on each quarter note. It follows the host playhead, tempo 
 ## Shape the kick
 
 Choose a style under **Factory preset**, then press **Audition C2** to hear a hit. **Previous** and **Next** step through the bank from any page. The 56 factory kicks come in six dance styles: 16 Uplifting and eight each of Rolling, Progressive, Psy, Tech, and Classic. Try *First Light* for a firm beater, *Velvet Sub* for a soft attack, or *Triplet* for a running bass line.
+
+Drag **Drag hit** onto a track or the desktop to bounce the last note and velocity, including layers and the effect tail, as a WAV.
+
+**Sample**, on the Kick page, adds an optional click from a short WAV or from the built-in Tick, Beater, Wood, and Snap sounds. It stays off until you enable it, so older sessions and factory presets sound the same. Level, start, pitch, and high-pass are under **Advanced controls**. The sample is saved inside the project.
+
+**Undo** and **Redo** step through control changes. Use Cmd+Z or Ctrl+Z, and Shift+Cmd+Z or Shift+Ctrl+Z to redo. **A** and **B** keep two full sounds. **A to B** and **B to A** copy between them. **Presets** searches the factory bank and the sounds you save. You can star a preset, and save, rename, or delete your own. Factory presets stay read-only. Your files go in Documents/Alan Marcero/openKicker/Presets.
 
 On the **Kick** page, **Pitch dive** sets how quickly the pitch drops to the played note. Adjust **Body & sub** for low-end weight, **Transient** for the attack, **One-shot tail** for the space before the bass enters, and **Output** for the dual-layer 3-band EQ (±12 dB inner cap, smoothly gliding outer frequency collar), **Top width**, **Output**, **Ceiling**, **Limiter**, **Bypass**, and **Output peak** meter. The waveform shows the length of the hit in milliseconds. Factory kicks use 10–23 ms of hold and 105–168 ms of decay.
 

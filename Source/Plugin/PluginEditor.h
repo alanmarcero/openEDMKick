@@ -3,6 +3,7 @@
 #include "EdmLookAndFeel.h"
 #include "Panels.h"
 #include "PluginProcessor.h"
+#include "suite/SuiteBar.h"
 
 class OpenEdmKickEditor final : public juce::AudioProcessorEditor,
                                 private juce::Timer {
@@ -12,6 +13,7 @@ public:
 
     void paint(juce::Graphics& g) override;
     void resized() override;
+    bool keyPressed(const juce::KeyPress& key) override;
     void setAdvancedView(bool advanced);
     [[nodiscard]] bool isAdvancedView() const noexcept { return synthPanel_.isAdvancedMode(); }
 
@@ -35,6 +37,8 @@ private:
     juce::TextButton layersTab_{"Layers"};
     juce::TextButton patternTab_{"Pattern"};
     juce::TextButton effectsTab_{"Effects"};
+    openedmkick::suite::SuiteBar suiteBar_;
+    openedmkick::suite::PresetBrowser presetBrowser_;
     openedmkick::ui::KickSynthPanel synthPanel_;
     openedmkick::ui::LayerPanel layerPanel_;
     openedmkick::ui::AutoPianoRollPanel autoPanel_;

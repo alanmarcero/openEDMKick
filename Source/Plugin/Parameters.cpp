@@ -214,6 +214,13 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout() {
     addFloat(layout, kEqMidDb, "EQ Mid Level", { -12.0f, 12.0f, 0.1f }, 0.0f, kFormatDb, 6);
     addFloat(layout, kEqHighFreq, "EQ High Frequency", skewedRange(2000.0f, 18000.0f, 6000.0f), 7500.0f, kFormatHz, 6);
     addFloat(layout, kEqHighDb, "EQ High Level", { -12.0f, 12.0f, 0.1f }, 0.0f, kFormatDb, 6);
+    // Appended so older hosts keep the existing parameter order.
+    addBool(layout, kClickSampleOn, "Sample Click", false, 7);
+    addChoice(layout, kClickSampleSource, "Sample Click Source", { "Tick", "Beater", "Wood", "Snap", "User" }, 0, 7);
+    addFloat(layout, kClickSampleLevel, "Sample Click Level", { 0.0f, 1.0f }, 0.75f, kFormatPercent, 7);
+    addFloat(layout, kClickSampleStart, "Sample Click Start", { 0.0f, 1.0f }, 0.0f, kFormatPercent, 7);
+    addFloat(layout, kClickSamplePitch, "Sample Click Pitch", { -24.0f, 24.0f, 0.01f }, 0.0f, kFormatSemitones, 7);
+    addFloat(layout, kClickSampleHp, "Sample Click High Pass", skewedRange(20.0f, 8000.0f, 800.0f), 20.0f, kFormatHighPass, 7);
     return layout;
 }
 

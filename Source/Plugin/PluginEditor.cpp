@@ -6,6 +6,7 @@
 
 #include <cmath>
 #include <ranges>
+#include <vector>
 
 namespace {
 
@@ -14,6 +15,12 @@ namespace presets = openedmkick::presets;
 
 constexpr int kEditorWidth = 1080;
 constexpr int kEditorHeight = 716;
+
+std::vector<juce::String> factoryPresetNames() {
+    std::vector<juce::String> names;
+    for (const auto& preset : presets::factoryPresets()) names.emplace_back(preset.name);
+    return names;
+}
 
 void styleTab(juce::TextButton& button, const juce::String& id) {
     button.setComponentID(id);
@@ -27,6 +34,7 @@ void styleTab(juce::TextButton& button, const juce::String& id) {
 OpenEdmKickEditor::OpenEdmKickEditor(OpenEdmKickProcessor& processorToEdit)
     : AudioProcessorEditor(processorToEdit),
       processor_(processorToEdit),
+      presetBrowser_(factoryPresetNames()),
       synthPanel_(processorToEdit),
       layerPanel_(processorToEdit),
       autoPanel_(processorToEdit),
@@ -34,6 +42,7 @@ OpenEdmKickEditor::OpenEdmKickEditor(OpenEdmKickProcessor& processorToEdit)
       tooltipWindow_(this, 650) {
     kickArtwork_ = juce::Drawable::createFromImageData(BinaryData::kickdrum_svg, BinaryData::kickdrum_svgSize);
     setLookAndFeel(&lookAndFeel_);
+    setWantsKeyboardFocus(true);
     setResizable(true, true);
     setResizeLimits(900, 570, 1600, 1280);
     workspace_.setScrollBarsShown(true, false);
@@ -109,6 +118,34 @@ OpenEdmKickEditor::OpenEdmKickEditor(OpenEdmKickProcessor& processorToEdit)
         [this](juce::Component* component) { addAndMakeVisible(component); });
 
     viewToggleBtn_.setColour(juce::TextButton::buttonOnColourId, theme::kViolet);
+    suiteBar_.bind({
+        [this] { processor_.undo(); suiteBar_.refresh(); },
+        [this] { processor_.redo(); suiteBar_.refresh(); },
+        [this] { processor_.selectAbSlot(0); suiteBar_.refresh(); syncPresetBox(); },
+        [this] { processor_.selectAbSlot(1); suiteBar_.refresh(); syncPresetBox(); },
+        [this] { processor_.copyAbSlot(true); suiteBar_.refresh(); syncPresetBox(); },
+        [this] { processor_.copyAbSlot(false); suiteBar_.refresh(); syncPresetBox(); },
+        [this] { return processor_.canUndo(); },
+        [this] { return processor_.canRedo(); },
+        [this] { return processor_.abSlot(); },
+        [this] { return processor_.renderHitToTemporaryWav(); },
+        [this] {
+            presetBrowser_.setVisible(!presetBrowser_.isVisible());
+            if (presetBrowser_.isVisible()) presetBrowser_.toFront(false);
+            resized();
+        }
+    });
+    presetBrowser_.captureState = [this] { return processor_.captureSoundState(); };
+    presetBrowser_.loadFactory = [this](int index) {
+        processor_.setCurrentProgram(index);
+        syncPresetBox();
+    };
+    presetBrowser_.loadUser = [this](const juce::MemoryBlock& state) {
+        processor_.applySoundState(state, true);
+        syncPresetBox();
+    };
+    addAndMakeVisible(suiteBar_);
+    addChildComponent(presetBrowser_);
     setPage(Page::kick);
     setSize(kEditorWidth, kEditorHeight);
     startTimerHz(30);
@@ -122,6 +159,7 @@ OpenEdmKickEditor::~OpenEdmKickEditor() {
 
 void OpenEdmKickEditor::timerCallback() {
     syncPresetBox();
+    suiteBar_.refresh();
     if (std::abs(processor_.displayBeatPhase.load(std::memory_order_relaxed) - lastDrawnBeat_) > 0.0001f)
         repaint(12, 6, 58, 60);
 }
@@ -133,6 +171,18 @@ void OpenEdmKickEditor::syncPresetBox() {
     }
     const int id = processor_.getCurrentProgram() + 1;
     if (presetBox_.getSelectedId() != id) presetBox_.setSelectedId(id, juce::dontSendNotification);
+}
+
+bool OpenEdmKickEditor::keyPressed(const juce::KeyPress& key) {
+    const int code = key.getKeyCode();
+    if (key.getModifiers().isCommandDown() && (code == 'z' || code == 'Z')) {
+        if (key.getModifiers().isShiftDown()) processor_.redo();
+        else processor_.undo();
+        suiteBar_.refresh();
+        syncPresetBox();
+        return true;
+    }
+    return false;
 }
 
 void OpenEdmKickEditor::setAdvancedView(bool advanced) {
@@ -198,11 +248,18 @@ void OpenEdmKickEditor::resized() {
         nav.removeFromLeft(4);
     }
     viewToggleBtn_.setBounds(nav.removeFromRight(164));
+    suiteBar_.setBounds(bounds.removeFromTop(48).reduced(0, 4));
     bounds.removeFromBottom(8);
     workspace_.setBounds(bounds);
+    if (presetBrowser_.isVisible()) {
+        auto browser = workspace_.getBounds().removeFromRight(std::min(420, workspace_.getWidth() - 24)).reduced(0, 8);
+        browser.setHeight(std::min(460, browser.getHeight()));
+        presetBrowser_.setBounds(browser);
+        presetBrowser_.toFront(false);
+    }
     auto* panel = workspace_.getViewedComponent();
     if (panel == nullptr) return;
-    int contentHeight = 576;
+    int contentHeight = 528;
     if (page_ == Page::kick && isAdvancedView()) contentHeight = 1040;
     if (page_ == Page::effects) contentHeight = isAdvancedView() ? 920 : 560;
     const bool scroll = bounds.getHeight() < contentHeight;

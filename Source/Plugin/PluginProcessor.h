@@ -2,9 +2,13 @@
 
 #include "KickEngine.h"
 #include "ParameterRouting.h"
+#include "suite/AbCompare.h"
+#include "suite/ParameterUndo.h"
 #include <array>
 #include <atomic>
+#include <memory>
 #include <mutex>
+#include <vector>
 #include <juce_audio_processors/juce_audio_processors.h>
 
 class OpenEdmKickProcessor : public juce::AudioProcessor {
@@ -49,6 +53,22 @@ public:
     void togglePianoRollNote(int step64, int length64, int layer = -1, int ratchets = 1);
     void cyclePianoRollRatchets(int step64, int layer);
     void triggerAudition() noexcept { auditionPending_.store(true); }
+    [[nodiscard]] float lastVelocity() const noexcept { return displayVelocity.load(); }
+
+    bool undo();
+    bool redo();
+    [[nodiscard]] bool canUndo() const;
+    [[nodiscard]] bool canRedo() const;
+    [[nodiscard]] int abSlot() const noexcept { return ab_.active(); }
+    void selectAbSlot(int slot);
+    void copyAbSlot(bool aToB);
+
+    [[nodiscard]] juce::MemoryBlock captureSoundState();
+    bool applySoundState(const juce::MemoryBlock& state, bool forceCustom);
+    bool loadUserClickSample(const juce::AudioBuffer<float>& buffer, double sampleRate, const juce::String& name);
+    bool loadUserClickSample(const juce::File& file);
+    bool renderCurrentHit(juce::AudioBuffer<float>& destination) const;
+    [[nodiscard]] juce::File renderHitToTemporaryWav() const;
 
     juce::AudioProcessorValueTreeState parameters;
     ParameterRouting& routing() noexcept { return routing_; }
@@ -60,6 +80,7 @@ public:
     std::atomic<float> displayBeatsPerBar{ 4.0f };
     std::atomic<float> displayMidiHz{ 65.4064f };
     std::atomic<int> displayMidiNote{ openedmkick::core::kDefaultMidiNote };
+    std::atomic<float> displayVelocity{ 1.0f };
     std::atomic<bool> displayReversing{ false };
     std::atomic<uint32_t> displayTriggerCount{ 0 };
 
@@ -67,6 +88,12 @@ private:
     openedmkick::core::EngineSettings currentEngineSettings() const noexcept;
     void syncSequencerPresets(
         const std::array<openedmkick::core::AutoSlotSettings, openedmkick::core::kNumAutoSlots>& slots);
+    [[nodiscard]] juce::ValueTree buildSoundTree();
+    bool recallSound(const void* data, int sizeInBytes, bool loadCompareSlots, bool forceCustom);
+    void publishUserSample(std::vector<float> samples, double sampleRate, juce::String name);
+    void selectClickSource(const float*& data, int& length, double& rate) const noexcept;
+    [[nodiscard]] juce::MemoryBlock encodeTree(const juce::ValueTree& tree) const;
+    friend struct SoundSwapAction;
 
     void syncEditorSequencer() const;
     openedmkick::core::AutoSlotSettings hostAutoSlotSettings(int) const;
@@ -180,6 +207,12 @@ private:
         std::atomic<float>* eqMidDb;
         std::atomic<float>* eqHighFreq;
         std::atomic<float>* eqHighDb;
+        std::atomic<float>* clickSampleOn;
+        std::atomic<float>* clickSampleSource;
+        std::atomic<float>* clickSampleLevel;
+        std::atomic<float>* clickSampleStart;
+        std::atomic<float>* clickSamplePitch;
+        std::atomic<float>* clickSampleHp;
     };
 
     static constexpr size_t kMaxMidiEvents = 65536;
@@ -206,6 +239,17 @@ private:
     std::array<int, openedmkick::core::kNumAutoSlots> lastSlotBars_{ 0, 0, 0, 0 };
     std::atomic<bool> auditionPending_{ false };
     std::atomic<bool> restoredCustomState_{ false };
+    struct UserSampleSlot {
+        std::vector<float> samples;
+        double sampleRate = 44100.0;
+        juce::String name;
+    };
+    std::array<UserSampleSlot, 3> userSlots_{};
+    std::atomic<int> userPublished_{ 0 };
+    mutable std::atomic<int> userAudioSeen_{ 0 };
+    openedmkick::suite::AbCompare ab_;
+    std::unique_ptr<openedmkick::suite::ParameterUndo> history_;
+    double preparedRate_ = 48000.0;
     std::vector<openedmkick::core::MidiInputEvent> midiEventScratch_;
     int currentProgram_ = 0;
 

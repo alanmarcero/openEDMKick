@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <memory>
 #include <numeric>
 #include <ranges>
 
@@ -163,7 +164,15 @@ KickSynthPanel::KickSynthPanel(OpenEdmKickProcessor& processor)
       limiter_(processor.parameters, params::kLimiter, "Limiter", theme::kMint),
       masterBypass_(processor.parameters, params::kMasterBypass, "Bypass", theme::kCoral),
       meter_(processor),
-      waveform_(processor) {
+      waveform_(processor),
+      processor_(processor),
+      clickSampleOn_(processor.parameters, params::kClickSampleOn, "Sample", theme::kCoral),
+      clickSampleSource_(processor.parameters, params::kClickSampleSource, "Source", theme::kCoral),
+      clickSampleLevel_(processor.parameters, params::kClickSampleLevel, "Level", theme::kCoral),
+      clickSampleStart_(processor.parameters, params::kClickSampleStart, "Start", theme::kCoral),
+      clickSamplePitch_(processor.parameters, params::kClickSamplePitch, "Pitch", theme::kCoral),
+      clickSampleHp_(processor.parameters, params::kClickSampleHp, "High pass", theme::kCoral),
+      loadClick_("Load") {
     std::ranges::for_each(std::array<juce::Component*, 32>{
              &sweepOctaves_, &sweepMs_, &sweepShape_, &snapOctaves_, &snapMs_,
              &bodyTone_, &knockHz_, &knockDb_, &toneHz_, &subLevel_, &subOctave_, &startPhase_,
@@ -173,10 +182,28 @@ KickSynthPanel::KickSynthPanel(OpenEdmKickProcessor& processor)
 
     std::ranges::for_each(std::array<juce::Component*, 5>{&ampEnabled_, &ampAttack_, &ampDecay_, &ampSustain_, &ampRelease_},
         [this](juce::Component* component) { addAndMakeVisible(component); });
+    std::ranges::for_each(std::array<juce::Component*, 7>{
+        &clickSampleOn_, &clickSampleSource_, &clickSampleLevel_, &clickSampleStart_, &clickSamplePitch_,
+        &clickSampleHp_, &loadClick_},
+        [this](juce::Component* component) { addAndMakeVisible(component); });
+    loadClick_.setComponentID("loadClickSample");
+    loadClick_.setTooltip("Load a short WAV for the sample click. The audio is stored in the session.");
+    loadClick_.setColour(juce::TextButton::buttonColourId, theme::kSteel);
+    loadClick_.onClick = [this] {
+        auto chooser = std::make_shared<juce::FileChooser>("Load a short click sample", juce::File{}, "*.wav");
+        chooser->launchAsync(juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+            [this, chooser](const juce::FileChooser& picker) {
+                const auto file = picker.getResult();
+                if (file == juce::File{}) return;
+                processor_.loadUserClickSample(file);
+            });
+    };
     const std::array<juce::StringArray, 6> groups{{
         {params::kSweepOctaves, params::kSweepMs, params::kSweepShape, params::kSnapOctaves, params::kSnapMs},
         {params::kBodyTone, params::kKnockHz, params::kKnockDb, params::kToneHz, params::kSubLevel, params::kSubOctave, params::kStartPhase},
-        {params::kClickType, params::kClickLevel, params::kClickHz, params::kClickMs, params::kClickPunch},
+        {params::kClickType, params::kClickLevel, params::kClickHz, params::kClickMs, params::kClickPunch,
+         params::kClickSampleOn, params::kClickSampleSource, params::kClickSampleLevel, params::kClickSampleStart,
+         params::kClickSamplePitch, params::kClickSampleHp},
         {params::kAttackMs, params::kHoldMs, params::kDecayMs, params::kDecayShape, params::kLowCutHz},
         {params::kAmpEnabled, params::kAmpAttack, params::kAmpDecay, params::kAmpSustain, params::kAmpRelease},
         {params::kEqLowFreq, params::kEqLowDb, params::kEqMidFreq, params::kEqMidDb, params::kEqHighFreq, params::kEqHighDb,
@@ -193,6 +220,12 @@ KickSynthPanel::KickSynthPanel(OpenEdmKickProcessor& processor)
     knockDb_.setTooltip("A resonant mid-bass knock for more impact on smaller speakers.");
     subLevel_.setTooltip("Blend a clean fundamental under the kick body.");
     clickLevel_.setTooltip("Add a short beater transient ahead of the body.");
+    clickSampleOn_.setTooltip("Mix a sample click with the transient. Off leaves existing sounds unchanged.");
+    clickSampleSource_.setTooltip("Play a built-in click or the WAV you loaded.");
+    clickSampleLevel_.setTooltip("Level of the sample click.");
+    clickSampleStart_.setTooltip("Skip into the sample before it plays.");
+    clickSamplePitch_.setTooltip("Playback pitch of the sample click, in semitones.");
+    clickSampleHp_.setTooltip("High-pass the sample click.");
     eqLow_.setTooltip("Inner cap sets Low EQ gain (-12 to +12 dB); outer collar glides Low frequency smoothly.");
     eqMid_.setTooltip("Inner cap sets Mid EQ gain (-12 to +12 dB); outer collar glides Mid frequency smoothly.");
     eqHigh_.setTooltip("Inner cap sets High EQ gain (-12 to +12 dB); outer collar glides High frequency smoothly.");
@@ -209,6 +242,8 @@ void KickSynthPanel::setAdvancedMode(bool advanced) {
     advancedMode_ = advanced;
     setControlsVisible({ &sweepShape_, &snapOctaves_, &snapMs_, &knockHz_,
                          &toneHz_, &subOctave_, &startPhase_, &attack_, &decayShape_, &lowCut_ }, advanced);
+    setControlsVisible({ &clickSampleSource_, &clickSampleLevel_, &clickSampleStart_, &clickSamplePitch_,
+                         &clickSampleHp_, &loadClick_ }, advanced);
     heldNotes_ = ampEnabled_.button().getToggleState();
     setControlsVisible({ &hold_, &decay_, sectionLocks_[3].get() }, advanced || !heldNotes_);
     setControlsVisible({ &ampAttack_, &ampDecay_, &ampSustain_, &ampRelease_, sectionLocks_[4].get() }, advanced || heldNotes_);
@@ -268,7 +303,18 @@ void KickSynthPanel::resized() {
     waveform_.setBounds(scope.withTrimmedRight(kCardGap));
     placeRow(cards[0], 0, rows, { &sweepOctaves_, &sweepMs_, &sweepShape_ });
     placeRow(cards[1], 0, rows, { &subLevel_, &knockDb_, &bodyTone_ });
-    placeRow(cards[2], 0, 1, { &clickType_, &clickLevel_, &clickHz_, &clickMs_, &clickPunch_ });
+    {
+        const int innerTop = cards[2].getY() + kCardHeader;
+        const int innerHeight = std::max(0, cards[2].getHeight() - kCardHeader - 4);
+        const int rowHeight = innerHeight / std::max(1, rows);
+        auto top = juce::Rectangle<int>(cards[2].getX() + 8, innerTop, cards[2].getWidth() - 16, rowHeight);
+        clickSampleOn_.setBounds(top.removeFromRight(std::min(96, std::max(40, top.getWidth() / 5))));
+        top.removeFromRight(3);
+        layoutRow(top, { &clickType_, &clickLevel_, &clickHz_, &clickMs_, &clickPunch_ }, 3);
+    }
+    if (advancedMode_)
+        placeRow(cards[2], 1, 2, { &clickSampleSource_, &clickSampleLevel_, &clickSampleStart_,
+                                   &clickSamplePitch_, &clickSampleHp_, &loadClick_ });
     placeRow(cards[3], 0, rows, { &hold_, &decay_, &decayShape_ });
     if (advancedMode_ || heldNotes_)
         placeRow(cards[4], 0, 1, { &ampAttack_, &ampDecay_, &ampSustain_, &ampRelease_ });
