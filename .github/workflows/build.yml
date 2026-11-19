@@ -167,3 +167,75 @@ jobs:
             openKicker-*.zip
             openEDMKick-*.zip
           body_path: release-body.md
+
+  # Renders docs/screenshots/preview.png from the factory-default editor and commits
+  # it on main. The macOS and Linux package jobs stay disabled; this job only builds
+  # the test runner it needs for an offscreen snapshot.
+  update-preview:
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Skip when the editor sources did not change
+        id: scope
+        run: |
+          before="${{ github.event.before }}"
+          if [[ "$before" =~ ^0+$ ]]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if git diff --name-only "$before" "${{ github.sha }}" | grep -qE '^(Source/|Tests/|assets/|CMakeLists\.txt|\.github/workflows/build\.yml)'; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No editor sources changed; leaving docs/screenshots/preview.png."
+          fi
+
+      - name: Install dependencies
+        if: steps.scope.outputs.changed == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libjack-jackd2-dev libfreetype-dev libfontconfig1-dev \
+            libx11-dev libxcomposite-dev libxcursor-dev libxext-dev libxinerama-dev libxrandr-dev \
+            libxrender-dev libglu1-mesa-dev mesa-common-dev xvfb xauth fonts-dejavu-core
+
+      - name: Configure
+        if: steps.scope.outputs.changed == 'true'
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++
+
+      - name: Build the editor snapshot runner
+        if: steps.scope.outputs.changed == 'true'
+        run: cmake --build build --target openedmkick_plugin_tests --parallel
+
+      - name: Capture the factory default editor
+        if: steps.scope.outputs.changed == 'true'
+        run: OEK_PREVIEW_PNG="$PWD/docs/screenshots/preview.png" xvfb-run -a ./build/openedmkick_plugin_tests '[preview]'
+
+      - name: Commit the refreshed preview
+        if: steps.scope.outputs.changed == 'true'
+        run: |
+          if git diff --quiet -- docs/screenshots/preview.png; then
+            echo "Preview matches this commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/screenshots/preview.png
+          git commit -m "docs: refresh preview screenshot [skip ci]"
+          for attempt in 1 2 3 4; do
+            git fetch origin main
+            if ! git rebase origin/main; then
+              git rebase --abort || true
+              exit 1
+            fi
+            if git push origin HEAD:main; then
+              exit 0
+            fi
+            sleep $((attempt * 5))
+          done
+          exit 1
