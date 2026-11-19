@@ -884,6 +884,27 @@ TEST_CASE("Capture the compiled native editor workspaces", "[capture]") {
     }
 }
 
+TEST_CASE("Capture the factory default editor at its default size", "[preview]") {
+    const auto path = juce::SystemStats::getEnvironmentVariable("OEK_PREVIEW_PNG", {});
+    if (path.isEmpty()) SKIP("Set OEK_PREVIEW_PNG to write the default editor preview");
+    juce::ScopedJuceInitialiser_GUI gui;
+    OpenEdmKickProcessor processor;
+    std::unique_ptr<juce::AudioProcessorEditor> editor(processor.createEditor());
+    REQUIRE(editor != nullptr);
+    CHECK(editor->getWidth() == 1080);
+    CHECK(editor->getHeight() == 716);
+    const auto image = editor->createComponentSnapshot(editor->getLocalBounds());
+    REQUIRE(image.getWidth() == 1080);
+    REQUIRE(image.getHeight() == 716);
+    const juce::File destination(path);
+    REQUIRE(destination.getParentDirectory().createDirectory().wasOk());
+    auto output = destination.createOutputStream();
+    REQUIRE(output != nullptr);
+    REQUIRE(output->setPosition(0));
+    REQUIRE(output->truncate().wasOk());
+    REQUIRE(juce::PNGImageFormat().writeImageToStream(image, *output));
+}
+
 TEST_CASE("Temporary fill CC overrides do not replace saved custom pattern edits", "[routing][state]") {
     OpenEdmKickProcessor processor;
     processor.prepareToPlay(48000, 32);
