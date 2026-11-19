@@ -1,6 +1,7 @@
 #pragma once
 
 #include "AutoSequencer.h"
+#include "ClickSample.h"
 #include "Effects.h"
 #include "KickSynth.h"
 #include <cstdint>
@@ -87,6 +88,14 @@ struct EngineSettings {
     bool masterBypass = false;
     double manualBpm = 0;
     double manualBeatsPerBar = 0;
+    struct ClickSampleSettings {
+        bool enabled = false;
+        float level = 0.75f;
+        float start = 0.0f;
+        float pitchSemitones = 0.0f;
+        float highPassHz = 20.0f;
+    };
+    ClickSampleSettings clickSample{};
 };
 
 struct MidiRouting {
@@ -103,6 +112,8 @@ public:
 
     void prepare(double sampleRate);
     void reset() noexcept;
+    void setClickSampleSource(const float* samples, int length, double sampleRate) noexcept;
+    void startClickSample(const EngineSettings& settings, float velocity) noexcept;
 
     // Each input span must be sorted by sampleOffset, retaining input order for ties.
     void process(
@@ -164,6 +175,7 @@ private:
     std::array<ToneFilter, 2> toneFilter_;
     ThreeBandEq eq_;
     PeakLimiter limiter_;
+    ClickSamplePlayer clickPlayer_;
     std::vector<float> widthDelayBuffer_;
     size_t widthWriteIndex_ = 0;
     float widthLowPassState_ = 0.0f;

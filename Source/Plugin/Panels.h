@@ -78,6 +78,14 @@ private:
     PeakMeter meter_;
     std::vector<std::unique_ptr<SectionLock>> sectionLocks_;
     KickWaveformView waveform_;
+    OpenEdmKickProcessor& processor_;
+    Toggle clickSampleOn_;
+    Choice clickSampleSource_;
+    Knob clickSampleLevel_;
+    Knob clickSampleStart_;
+    Knob clickSamplePitch_;
+    Knob clickSampleHp_;
+    juce::TextButton loadClick_{ "Load" };
 };
 
 class LayerPage final : public juce::Component {

@@ -1,14 +1,20 @@
 #include "PluginProcessor.h"
 
+#include "ClickSample.h"
 #include "Parameters.h"
 #include "PluginEditor.h"
 #include "Presets.h"
+#include "suite/WavFile.h"
 
 #include <algorithm>
+#include <cmath>
+#include <cstring>
 #include <ranges>
+#include <juce_audio_formats/juce_audio_formats.h>
 
 namespace core = openedmkick::core;
 namespace params = openedmkick::params;
+namespace suite = openedmkick::suite;
 
 OpenEdmKickProcessor::OpenEdmKickProcessor()
     : AudioProcessor(BusesProperties().withOutput("Output", juce::AudioChannelSet::stereo(), true)),
@@ -59,7 +65,9 @@ OpenEdmKickProcessor::OpenEdmKickProcessor()
               raw(params::kAmpEnabled), raw(params::kAmpAttack), raw(params::kAmpDecay), raw(params::kAmpSustain), raw(params::kAmpRelease), raw(params::kReverseEnabled), raw(params::kCrushEnabled), raw(params::kStutterEnabled), raw(params::kGateEnabled), raw(params::kMidiVolume), raw(params::kMidiExpression), raw(params::kMidiBrightness), raw(params::kHighPassMidi), raw(params::kLowPassMidi),
               raw(params::kSubOctave), raw(params::kClickPunch), raw(params::kStereoWidth),
               raw(params::kEqLowFreq), raw(params::kEqLowDb), raw(params::kEqMidFreq),
-              raw(params::kEqMidDb), raw(params::kEqHighFreq), raw(params::kEqHighDb)
+              raw(params::kEqMidDb), raw(params::kEqHighFreq), raw(params::kEqHighDb),
+              raw(params::kClickSampleOn), raw(params::kClickSampleSource), raw(params::kClickSampleLevel),
+              raw(params::kClickSampleStart), raw(params::kClickSamplePitch), raw(params::kClickSampleHp)
           };
       }()) {
     for (int slot = 0; slot < core::kNumAutoSlots; ++slot) {
@@ -68,11 +76,23 @@ OpenEdmKickProcessor::OpenEdmKickProcessor()
     }
     setLatencySamples(core::KickEngine::kLatencySamples);
     engine_.prepare(48000.0);
+    core::warmBuiltInClicks();
     openedmkick::presets::apply(openedmkick::presets::factoryPresets().front(), parameters);
+    history_ = std::make_unique<suite::ParameterUndo>(*this);
+    history_->captureContext = [this] {
+        return suite::EditContext{ currentProgram_, restoredCustomState_.load() };
+    };
+    history_->restoreContext = [this](const suite::EditContext& context) {
+        currentProgram_ = context.program;
+        restoredCustomState_.store(context.custom);
+    };
+    ab_.seed(captureSoundState());
 }
 
 void OpenEdmKickProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
     const std::scoped_lock lock(stateMutex_);
+    preparedRate_ = sampleRate;
+    core::warmBuiltInClicks();
     engine_.prepare(sampleRate);
     midiEventScratch_.reserve(kMaxMidiEvents);
     juce::ignoreUnused(samplesPerBlock);
@@ -265,6 +285,13 @@ core::EngineSettings OpenEdmKickProcessor::currentEngineSettings() const noexcep
             values_.eqHighFreq->load(), values_.eqHighDb->load()
         }
     };
+    settings.clickSample = {
+        isOn(values_.clickSampleOn),
+        values_.clickSampleLevel->load(),
+        values_.clickSampleStart->load(),
+        values_.clickSamplePitch->load(),
+        values_.clickSampleHp->load()
+    };
     settings.masterBypass = isOn(values_.masterBypass);
     const int signature = choice(values_.timeSignature);
     settings.manualBpm = isOn(values_.clockSync) ? 0 : static_cast<double>(values_.tempoBpm->load());
@@ -332,9 +359,11 @@ void OpenEdmKickProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
         const int sample = std::clamp(metadata.samplePosition, 0, lastSample);
         if (message.isNoteOn() && message.getFloatVelocity() > 0.0f) {
             const int note = message.getNoteNumber();
-            midiEventScratch_.emplace_back(core::MidiTrigger{ sample, note, message.getFloatVelocity(), false, message.getChannel() });
+            const float velocity = message.getFloatVelocity();
+            midiEventScratch_.emplace_back(core::MidiTrigger{ sample, note, velocity, false, message.getChannel() });
             displayMidiNote.store(note, std::memory_order_relaxed);
             displayMidiHz.store(core::noteFrequencyHz(note), std::memory_order_relaxed);
+            displayVelocity.store(velocity, std::memory_order_relaxed);
             return;
         }
         if (message.isNoteOff()) {
@@ -352,7 +381,17 @@ void OpenEdmKickProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
                 return sample < std::visit([](const auto& event) { return event.sampleOffset; }, input);
             });
         midiEventScratch_.insert(afterSampleZero, core::MidiTrigger{ 0, core::kDefaultMidiNote, 1.0f, true });
+        displayMidiNote.store(core::kDefaultMidiNote, std::memory_order_relaxed);
+        displayMidiHz.store(core::noteFrequencyHz(core::kDefaultMidiNote), std::memory_order_relaxed);
+        displayVelocity.store(1.0f, std::memory_order_relaxed);
     }
+
+    const float* clickData = nullptr;
+    int clickLength = 0;
+    double clickRate = 44100.0;
+    selectClickSource(clickData, clickLength, clickRate);
+    userAudioSeen_.store(userPublished_.load(std::memory_order_acquire), std::memory_order_release);
+    engine_.setClickSampleSource(clickData, clickLength, clickRate);
 
     core::MidiRouting routing{
         this,
@@ -404,6 +443,9 @@ int OpenEdmKickProcessor::getNumPrograms() {
 void OpenEdmKickProcessor::setCurrentProgram(int index) {
     const auto& presets = openedmkick::presets::factoryPresets();
     if (index < 0 || index >= static_cast<int>(presets.size())) return;
+    auto* manager = juce::MessageManager::getInstanceWithoutCreating();
+    const bool record = history_ != nullptr && manager != nullptr && manager->isThisTheMessageThread();
+    if (record) history_->beginGroup("Preset");
     {
         const std::scoped_lock lock(stateMutex_);
         currentProgram_ = index;
@@ -412,6 +454,7 @@ void OpenEdmKickProcessor::setCurrentProgram(int index) {
         routing_.restoreLocked(locked);
         restoredCustomState_.store(false);
     }
+    if (record) history_->endGroup();
     juce::AudioProcessorListener::ChangeDetails details;
     details.programChanged = true;
     updateHostDisplay(details);
@@ -423,8 +466,7 @@ const juce::String OpenEdmKickProcessor::getProgramName(int index) {
     return presets[static_cast<size_t>(index)].name;
 }
 
-void OpenEdmKickProcessor::getStateInformation(juce::MemoryBlock& destData) {
-    const std::scoped_lock lock(stateMutex_);
+juce::ValueTree OpenEdmKickProcessor::buildSoundTree() {
     auto state = parameters.copyState();
     routing_.writeState(state);
     state.setProperty("program", currentProgram_, nullptr);
@@ -449,13 +491,45 @@ void OpenEdmKickProcessor::getStateInformation(juce::MemoryBlock& destData) {
     }
     state.removeChild(state.getChildWithName("LayerPatterns"), nullptr);
     state.appendChild(patterns, nullptr);
-    const auto xml = state.createXml();
-    copyXmlToBinary(*xml, destData);
+    state.removeChild(state.getChildWithName("ClickSample"), nullptr);
+    const int sampleSlot = userPublished_.load(std::memory_order_acquire);
+    const auto& user = userSlots_[static_cast<size_t>(sampleSlot)];
+    if (!user.samples.empty()) {
+        juce::MemoryBlock pcm(user.samples.data(), user.samples.size() * sizeof(float));
+        juce::ValueTree sample("ClickSample");
+        sample.setProperty("rate", user.sampleRate, nullptr);
+        sample.setProperty("name", user.name, nullptr);
+        sample.setProperty("data", pcm.toBase64Encoding(), nullptr);
+        state.appendChild(sample, nullptr);
+    }
+    return state;
 }
 
-void OpenEdmKickProcessor::setStateInformation(const void* data, int sizeInBytes) {
+juce::MemoryBlock OpenEdmKickProcessor::encodeTree(const juce::ValueTree& tree) const {
+    juce::MemoryBlock block;
+    if (auto xml = tree.createXml()) copyXmlToBinary(*xml, block);
+    return block;
+}
+
+juce::MemoryBlock OpenEdmKickProcessor::captureSoundState() {
+    const std::scoped_lock lock(stateMutex_);
+    return encodeTree(buildSoundTree());
+}
+
+void OpenEdmKickProcessor::getStateInformation(juce::MemoryBlock& destData) {
+    const std::scoped_lock lock(stateMutex_);
+    auto state = buildSoundTree();
+    const auto sound = encodeTree(state);
+    ab_.setSlot(ab_.active(), sound);
+    state.setProperty("abSlot", ab_.active(), nullptr);
+    const auto& other = ab_.slot(1 - ab_.active());
+    if (other.getSize() > 0) state.setProperty("abOther", other.toBase64Encoding(), nullptr);
+    if (auto xml = state.createXml()) copyXmlToBinary(*xml, destData);
+}
+
+bool OpenEdmKickProcessor::recallSound(const void* data, int sizeInBytes, bool loadCompareSlots, bool forceCustom) {
     const auto xml = getXmlFromBinary(data, sizeInBytes);
-    if (xml == nullptr || !xml->hasTagName(parameters.state.getType())) return;
+    if (xml == nullptr || !xml->hasTagName(parameters.state.getType())) return false;
     auto state = juce::ValueTree::fromXml(*xml);
     std::ranges::for_each(getParameters(), [&](juce::AudioProcessorParameter* parameter) {
         auto* ranged = dynamic_cast<juce::RangedAudioParameter*>(parameter);
@@ -473,25 +547,265 @@ void OpenEdmKickProcessor::setStateInformation(const void* data, int sizeInBytes
         : 0;
     restoredCustomState_.store(
         !hasCurrentCatalog || static_cast<bool>(state.getProperty("programCustom", false)));
+    if (forceCustom) restoredCustomState_.store(true);
     parameters.replaceState(state);
     routing_.restoreState(state);
-    const std::scoped_lock lock(stateMutex_);
-    editorPresets_.fill(-1);
-    syncEditorSequencer();
-    const auto patterns = state.getChildWithName("LayerPatterns");
-    for (const auto pattern : patterns) {
-        const int slot = pattern.getProperty("slot", -1);
-        if (slot < 0 || slot >= core::kNumAutoSlots) continue;
-        std::vector<core::PianoRollNote> notes;
-        for (const auto hit : pattern) {
-            if (notes.size() >= core::AutoSequencer::kMaxPatternNotes) break;
-            notes.push_back({hit.getProperty("step", 0), hit.getProperty("length", 1),
-                hit.getProperty("velocity", 1.0f), hit.getProperty("reverse", false),
-                hit.getProperty("layer", -1), hit.getProperty("ratchets", 1)});
-        }
-        editorSequencer_.setNotesForSlot(slot, std::move(notes));
+    const auto sample = state.getChildWithName("ClickSample");
+    if (sample.isValid()) {
+        juce::MemoryBlock pcm;
+        pcm.fromBase64Encoding(sample.getProperty("data").toString());
+        const auto count = static_cast<int>(pcm.getSize() / sizeof(float));
+        std::vector<float> samples(static_cast<size_t>(std::max(0, count)));
+        if (count > 0) std::memcpy(samples.data(), pcm.getData(), static_cast<size_t>(count) * sizeof(float));
+        publishUserSample(std::move(samples), static_cast<double>(sample.getProperty("rate", 44100.0)),
+                          sample.getProperty("name").toString());
+    } else {
+        publishUserSample({}, 44100.0, {});
     }
-    publishPatterns();
+    {
+        const std::scoped_lock lock(stateMutex_);
+        editorPresets_.fill(-1);
+        syncEditorSequencer();
+        const auto patterns = state.getChildWithName("LayerPatterns");
+        for (const auto pattern : patterns) {
+            const int slot = pattern.getProperty("slot", -1);
+            if (slot < 0 || slot >= core::kNumAutoSlots) continue;
+            std::vector<core::PianoRollNote> notes;
+            for (const auto hit : pattern) {
+                if (notes.size() >= core::AutoSequencer::kMaxPatternNotes) break;
+                notes.push_back({hit.getProperty("step", 0), hit.getProperty("length", 1),
+                    hit.getProperty("velocity", 1.0f), hit.getProperty("reverse", false),
+                    hit.getProperty("layer", -1), hit.getProperty("ratchets", 1)});
+            }
+            editorSequencer_.setNotesForSlot(slot, std::move(notes));
+        }
+        publishPatterns();
+        if (loadCompareSlots) {
+            const auto sound = encodeTree(buildSoundTree());
+            juce::MemoryBlock other;
+            if (state.hasProperty("abOther")) other.fromBase64Encoding(state.getProperty("abOther").toString());
+            if (other.getSize() > 0) {
+                const int slot = static_cast<int>(state.getProperty("abSlot", 0)) == 0 ? 0 : 1;
+                ab_.setActive(slot);
+                ab_.setSlot(slot, sound);
+                ab_.setSlot(1 - slot, other);
+            } else {
+                ab_.seed(sound);
+            }
+        }
+    }
+    return true;
+}
+
+void OpenEdmKickProcessor::setStateInformation(const void* data, int sizeInBytes) {
+    if (!recallSound(data, sizeInBytes, true, false)) return;
+    if (history_ != nullptr) history_->clear();
+}
+
+struct SoundSwapAction : public juce::UndoableAction {
+    SoundSwapAction(OpenEdmKickProcessor& processor, juce::MemoryBlock before, juce::MemoryBlock after)
+        : processor_(processor), before_(std::move(before)), after_(std::move(after)) {}
+
+    bool perform() override {
+        if (first_) {
+            first_ = false;
+            return true;
+        }
+        return processor_.recallSound(after_.getData(), static_cast<int>(after_.getSize()), false, false);
+    }
+
+    bool undo() override {
+        return processor_.recallSound(before_.getData(), static_cast<int>(before_.getSize()), false, false);
+    }
+
+    int getSizeInUnits() override { return 1; }
+
+    OpenEdmKickProcessor& processor_;
+    juce::MemoryBlock before_;
+    juce::MemoryBlock after_;
+    bool first_ = true;
+};
+
+bool OpenEdmKickProcessor::undo() { return history_ != nullptr && history_->undo(); }
+bool OpenEdmKickProcessor::redo() { return history_ != nullptr && history_->redo(); }
+bool OpenEdmKickProcessor::canUndo() const { return history_ != nullptr && history_->canUndo(); }
+bool OpenEdmKickProcessor::canRedo() const { return history_ != nullptr && history_->canRedo(); }
+
+void OpenEdmKickProcessor::selectAbSlot(int slot) {
+    const int next = slot == 0 ? 0 : 1;
+    if (next == ab_.active()) return;
+    juce::MemoryBlock restored;
+    {
+        const std::scoped_lock lock(stateMutex_);
+        ab_.setSlot(ab_.active(), encodeTree(buildSoundTree()));
+        ab_.setActive(next);
+        restored = ab_.slot(next);
+    }
+    if (restored.getSize() > 0)
+        recallSound(restored.getData(), static_cast<int>(restored.getSize()), false, false);
+    if (history_ != nullptr) history_->clear();
+}
+
+void OpenEdmKickProcessor::copyAbSlot(bool aToB) {
+    const int source = aToB ? 0 : 1;
+    const int destination = aToB ? 1 : 0;
+    juce::MemoryBlock copied;
+    bool apply = false;
+    {
+        const std::scoped_lock lock(stateMutex_);
+        ab_.setSlot(ab_.active(), encodeTree(buildSoundTree()));
+        copied = ab_.slot(source);
+        ab_.setSlot(destination, copied);
+        apply = ab_.active() == destination;
+    }
+    if (apply && copied.getSize() > 0) applySoundState(copied, false);
+}
+
+bool OpenEdmKickProcessor::applySoundState(const juce::MemoryBlock& state, bool forceCustom) {
+    auto* manager = juce::MessageManager::getInstanceWithoutCreating();
+    const bool record = history_ != nullptr && manager != nullptr && manager->isThisTheMessageThread();
+    juce::MemoryBlock before;
+    if (record) before = captureSoundState();
+    if (!recallSound(state.getData(), static_cast<int>(state.getSize()), false, forceCustom)) return false;
+    if (record) {
+        history_->manager().beginNewTransaction("Sound");
+        history_->manager().perform(new SoundSwapAction(*this, std::move(before), captureSoundState()));
+    }
+    return true;
+}
+
+void OpenEdmKickProcessor::publishUserSample(std::vector<float> samples, double sampleRate, juce::String name) {
+    if (samples.size() > 96000) samples.resize(96000);
+    const int published = userPublished_.load(std::memory_order_acquire);
+    const int seen = userAudioSeen_.load(std::memory_order_acquire);
+    int slot = (published + 1) % 3;
+    if (slot == seen) slot = (published + 2) % 3;
+    auto& destination = userSlots_[static_cast<size_t>(slot)];
+    destination.samples = std::move(samples);
+    destination.sampleRate = sampleRate > 1.0 ? sampleRate : 44100.0;
+    destination.name = std::move(name);
+    userPublished_.store(slot, std::memory_order_release);
+}
+
+void OpenEdmKickProcessor::selectClickSource(const float*& data, int& length, double& rate) const noexcept {
+    const int source = std::clamp(static_cast<int>(values_.clickSampleSource->load()), 0, core::kUserClickSource);
+    if (source < core::kUserClickSource) {
+        const auto& built = core::builtInClick(static_cast<core::BuiltInClick>(source));
+        data = built.samples.data();
+        length = static_cast<int>(built.samples.size());
+        rate = built.sampleRate;
+        return;
+    }
+    const int slot = userPublished_.load(std::memory_order_acquire);
+    const auto& user = userSlots_[static_cast<size_t>(slot)];
+    data = user.samples.data();
+    length = static_cast<int>(user.samples.size());
+    rate = user.sampleRate;
+}
+
+bool OpenEdmKickProcessor::loadUserClickSample(const juce::AudioBuffer<float>& buffer, double sampleRate, const juce::String& name) {
+    if (buffer.getNumSamples() < 2 || buffer.getNumChannels() < 1 || sampleRate < 1000.0) return false;
+    const int count = std::min(buffer.getNumSamples(), 96000);
+    std::vector<float> mono(static_cast<size_t>(count));
+    const float scale = 1.0f / static_cast<float>(buffer.getNumChannels());
+    for (int index = 0; index < count; ++index) {
+        float sum = 0.0f;
+        for (int channel = 0; channel < buffer.getNumChannels(); ++channel) sum += buffer.getSample(channel, index);
+        mono[static_cast<size_t>(index)] = sum * scale;
+    }
+    const int fade = std::min(32, count / 8);
+    for (int index = 0; index < fade; ++index) {
+        const float window = static_cast<float>(index) / static_cast<float>(fade);
+        mono[static_cast<size_t>(index)] *= window;
+        mono[static_cast<size_t>(count - 1 - index)] *= window;
+    }
+    publishUserSample(std::move(mono), sampleRate, name);
+    if (auto* parameter = parameters.getParameter(params::kClickSampleSource)) {
+        parameter->beginChangeGesture();
+        parameter->setValueNotifyingHost(parameter->convertTo0to1(static_cast<float>(core::kUserClickSource)));
+        parameter->endChangeGesture();
+    }
+    return true;
+}
+
+bool OpenEdmKickProcessor::loadUserClickSample(const juce::File& file) {
+    juce::AudioFormatManager formats;
+    formats.registerBasicFormats();
+    std::unique_ptr<juce::AudioFormatReader> reader(formats.createReaderFor(file));
+    if (reader == nullptr || reader->lengthInSamples < 2) return false;
+    const int count = std::min(static_cast<int>(reader->lengthInSamples), 96000);
+    juce::AudioBuffer<float> buffer(static_cast<int>(std::max<unsigned>(reader->numChannels, 1u)), count);
+    reader->read(&buffer, 0, count, 0, true, true);
+    return loadUserClickSample(buffer, reader->sampleRate, file.getFileNameWithoutExtension());
+}
+
+bool OpenEdmKickProcessor::renderCurrentHit(juce::AudioBuffer<float>& destination) const {
+    constexpr double rate = 44100.0;
+    core::KickEngine engine;
+    engine.prepare(rate);
+    std::vector<float> clickCopy;
+    double clickRate = rate;
+    const float* live = nullptr;
+    int liveLength = 0;
+    selectClickSource(live, liveLength, clickRate);
+    if (live != nullptr && liveLength > 1) clickCopy.assign(live, live + liveLength);
+    engine.setClickSampleSource(clickCopy.data(), static_cast<int>(clickCopy.size()), clickRate);
+    auto settings = currentEngineSettings();
+    settings.autoEnabled = false;
+    settings.masterBypass = false;
+    const double bpm = std::clamp(static_cast<double>(values_.tempoBpm->load()), 40.0, 240.0);
+    const int signature = std::clamp(static_cast<int>(values_.timeSignature->load()), 0,
+                                     static_cast<int>(params::kTimeSignatures.size()) - 1);
+    const double beats = params::beatsPerBarForSignature(signature);
+    const int note = std::clamp(displayMidiNote.load(), 0, 127);
+    float velocity = displayVelocity.load();
+    if (!(velocity > 0.0f)) velocity = 1.0f;
+    constexpr int block = 256;
+    const int maximum = static_cast<int>(rate * 8.0);
+    juce::AudioBuffer<float> rendered(2, maximum);
+    rendered.clear();
+    int written = 0;
+    int silent = 0;
+    bool started = false;
+    while (written + block <= maximum) {
+        float* channels[]{ rendered.getWritePointer(0) + written, rendered.getWritePointer(1) + written };
+        if (!started) {
+            const core::Transport transport{ bpm, 0.0, beats, true };
+            const std::array<core::MidiTrigger, 1> trigger{{ { 0, note, velocity, false, 0 } }};
+            engine.process(settings, transport, trigger, channels, 2, block);
+            started = true;
+        } else {
+            const core::Transport transport{ bpm, std::nullopt, beats, true };
+            engine.process(settings, transport, {}, channels, 2, block);
+        }
+        const float magnitude = std::max(rendered.getMagnitude(0, written, block), rendered.getMagnitude(1, written, block));
+        written += block;
+        const bool tail = engine.remainingTailSeconds() > 0.003 || engine.activeNoteCount() > 0;
+        if (magnitude < 1.0e-4f && !tail) silent += block;
+        else silent = 0;
+        if (written > static_cast<int>(rate * 0.05) && silent > static_cast<int>(rate * 0.05)) break;
+    }
+    const int keep = std::clamp(written - std::max(0, silent - static_cast<int>(rate * 0.02)), block, written);
+    destination.setSize(2, keep);
+    for (int channel = 0; channel < 2; ++channel)
+        destination.copyFrom(channel, 0, rendered, channel, 0, keep);
+    return destination.getNumSamples() > 0;
+}
+
+juce::File OpenEdmKickProcessor::renderHitToTemporaryWav() const {
+    juce::AudioBuffer<float> hit;
+    if (!renderCurrentHit(hit)) return {};
+    auto directory = juce::File::getSpecialLocation(juce::File::tempDirectory).getChildFile("openKicker-hits");
+    if (!directory.createDirectory()) return {};
+    const auto cutoff = juce::Time::getCurrentTime() - juce::RelativeTime::hours(12.0);
+    for (const auto& old : directory.findChildFiles(juce::File::findFiles, false, "openKicker-*.wav"))
+        if (old.getLastModificationTime() < cutoff) old.deleteFile();
+    const int note = std::clamp(displayMidiNote.load(), 0, 127);
+    const auto noteText = juce::String(core::noteName(note).data()) + juce::String(core::noteOctave(note));
+    const auto file = directory.getChildFile("openKicker-" + noteText.replaceCharacter('#', 's') + "-"
+        + juce::String(juce::Time::currentTimeMillis()) + ".wav");
+    if (!suite::writeStereoWav(file, hit, 44100.0, 24)) return {};
+    return file;
 }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter() {

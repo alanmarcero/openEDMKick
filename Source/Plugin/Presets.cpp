@@ -162,7 +162,10 @@ void appendLayer(std::vector<std::pair<juce::String, float>>& values, int layerI
         { params::kEqLowFreq, 80.0f }, { params::kEqLowDb, 0.0f },
         { params::kEqMidFreq, 1000.0f }, { params::kEqMidDb, 0.0f },
         { params::kEqHighFreq, 7500.0f }, { params::kEqHighDb, 0.0f },
-        { params::kHighPass, 20.0f }, { params::kLowPass, 20000.0f }
+        { params::kHighPass, 20.0f }, { params::kLowPass, 20000.0f },
+        { params::kClickSampleOn, 0.0f }, { params::kClickSampleSource, 0.0f },
+        { params::kClickSampleLevel, 0.75f }, { params::kClickSampleStart, 0.0f },
+        { params::kClickSamplePitch, 0.0f }, { params::kClickSampleHp, 20.0f }
     };
     appendLayer(values, 0, LayerPreset{ true, DrumSoundType::kick, 1.0f, 0.0f, 300.0f, 20.0f, 20000.0f });
     appendLayer(values, 1, kick.layerB);

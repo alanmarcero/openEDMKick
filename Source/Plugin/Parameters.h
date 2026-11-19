@@ -64,6 +64,12 @@ inline constexpr const char* kMidiExpression = "midi_expression";
 inline constexpr const char* kMidiBrightness = "midi_brightness";
 inline constexpr const char* kSubOctave = "sub_octave";
 inline constexpr const char* kClickPunch = "click_punch";
+inline constexpr const char* kClickSampleOn = "click_sample_on";
+inline constexpr const char* kClickSampleSource = "click_sample_source";
+inline constexpr const char* kClickSampleLevel = "click_sample_level";
+inline constexpr const char* kClickSampleStart = "click_sample_start";
+inline constexpr const char* kClickSamplePitch = "click_sample_pitch";
+inline constexpr const char* kClickSampleHp = "click_sample_hp";
 inline constexpr const char* kStereoWidth = "stereo_width";
 
 inline constexpr const char* kClockSync = "clock_sync";

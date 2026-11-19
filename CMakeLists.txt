@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(OpenKicker VERSION 3.8.0 LANGUAGES C CXX)
+project(OpenKicker VERSION 3.9.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -20,7 +20,8 @@ add_library(openedmkick_core STATIC
     Source/Core/KickSynth.cpp
     Source/Core/AutoSequencer.cpp
     Source/Core/Effects.cpp
-    Source/Core/KickEngine.cpp)
+        Source/Core/KickEngine.cpp
+        Source/Core/ClickSample.cpp)
 target_include_directories(openedmkick_core PUBLIC Source/Core)
 set_target_properties(openedmkick_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
@@ -48,7 +49,7 @@ if(OEK_BUILD_PLUGIN)
         NEEDS_MIDI_INPUT TRUE
         NEEDS_MIDI_OUTPUT FALSE
         IS_MIDI_EFFECT FALSE
-        EDITOR_WANTS_KEYBOARD_FOCUS FALSE
+        EDITOR_WANTS_KEYBOARD_FOCUS TRUE
         COPY_PLUGIN_AFTER_BUILD FALSE)
 
     target_sources(OpenEDMKick PRIVATE
@@ -59,11 +60,17 @@ if(OEK_BUILD_PLUGIN)
         Source/Plugin/Controls.cpp
         Source/Plugin/Panels.cpp
         Source/Plugin/PluginProcessor.cpp
-        Source/Plugin/PluginEditor.cpp)
+        Source/Plugin/PluginEditor.cpp
+        Source/suite/ParameterUndo.cpp
+        Source/suite/AbCompare.cpp
+        Source/suite/PresetLibrary.cpp
+        Source/suite/WavFile.cpp
+        Source/suite/SuiteBar.cpp)
 
     target_include_directories(OpenEDMKick PRIVATE
         Source/Core
-        Source/Plugin)
+        Source/Plugin
+        Source)
 
     target_compile_definitions(OpenEDMKick PUBLIC
         JUCE_WEB_BROWSER=0
@@ -94,7 +101,8 @@ if(OEK_BUILD_TESTS)
         Tests/KickSynthTests.cpp
         Tests/AutoSequencerTests.cpp
         Tests/EffectsTests.cpp
-        Tests/KickEngineTests.cpp)
+        Tests/KickEngineTests.cpp
+        Tests/ClickSampleTests.cpp)
 
     target_include_directories(openedmkick_tests PRIVATE Tests)
     target_link_libraries(openedmkick_tests PRIVATE openedmkick_core Catch2::Catch2WithMain)
@@ -104,8 +112,8 @@ if(OEK_BUILD_TESTS)
     catch_discover_tests(openedmkick_tests)
 
     if(OEK_BUILD_PLUGIN)
-        add_executable(openedmkick_plugin_tests Tests/PluginTests.cpp)
-        target_include_directories(openedmkick_plugin_tests PRIVATE Source/Plugin Source/Core)
+        add_executable(openedmkick_plugin_tests Tests/PluginTests.cpp Tests/SuiteTests.cpp)
+        target_include_directories(openedmkick_plugin_tests PRIVATE Source/Plugin Source/Core Source)
         target_compile_definitions(openedmkick_plugin_tests PRIVATE $<TARGET_PROPERTY:OpenEDMKick,COMPILE_DEFINITIONS>)
         target_link_libraries(openedmkick_plugin_tests PRIVATE OpenEDMKick juce::juce_audio_utils Catch2::Catch2WithMain)
         catch_discover_tests(openedmkick_plugin_tests)
