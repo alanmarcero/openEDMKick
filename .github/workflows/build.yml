@@ -147,14 +147,23 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
       - uses: actions/download-artifact@v4
         with:
           merge-multiple: true
+
+      - name: Write release notes
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: python3 scripts/release_notes.py "${{ github.ref_name }}" > release-body.md
 
       - uses: softprops/action-gh-release@v2
         with:
           files: |
             openKicker-*.zip
             openEDMKick-*.zip
-          body: '![Native editor](https://raw.githubusercontent.com/alanmarcero/openEDMKick/${{ github.ref_name }}/docs/screenshots/preview.png)'
-          generate_release_notes: true
+          body_path: release-body.md
