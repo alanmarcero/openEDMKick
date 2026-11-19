@@ -2,6 +2,10 @@
 
 [Install with OpenVST Manager](https://github.com/alanmarcero/alan-m-OpenVSTManager/releases/latest)
 
+## Beta
+
+All of these plugins are in beta. The macOS and Linux builds are not up to date, so the Windows build is the one to use for now. A plugin can change dramatically from one release to the next, but the goal is for each one to keep getting better.
+
 openKicker makes pitched trance kicks and layered drum hits. Play it from a MIDI keyboard or sequence. MIDI notes set the kick pitch and octave. Add up to four kick, snare, clap, or hat layers to create a complete hit.
 
 ![Kick waveform, preset browser, audition, and sound controls](docs/screenshots/preview.png)
