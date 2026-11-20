@@ -547,6 +547,7 @@ TEST_CASE("Separate MIDI spans preserve offsets and controller semantics", "[eng
     separateEngine.prepare(48000);
     orderedEngine.prepare(48000);
     core::EngineSettings settings;
+    settings.effects.limiterEnabled = false;
     std::array<float, 128> separate{}, combined{};
     float* separateChannel = separate.data();
     float* orderedChannel = combined.data();
@@ -796,4 +797,77 @@ TEST_CASE("Host tails include active filter decay and then reach zero", "[follow
     REQUIRE(engine.remainingTailSeconds() > 0);
     engine.process(settings, {120, 0.032, 4, true}, {}, &channel, 1, 8000);
     REQUIRE_THAT(static_cast<float>(engine.remainingTailSeconds()), WithinAbs(0.0f, 0.0001f));
+}
+
+TEST_CASE("Mid/Side allpass stereo widener keeps sub mono-coherent and sums comb-free to mono", "[engine][width][dsp]") {
+    const auto renderWidth = [](float width, float panLayerB) {
+        core::KickEngine engine;
+        engine.prepare(48000.0);
+        core::EngineSettings settings{};
+        settings.effects.limiterEnabled = false;
+        settings.effects.stereoWidth = width;
+        settings.layers[1].enabled = true;
+        settings.layers[1].sound = core::DrumSoundType::hat;
+        settings.layers[1].gain = 0.65f;
+        settings.layers[1].pan = panLayerB;
+        std::array<std::vector<float>, 2> out{ std::vector<float>(8192, 0.0f), std::vector<float>(8192, 0.0f) };
+        float* ptrs[]{ out[0].data(), out[1].data() };
+        const std::array<core::MidiTrigger, 1> trigger{{ { 0, 36, 1.0f } }};
+        engine.process(settings, { 128.0, 0.0, 4.0, true }, trigger, ptrs, 2, 8192);
+        return out;
+    };
+
+    const auto narrow = renderWidth(0.0f, 0.0f);
+    const auto wide = renderWidth(1.0f, 0.0f);
+
+    float lpMid = 0.0f;
+    float lpSide = 0.0f;
+    const float subAlpha = static_cast<float>(1.0 - std::exp(-2.0 * std::numbers::pi * 70.0 / 48000.0));
+    double subMidEnergy = 0.0;
+    double subSideEnergy = 0.0;
+    double highSideEnergy = 0.0;
+    std::ranges::for_each(std::views::iota(size_t{ 0 }, wide[0].size()), [&](size_t i) {
+        const float mid = 0.5f * (wide[0][i] + wide[1][i]);
+        const float side = 0.5f * (wide[0][i] - wide[1][i]);
+        lpMid += subAlpha * (mid - lpMid);
+        lpSide += subAlpha * (side - lpSide);
+        subMidEnergy += static_cast<double>(lpMid) * lpMid;
+        subSideEnergy += static_cast<double>(lpSide) * lpSide;
+        const float hpSide = side - lpSide;
+        highSideEnergy += static_cast<double>(hpSide) * hpSide;
+    });
+    REQUIRE(subSideEnergy < subMidEnergy * 0.002);
+    REQUIRE(highSideEnergy > 0.5);
+
+    double monoNarrowSq = 0.0;
+    double monoWideSq = 0.0;
+    std::ranges::for_each(std::views::iota(size_t{ 0 }, wide[0].size()), [&](size_t i) {
+        const double mn = 0.5 * (static_cast<double>(narrow[0][i]) + narrow[1][i]);
+        const double mw = 0.5 * (static_cast<double>(wide[0][i]) + wide[1][i]);
+        monoNarrowSq += mn * mn;
+        monoWideSq += mw * mw;
+    });
+    REQUIRE_THAT(monoWideSq / monoNarrowSq, WithinAbs(1.0, 0.02));
+
+    const size_t haasLag = static_cast<size_t>(48000.0 * 0.0065);
+    double lagDot = 0.0;
+    double midNorm = 0.0;
+    double sideNorm = 0.0;
+    float hpMidState = 0.0f;
+    const float xoverAlpha = static_cast<float>(1.0 - std::exp(-2.0 * std::numbers::pi * 450.0 / 48000.0));
+    std::vector<float> highMid(wide[0].size(), 0.0f);
+    std::ranges::for_each(std::views::iota(size_t{ 0 }, wide[0].size()), [&](size_t i) {
+        const float mid = 0.5f * (wide[0][i] + wide[1][i]);
+        hpMidState += xoverAlpha * (mid - hpMidState);
+        highMid[i] = mid - hpMidState;
+    });
+    std::ranges::for_each(std::views::iota(haasLag, wide[0].size()), [&](size_t i) {
+        const double m = highMid[i - haasLag];
+        const double s = 0.5 * (static_cast<double>(wide[0][i]) - wide[1][i]);
+        lagDot += m * s;
+        midNorm += m * m;
+        sideNorm += s * s;
+    });
+    const double haasCorrelation = std::abs(lagDot) / std::sqrt(std::max(1.0e-12, midNorm * sideNorm));
+    REQUIRE(haasCorrelation < 0.35);
 }

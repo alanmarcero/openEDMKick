@@ -94,6 +94,9 @@ inline constexpr int kDefaultMidiNote = 36; // C2, 65.41 Hz
 // Octaves above the note at a given time after the hit.
 [[nodiscard]] float pitchOctavesAt(float timeMs, const KickSettings& settings) noexcept;
 
+// Analytic phase increment in cycles over [startMs, endMs] for the swept fundamental.
+[[nodiscard]] double integratePitchCycles(double startMs, double endMs, float noteHz, double maxHz, const KickSettings& settings) noexcept;
+
 // Amplitude envelope (0..1) at a given time after the hit.
 [[nodiscard]] float amplitudeAt(float timeMs, const KickSettings& settings) noexcept;
 
@@ -103,7 +106,7 @@ inline constexpr int kDefaultMidiNote = 36; // C2, 65.41 Hz
 // One kick voice. Renders at an internal oversampled rate and returns host-rate samples.
 class KickVoice {
 public:
-    void prepare(double hostRate);
+    void prepare(double hostRate, bool allowReverse = true);
     void start(const KickSettings& settings, int midiNote, float velocity,
                const DrumLayerSettings& layer = {}, float gainScale = 1.0f) noexcept;
     void startReverse(const KickSettings& settings, int midiNote, float velocity, int durationSamples,
@@ -137,12 +140,18 @@ private:
     float gain_ = 1.0f;
     float velocity_ = 1.0f;
     float noteHz_ = 43.65f;
+    float knockHz_ = 180.0f;
+    float knockDb_ = 6.0f;
     float clickFrequencyHz_ = 3500;
     float previousSample_ = 0.0f;
     double phase_ = 0.0;
     double subPhase_ = 0.0;
     double subOctavePhase_ = 0.0;
-    double clickPhase_ = 0.0;
+    std::array<double, 4> clickModalPhases_{};
+    std::array<double, 6> modalPhases_{};
+    std::array<float, 512> snareComb_{};
+    size_t snareCombIndex_ = 0;
+    float snareCombLp_ = 0.0f;
     int64_t osIndex_ = 0;
     int64_t ampIndex_ = 0;
     int64_t releaseStart_ = -1;
@@ -156,15 +165,18 @@ private:
     int64_t chokeRemaining_ = -1;
     int64_t chokeLength_ = 1;
     bool reversing_ = false;
+    int reverseTotalSamples_ = 0;
     int reverseSamplesRemaining_ = 0;
+    int reverseCacheLength_ = 0;
     double reverseSourcePosition_ = 0;
     double reverseSourceStep_ = 1;
-    double phaseDirection_ = 1;
+    std::vector<float> reverseCache_;
 
-    dsp::Biquad knock_;
-    dsp::Biquad tone_;
-    dsp::Biquad lowCut_;
-    dsp::Biquad clickFilter_;
+    dsp::Svf knock_;
+    dsp::Svf tone_;
+    dsp::Svf lowCut_;
+    dsp::Svf clickFilter_;
+    dsp::AdaaSaturator saturator_;
     ToneFilter layerFilter_;
     dsp::Noise noise_;
 };

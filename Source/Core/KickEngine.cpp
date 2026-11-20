@@ -26,12 +26,32 @@ namespace {
 
 void KickEngine::prepare(double sampleRate) {
     sampleRate_ = std::max(8000.0, sampleRate);
-    std::ranges::for_each(forwardVoices_, [this](KickVoice& voice) { voice.prepare(sampleRate_); });
-    std::ranges::for_each(reverseVoices_, [this](KickVoice& voice) { voice.prepare(sampleRate_); });
-    for (auto& effect : stutter_) effect.prepare(sampleRate_);
+    std::ranges::for_each(forwardVoices_, [this](KickVoice& voice) { voice.prepare(sampleRate_, false); });
+    std::ranges::for_each(reverseVoices_, [this](KickVoice& voice) { voice.prepare(sampleRate_, true); });
+    std::ranges::for_each(stutter_, [this](BeatStutter& effect) { effect.prepare(sampleRate_); });
     eq_.prepare(sampleRate_);
     limiter_.prepare(sampleRate_);
-    widthDelayBuffer_.assign(std::max<size_t>(16, static_cast<size_t>(sampleRate_ * 0.015)), 0.0f);
+
+    const auto xoverLp = dsp::lowpassCoeffs(250.0, 0.7071067811865475, sampleRate_);
+    const auto xoverHp = dsp::highpassCoeffs(250.0, 0.7071067811865475, sampleRate_);
+    std::ranges::for_each(widthMidLp_, [&](dsp::Svf& stage) { stage.c = xoverLp; });
+    std::ranges::for_each(widthSideLp_, [&](dsp::Svf& stage) { stage.c = xoverLp; });
+    std::ranges::for_each(widthMidHp_, [&](dsp::Svf& stage) { stage.c = xoverHp; });
+    std::ranges::for_each(widthSideHp_, [&](dsp::Svf& stage) { stage.c = xoverHp; });
+
+    constexpr std::array<double, 4> delaysMs{ 1.13, 2.47, 4.19, 7.31 };
+    constexpr std::array<float, 4> feedbacks{ 0.62f, -0.58f, 0.53f, -0.49f };
+    std::ranges::for_each(std::views::iota(size_t{ 0 }, widthAllpass_.size()), [&](size_t idx) {
+        const double totalDelay = std::max(1.25, delaysMs[idx] * 0.001 * sampleRate_);
+        const auto intPart = static_cast<size_t>(std::max(1, static_cast<int>(std::floor(totalDelay - 0.2))));
+        const double frac = std::clamp(totalDelay - static_cast<double>(intPart), 0.15, 1.25);
+        auto& stage = widthAllpass_[idx];
+        stage.intDelay = intPart;
+        stage.thiranEta = static_cast<float>((1.0 - frac) / (1.0 + frac));
+        stage.feedback = feedbacks[idx];
+        stage.buffer.assign(intPart + 4u, 0.0f);
+    });
+
     toneSmooth_ = static_cast<float>(1.0 - std::exp(-1.0 / (0.012 * sampleRate_)));
     clickPlayer_.prepare(sampleRate_);
     reset();
@@ -45,15 +65,17 @@ void KickEngine::reset() noexcept {
     std::ranges::for_each(forwardVoices_, [](KickVoice& voice) { voice.reset(); });
     std::ranges::for_each(reverseVoices_, [](KickVoice& voice) { voice.reset(); });
     sequencer_.reset();
-    for (auto& effect : crusher_) effect.reset();
-    for (auto& effect : stutter_) effect.reset();
-    for (auto& effect : filterPump_) effect.reset();
-    for (auto& effect : toneFilter_) effect.reset();
+    std::ranges::for_each(crusher_, [](BitCrusher& effect) { effect.reset(); });
+    std::ranges::for_each(stutter_, [](BeatStutter& effect) { effect.reset(); });
+    std::ranges::for_each(filterPump_, [](SyncFilterPump& effect) { effect.reset(); });
+    std::ranges::for_each(toneFilter_, [](ToneFilter& effect) { effect.reset(); });
     eq_.reset();
     limiter_.reset();
-    std::fill(widthDelayBuffer_.begin(), widthDelayBuffer_.end(), 0.0f);
-    widthWriteIndex_ = 0;
-    widthLowPassState_ = 0.0f;
+    std::ranges::for_each(widthMidLp_, [](dsp::Svf& stage) { stage.reset(); });
+    std::ranges::for_each(widthMidHp_, [](dsp::Svf& stage) { stage.reset(); });
+    std::ranges::for_each(widthSideLp_, [](dsp::Svf& stage) { stage.reset(); });
+    std::ranges::for_each(widthSideHp_, [](dsp::Svf& stage) { stage.reset(); });
+    std::ranges::for_each(widthAllpass_, [](ThiranSchroederStage& stage) { stage.reset(); });
     smoothedHighPassHz_ = ToneFilter::kHighPassBypassHz;
     smoothedLowPassHz_ = ToneFilter::kLowPassBypassHz;
     toneSnap_ = true;
@@ -287,6 +309,7 @@ void KickEngine::process(
                     std::ranges::for_each(reverseVoices_, [](KickVoice& voice) { voice.reset(); });
                     reverseArmed_ = stutterArmed_ = false;
                     clickPlayer_.stop();
+                    limiter_.reset();
                     break;
                 case 121:
                     midiVolume_ = midiExpression_ = midiBrightness_ = 1.0f;
@@ -488,28 +511,27 @@ void KickEngine::process(
                 ? filterPump_[side].process(postRepeat, ppq, division(settings.effects.pumpDivision), settings.effects.pumpMix, sampleRate_)
                 : postRepeat;
             const float gated = pumped * TempoGate::gainAt(ppq, division(settings.effects.gateDivision), activationAmount(settings.effects.gateMix, gateCcEnabled_ || settings.effects.gateEnabled));
-            float out = gated * settings.effects.outputGain * midiVolume_ * midiExpression_ * settings.effects.midiVolume * settings.effects.midiExpression;
-
-            if (std::abs(out) > 1.0e-8f && effectTailAllowance_ > 0)
-                effectTailRemaining_ = static_cast<int64_t>(std::ceil(effectTailAllowance_ * sampleRate_));
-            out = toneFilter_[side].process(out, smoothedHighPassHz_, std::min(smoothedLowPassHz_, brightnessMax), sampleRate_);
+            float out = toneFilter_[side].process(gated, smoothedHighPassHz_, std::min(smoothedLowPassHz_, brightnessMax), sampleRate_);
             if (!std::isfinite(out) || settings.masterBypass) out = 0.0f;
             channels[side][sample] = out;
         }
-        if (numChannels > 1 && !widthDelayBuffer_.empty() && !settings.masterBypass) {
+        if (numChannels > 1 && !settings.masterBypass) {
             const float widthAmount = unit(settings.effects.stereoWidth);
             if (widthAmount > 0.001f) {
-                const float monoMid = 0.5f * (channels[0][sample] + channels[1][sample]);
-                const float lpCoeff = static_cast<float>(1.0 - std::exp(-2.0 * std::numbers::pi * 450.0 / sampleRate_));
-                widthLowPassState_ += lpCoeff * (monoMid - widthLowPassState_);
-                const float highBand = monoMid - widthLowPassState_;
-                widthDelayBuffer_[widthWriteIndex_] = highBand;
-                const size_t delayTap = std::clamp<size_t>(static_cast<size_t>(sampleRate_ * 0.0065), 1, widthDelayBuffer_.size() - 1);
-                const float delayedHigh = widthDelayBuffer_[(widthWriteIndex_ + widthDelayBuffer_.size() - delayTap) % widthDelayBuffer_.size()];
-                const float sideSignal = delayedHigh * widthAmount * 0.55f;
-                channels[0][sample] += sideSignal;
-                channels[1][sample] -= sideSignal;
-                widthWriteIndex_ = (widthWriteIndex_ + 1) % widthDelayBuffer_.size();
+                const float midIn = 0.5f * (channels[0][sample] + channels[1][sample]);
+                const float sideIn = 0.5f * (channels[0][sample] - channels[1][sample]);
+                const float midLow = widthMidLp_[1].process(widthMidLp_[0].process(midIn));
+                const float midHigh = widthMidHp_[1].process(widthMidHp_[0].process(midIn));
+                const float sideLow = widthSideLp_[1].process(widthSideLp_[0].process(sideIn));
+                const float sideHigh = widthSideHp_[1].process(widthSideHp_[0].process(sideIn));
+                float decorrelated = midHigh;
+                std::ranges::for_each(widthAllpass_, [&](ThiranSchroederStage& stage) {
+                    decorrelated = stage.process(decorrelated);
+                });
+                const float midOut = midLow + midHigh;
+                const float sideOut = sideLow * (1.0f - widthAmount) + sideHigh + decorrelated * widthAmount * 0.62f;
+                channels[0][sample] = midOut + sideOut;
+                channels[1][sample] = midOut - sideOut;
             }
         }
         if (!settings.masterBypass) {
@@ -517,11 +539,23 @@ void KickEngine::process(
             float& rightRef = numChannels > 1 ? channels[1][sample] : dummyRight;
             eq_.process(channels[0][sample], rightRef, settings.effects.eq);
         }
+        const float masterGain = settings.effects.outputGain * midiVolume_ * midiExpression_
+            * settings.effects.midiVolume * settings.effects.midiExpression;
+        std::ranges::for_each(std::views::iota(0, std::min(2, numChannels)), [&](int ch) {
+            float scaled = channels[ch][sample] * masterGain;
+            if (!std::isfinite(scaled) || settings.masterBypass) scaled = 0.0f;
+            if (std::abs(scaled) > 1.0e-8f && effectTailAllowance_ > 0) {
+                effectTailRemaining_ = static_cast<int64_t>(std::ceil(effectTailAllowance_ * sampleRate_));
+            }
+            channels[ch][sample] = scaled;
+        });
         peak = std::max(peak, std::abs(channels[0][sample]));
         if (numChannels > 1) peak = std::max(peak, std::abs(channels[1][sample]));
         if (effectTailRemaining_ > 0) --effectTailRemaining_;
-        if (settings.effects.limiterEnabled) {
-            const std::array<float*, 2> frame{channels[0] + sample, numChannels > 1 ? channels[1] + sample : nullptr};
+        if (settings.effects.limiterEnabled && !settings.masterBypass) {
+            float* secondChannel = nullptr;
+            if (numChannels > 1) secondChannel = channels[1] + sample;
+            const std::array<float*, 2> frame{ channels[0] + sample, secondChannel };
             limiter_.process(frame.data(), std::min(2, numChannels), 1, settings.effects.ceilingGain);
         }
     }

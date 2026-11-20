@@ -199,7 +199,7 @@ TEST_CASE("Bitcrusher quantizes amplitude and sample rate", "[effects]") {
 TEST_CASE("Bitcrusher quantizer stays on the bit grid and rejects NaNs", "[effects]") {
     core::BitCrusher crusher;
     std::ranges::for_each(std::views::iota(0, 240), [&](int i) {
-        const float crushed = crusher.process(std::sin(static_cast<float>(i) * 0.17f), 3000.0f, 3, 48000.0);
+        const float crushed = crusher.process(std::sin(static_cast<float>(i) * 0.17f), 48000.0f, 3, 48000.0);
         const float quantized = std::round(crushed * 4.0f) / 4.0f;
         REQUIRE(std::isfinite(crushed));
         REQUIRE_THAT(crushed, WithinAbs(quantized, 1.0e-5f));
@@ -208,6 +208,29 @@ TEST_CASE("Bitcrusher quantizer stays on the bit grid and rejects NaNs", "[effec
     crusher.reset();
     const float recovered = crusher.process(std::numeric_limits<float>::quiet_NaN(), 1000.0f, 4, 48000.0);
     REQUIRE(std::isfinite(recovered));
+}
+
+TEST_CASE("Band-limited bitcrusher suppresses sub-bass foldover aliasing", "[effects][dsp]") {
+    constexpr double rate = 48000.0;
+    constexpr double inputHz = 7100.0;
+    constexpr double foldedHz = 100.0; // |7100 - 3 * 2400| = 100 Hz
+    core::BitCrusher crusher;
+    std::vector<float> out(8192, 0.0f);
+    std::ranges::for_each(std::views::iota(0, 8192), [&](int n) {
+        const float x = 0.8f * std::sin(static_cast<float>(2.0 * std::numbers::pi * inputHz * n / rate));
+        out[static_cast<size_t>(n)] = crusher.process(x, 2400.0f, 12, rate);
+    });
+
+    const double coeff = 2.0 * std::cos(2.0 * std::numbers::pi * foldedHz / rate);
+    double s1 = 0.0;
+    double s2 = 0.0;
+    std::ranges::for_each(std::views::iota(size_t{ 2048 }, out.size()), [&](size_t i) {
+        const double s0 = out[i] + coeff * s1 - s2;
+        s2 = s1;
+        s1 = s0;
+    });
+    const double foldedAmp = 2.0 * std::sqrt(std::max(0.0, s1 * s1 + s2 * s2 - coeff * s1 * s2)) / 6144.0;
+    REQUIRE(foldedAmp < 0.04);
 }
 
 TEST_CASE("ThreeBandEq boosts/cuts +/-12 dB and glides smoothly between frequencies", "[effects][eq]") {
@@ -253,22 +276,64 @@ TEST_CASE("ThreeBandEq boosts/cuts +/-12 dB and glides smoothly between frequenc
     REQUIRE(std::abs(immediateNext - before) < 0.05f);
 }
 
-TEST_CASE("Limiter catches the peak on the same sample and stays at the ceiling", "[effects]") {
+TEST_CASE("Lookahead true-peak limiter catches inter-sample peaks and adapts release", "[effects][limiter][dsp]") {
+    REQUIRE(core::PeakLimiter::kLookahead == 64);
+    REQUIRE(core::PeakLimiter::kLatency == 64);
+
     core::PeakLimiter limiter;
     limiter.prepare(48000.0);
-    std::vector<float> buffer(128, 0.0f);
+    std::vector<float> buffer(256, 0.0f);
     buffer[0] = 2.0f;
     buffer[4] = std::numeric_limits<float>::quiet_NaN();
     buffer[20] = 0.25f;
     float* channel = buffer.data();
     limiter.process(&channel, 1, static_cast<int>(buffer.size()), 0.5f);
 
-    REQUIRE_THAT(buffer[0], WithinAbs(0.5f, 1.0e-4f));
+    REQUIRE_THAT(buffer[static_cast<size_t>(core::PeakLimiter::kLatency)], WithinAbs(0.5f, 1.0e-3f));
     std::ranges::for_each(buffer, [](float sample) {
         REQUIRE(std::isfinite(sample));
         REQUIRE(std::abs(sample) <= 0.5001f);
     });
-    REQUIRE(core::PeakLimiter::kLatency == 0);
+
+    // fs/4 tone at +45 deg keeps sample peaks <= 0.88 while true peak hits 1.244.
+    limiter.reset();
+    constexpr float ceiling = 0.92f;
+    std::vector<float> ispSignal(1024, 0.0f);
+    std::ranges::for_each(std::views::iota(0, 1024), [&](int n) {
+        const double angle = 0.5 * std::numbers::pi * n + 0.25 * std::numbers::pi;
+        ispSignal[static_cast<size_t>(n)] = static_cast<float>(1.244 * std::cos(angle));
+    });
+    float* ispChannel = ispSignal.data();
+    limiter.process(&ispChannel, 1, static_cast<int>(ispSignal.size()), ceiling);
+
+    float maxMidpoint = 0.0f;
+    std::ranges::for_each(std::views::iota(256, 960), [&](int n) {
+        const float y0 = ispSignal[static_cast<size_t>(n - 1)];
+        const float y1 = ispSignal[static_cast<size_t>(n)];
+        const float y2 = ispSignal[static_cast<size_t>(n + 1)];
+        const float y3 = ispSignal[static_cast<size_t>(n + 2)];
+        const float mid = std::abs(0.5625f * (y1 + y2) - 0.0625f * (y0 + y3));
+        maxMidpoint = std::max(maxMidpoint, mid);
+    });
+    REQUIRE(maxMidpoint <= ceiling + 0.015f);
+
+    const auto measureRecovery = [](bool sustained) {
+        core::PeakLimiter lim;
+        lim.prepare(48000.0);
+        std::vector<float> sig(3600, 0.1f);
+        std::ranges::for_each(std::views::iota(0, 2000), [&](int n) {
+            if (sustained) {
+                sig[static_cast<size_t>(n)] = 2.0f * std::sin(2.0f * std::numbers::pi_v<float> * 80.0f * static_cast<float>(n) / 48000.0f);
+                return;
+            }
+            sig[static_cast<size_t>(n)] = (n % 500 == 0) ? 2.0f : 0.02f;
+        });
+        sig[1999] = 2.0f;
+        float* ptr = sig.data();
+        lim.process(&ptr, 1, static_cast<int>(sig.size()), 0.5f);
+        return sig[static_cast<size_t>(2000 + core::PeakLimiter::kLatency + 720)]; // 15 ms after overload ends
+    };
+    REQUIRE(measureRecovery(false) > measureRecovery(true) * 1.12f);
 }
 
 TEST_CASE("Sync filter pump stays finite across a full sweep", "[effects]") {
