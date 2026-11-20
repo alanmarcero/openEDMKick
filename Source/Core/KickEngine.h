@@ -108,7 +108,7 @@ struct MidiRouting {
 
 class KickEngine {
 public:
-    static constexpr int kLatencySamples = 0;
+    static constexpr int kLatencySamples = PeakLimiter::kLatency;
 
     void prepare(double sampleRate);
     void reset() noexcept;
@@ -173,12 +173,45 @@ private:
     std::array<BeatStutter, 2> stutter_;
     std::array<SyncFilterPump, 2> filterPump_;
     std::array<ToneFilter, 2> toneFilter_;
+    struct ThiranSchroederStage {
+        std::vector<float> buffer;
+        size_t writeIndex = 0;
+        size_t intDelay = 1;
+        float thiranEta = 0.0f;
+        float thiranX1 = 0.0f;
+        float thiranY1 = 0.0f;
+        float feedback = 0.5f;
+
+        void reset() noexcept {
+            std::fill(buffer.begin(), buffer.end(), 0.0f);
+            writeIndex = 0;
+            thiranX1 = 0.0f;
+            thiranY1 = 0.0f;
+        }
+
+        [[nodiscard]] float process(float input) noexcept {
+            if (buffer.empty()) return input;
+            const size_t size = buffer.size();
+            const size_t readIdx = (writeIndex + size - intDelay) % size;
+            const float intDelayed = buffer[readIdx];
+            const float fracDelayed = thiranEta * (intDelayed - thiranY1) + thiranX1;
+            thiranX1 = intDelayed;
+            thiranY1 = fracDelayed;
+            const float v = input + feedback * fracDelayed;
+            buffer[writeIndex] = std::isfinite(v) ? v : 0.0f;
+            writeIndex = (writeIndex + 1u) % size;
+            return fracDelayed - feedback * v;
+        }
+    };
+
     ThreeBandEq eq_;
     PeakLimiter limiter_;
     ClickSamplePlayer clickPlayer_;
-    std::vector<float> widthDelayBuffer_;
-    size_t widthWriteIndex_ = 0;
-    float widthLowPassState_ = 0.0f;
+    std::array<dsp::Svf, 2> widthMidLp_{};
+    std::array<dsp::Svf, 2> widthMidHp_{};
+    std::array<dsp::Svf, 2> widthSideLp_{};
+    std::array<dsp::Svf, 2> widthSideHp_{};
+    std::array<ThiranSchroederStage, 4> widthAllpass_{};
     float smoothedHighPassHz_ = ToneFilter::kHighPassBypassHz;
     float smoothedLowPassHz_ = ToneFilter::kLowPassBypassHz;
     float toneSmooth_ = 0.0f;

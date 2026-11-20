@@ -10,7 +10,6 @@ namespace {
 
 constexpr double kPpqEpsilon = 1.0e-9;
 constexpr double kMinRate = 8000.0;
-constexpr double kLimiterReleaseMs = 55.0;
 
 [[nodiscard]] double nextBoundary(double ppq, double grid) noexcept {
     const double safeGrid = std::max(1.0e-4, grid);
@@ -73,21 +72,82 @@ int computeSyncedReverseSamples(ReverseSyncMode mode, double ppqPosition, double
 }
 
 void BitCrusher::reset() noexcept {
-    phase_ = 1.0f;
+    phase_ = 1.0;
     held_ = 0.0f;
+    staged_ = 0.0f;
+    stagedValid_ = false;
+    lastCutoffHz_ = 0.0;
+    lastRate_ = 0.0;
+    preFilter1_.reset();
+    preFilter2_.reset();
+    dither_.seed(0x9E3779B9u);
 }
 
 float BitCrusher::process(float input, float rateHz, int bits, double sampleRate) noexcept {
+    if (!std::isfinite(input)) {
+        reset();
+        return 0.0f;
+    }
     const double rate = std::max(kMinRate, sampleRate);
+    const float dry = std::clamp(input, -1.0f, 1.0f);
     const float hz = std::clamp(finiteOr(rateHz, 8000.0f), 100.0f, static_cast<float>(rate));
     const int depth = std::clamp(bits, 1, 16);
-    phase_ += static_cast<float>(hz / rate);
-    if (phase_ >= 1.0f) {
-        phase_ -= std::floor(phase_);
-        const float levels = std::exp2(static_cast<float>(depth - 1));
-        held_ = std::round(std::clamp(finiteOr(input), -1.0f, 1.0f) * levels) / levels;
+    const float levels = std::exp2(static_cast<float>(depth - 1));
+    const double dt = static_cast<double>(hz) / rate;
+    const bool decimating = dt < 0.999;
+
+    float filtered = dry;
+    if (decimating) {
+        const double cutoffHz = std::clamp(0.45 * static_cast<double>(hz), 40.0, rate * 0.48);
+        if (std::abs(cutoffHz - lastCutoffHz_) > 1.0e-3 || std::abs(rate - lastRate_) > 1.0e-3) {
+            lastCutoffHz_ = cutoffHz;
+            lastRate_ = rate;
+            preFilter1_.c = dsp::lowpassCoeffs(cutoffHz, 0.54119610, rate);
+            preFilter2_.c = dsp::lowpassCoeffs(cutoffHz, 1.30656296, rate);
+        }
+        filtered = preFilter2_.process(preFilter1_.process(dry));
     }
-    return held_;
+    if (!decimating) {
+        preFilter1_.reset();
+        preFilter2_.reset();
+        lastCutoffHz_ = 0.0;
+    }
+
+    const auto quantize = [&](float x) noexcept {
+        float tpdf = 0.0f;
+        if (depth < 16 && std::abs(x) > 1.0e-6f) {
+            tpdf = 0.49f * (dither_.next() - dither_.next()) * 0.5f;
+        }
+        return std::clamp(std::round(x * levels + tpdf) / levels, -1.0f, 1.0f);
+    };
+
+    if (!decimating) {
+        stagedValid_ = false;
+        held_ = quantize(filtered);
+        return held_;
+    }
+
+    float currentSample = held_;
+    phase_ += dt;
+    float preEdgeCorrection = 0.0f;
+    if (phase_ >= 1.0) {
+        phase_ -= std::floor(phase_);
+        const float frac = static_cast<float>(std::clamp(phase_ / dt, 0.0, 1.0));
+        const float previousHeld = held_;
+        held_ = quantize(filtered);
+        const float step = held_ - previousHeld;
+        const float invFrac = 1.0f - frac;
+        preEdgeCorrection = 0.5f * frac * frac * step;
+        currentSample = held_ - 0.5f * invFrac * invFrac * step;
+    }
+    if (!stagedValid_) {
+        staged_ = currentSample;
+        stagedValid_ = true;
+        return currentSample;
+    }
+    const float out = staged_ + preEdgeCorrection;
+    staged_ = currentSample;
+    return std::clamp(out, -1.0f, 1.0f);
 }
 
 void BeatStutter::prepare(double sampleRate) {
@@ -300,27 +360,131 @@ void ThreeBandEq::process(float& left, float& right, const ThreeBandEqSettings& 
 }
 
 void PeakLimiter::prepare(double sampleRate) noexcept {
-    releaseCoefficient_ = static_cast<float>(std::exp(-1.0 / (kLimiterReleaseMs * 0.001 * std::max(kMinRate, sampleRate))));
+    const double rate = std::max(kMinRate, std::isfinite(sampleRate) ? sampleRate : 48000.0);
+    fastReleaseCoeff_ = static_cast<float>(std::exp(-1.0 / (0.008 * rate)));
+    slowReleaseCoeff_ = static_cast<float>(std::exp(-1.0 / (0.095 * rate)));
+    peakEnvCoeff_ = static_cast<float>(std::exp(-1.0 / (0.025 * rate)));
+    rmsEnvCoeff_ = static_cast<float>(std::exp(-1.0 / (0.040 * rate)));
+
+    const auto besselI0 = [](double x) noexcept {
+        double sum = 1.0;
+        double term = 1.0;
+        int k = 1;
+        while (k <= 18) {
+            const double halfRatio = (0.5 * x) / static_cast<double>(k);
+            term *= halfRatio * halfRatio;
+            sum += term;
+            ++k;
+        }
+        return sum;
+    };
+    constexpr double beta = 5.5;
+    const double invDenom = 1.0 / besselI0(beta);
+    constexpr double halfSpan = 0.5 * static_cast<double>(kIspTaps);
+    std::ranges::for_each(std::views::iota(0, kIspPhases), [&](int phaseIndex) {
+        const double subPhase = static_cast<double>(phaseIndex) / static_cast<double>(kIspPhases);
+        double weightSum = 0.0;
+        std::ranges::for_each(std::views::iota(0, kIspTaps), [&](int tap) {
+            const double delta = static_cast<double>(kIspCenter - tap) + subPhase;
+            double sinc = 1.0;
+            if (std::abs(delta) > 1.0e-9) {
+                const double angle = std::numbers::pi * delta;
+                sinc = std::sin(angle) / angle;
+            }
+            const double norm = std::clamp(delta / halfSpan, -1.0, 1.0);
+            const double window = besselI0(beta * std::sqrt(std::max(0.0, 1.0 - norm * norm))) * invDenom;
+            const double w = sinc * window;
+            ispWeights_[static_cast<size_t>(phaseIndex)][static_cast<size_t>(tap)] = static_cast<float>(w);
+            weightSum += w;
+        });
+        const float invSum = weightSum > 1.0e-9 ? static_cast<float>(1.0 / weightSum) : 1.0f;
+        std::ranges::for_each(ispWeights_[static_cast<size_t>(phaseIndex)], [&](float& w) { w *= invSum; });
+    });
     reset();
 }
 
-void PeakLimiter::reset() noexcept { gain_ = 1.0f; }
+void PeakLimiter::reset() noexcept {
+    std::ranges::for_each(ispHistory_, [](auto& hist) { hist.fill(0.0f); });
+    std::ranges::for_each(delayBuffer_, [](auto& buf) { buf.fill(0.0f); });
+    peakBuffer_.fill(0.0f);
+    writeIndex_ = 0;
+    peakEnv_ = 0.0f;
+    rmsEnv_ = 0.0f;
+    gain_ = 1.0f;
+}
 
 void PeakLimiter::process(float* const* channels, int numChannels, int numSamples, float ceiling) noexcept {
     const float limit = std::clamp(finiteOr(ceiling, 1.0f), 0.05f, 1.0f);
     const int count = std::clamp(numChannels, 0, kMaxChannels);
-    for (int sample = 0; sample < numSamples; ++sample) {
-        float peak = 0.0f;
-        for (int channel = 0; channel < count; ++channel) {
-            auto& value = channels[channel][sample];
-            value = finiteOr(value);
-            peak = std::max(peak, std::abs(value));
+    std::ranges::for_each(std::views::iota(0, numSamples), [&](int sample) {
+        float incomingPeak = 0.0f;
+        float centerTruePeak = 0.0f;
+        std::array<float, kMaxChannels> exiting{};
+
+        std::ranges::for_each(std::views::iota(0, count), [&](int ch) {
+            const auto chIdx = static_cast<size_t>(ch);
+            const float cleanIn = finiteOr(channels[ch][sample]);
+            exiting[chIdx] = delayBuffer_[chIdx][writeIndex_];
+            delayBuffer_[chIdx][writeIndex_] = cleanIn;
+            incomingPeak = std::max(incomingPeak, std::abs(cleanIn));
+
+            auto& hist = ispHistory_[chIdx];
+            int shift = kIspTaps - 1;
+            while (shift > 0) {
+                hist[static_cast<size_t>(shift)] = hist[static_cast<size_t>(shift - 1)];
+                --shift;
+            }
+            hist[0] = cleanIn;
+
+            std::ranges::for_each(std::views::iota(0, kIspPhases), [&](int p) {
+                const auto& weights = ispWeights_[static_cast<size_t>(p)];
+                float acc = 0.0f;
+                std::ranges::for_each(std::views::iota(0, kIspTaps), [&](int tap) {
+                    acc += weights[static_cast<size_t>(tap)] * hist[static_cast<size_t>(tap)];
+                });
+                centerTruePeak = std::max(centerTruePeak, std::abs(acc));
+            });
+        });
+
+        const float exitingPeak = peakBuffer_[writeIndex_];
+        peakBuffer_[writeIndex_] = incomingPeak;
+        const size_t ispSlot = (writeIndex_ + static_cast<size_t>(kLookahead - kIspCenter)) % static_cast<size_t>(kLookahead);
+        peakBuffer_[ispSlot] = std::max(peakBuffer_[ispSlot], centerTruePeak);
+        writeIndex_ = (writeIndex_ + 1u) % static_cast<size_t>(kLookahead);
+
+        const float power = exitingPeak * exitingPeak;
+        peakEnv_ = std::max(power, peakEnv_ * peakEnvCoeff_);
+        rmsEnv_ = power + rmsEnvCoeff_ * (rmsEnv_ - power);
+
+        float immediateGain = 1.0f;
+        if (exitingPeak > limit) immediateGain = limit / exitingPeak;
+        if (gain_ > immediateGain) gain_ = immediateGain;
+
+        float minSlope = 0.0f;
+        std::ranges::for_each(std::views::iota(1, kLookahead + 1), [&](int dist) {
+            const size_t idx = (writeIndex_ + static_cast<size_t>(dist - 1)) % static_cast<size_t>(kLookahead);
+            const float futurePeak = peakBuffer_[idx];
+            if (futurePeak <= limit) return;
+            const float reqGain = limit / futurePeak;
+            if (reqGain >= gain_) return;
+            const float slope = (reqGain - gain_) / static_cast<float>(dist);
+            minSlope = std::min(minSlope, slope);
+        });
+
+        if (minSlope < 0.0f) gain_ += minSlope;
+        if (minSlope >= 0.0f) {
+            const float crest = std::sqrt(peakEnv_ / std::max(rmsEnv_, 1.0e-7f));
+            const float transientBlend = std::clamp((crest - 1.8f) / 3.2f, 0.0f, 1.0f);
+            const float relCoeff = std::lerp(slowReleaseCoeff_, fastReleaseCoeff_, transientBlend);
+            gain_ = immediateGain + relCoeff * (gain_ - immediateGain);
         }
-        const float target = peak > limit ? limit / peak : 1.0f;
-        gain_ = target < gain_ ? target : target + releaseCoefficient_ * (gain_ - target);
-        for (int channel = 0; channel < count; ++channel)
-            channels[channel][sample] = std::clamp(channels[channel][sample] * gain_, -limit, limit);
-    }
+        gain_ = std::clamp(gain_, 0.0f, 1.0f);
+
+        std::ranges::for_each(std::views::iota(0, count), [&](int ch) {
+            const float limited = exiting[static_cast<size_t>(ch)] * gain_;
+            channels[ch][sample] = std::clamp(limited, -limit, limit);
+        });
+    });
 }
 
 } // namespace openedmkick::core

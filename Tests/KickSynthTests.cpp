@@ -275,3 +275,249 @@ TEST_CASE("Hat partials do not ring through the noise decay", "[synth][layers][q
     const double late = goertzel(hit, static_cast<size_t>(48000 * 0.03), 600, 6500.0, 48000.0);
     CHECK(late < early * 0.45);
 }
+
+namespace {
+
+double complexPhaseAt(const std::vector<float>& samples, size_t start, size_t count, double hz, double rate) {
+    double real = 0.0;
+    double imag = 0.0;
+    std::ranges::for_each(std::views::iota(size_t{ 0 }, count), [&](size_t i) {
+        if (start + i >= samples.size()) return;
+        const double angle = 2.0 * std::numbers::pi * hz * static_cast<double>(i) / rate;
+        real += static_cast<double>(samples[start + i]) * std::cos(angle);
+        imag -= static_cast<double>(samples[start + i]) * std::sin(angle);
+    });
+    return std::atan2(imag, real);
+}
+
+double windowRms(const std::vector<float>& samples, size_t start, size_t end) {
+    const size_t clampedEnd = std::min(end, samples.size());
+    if (clampedEnd <= start) return 0.0;
+    double sumSq = 0.0;
+    std::ranges::for_each(std::views::iota(start, clampedEnd), [&](size_t i) {
+        const double v = samples[i];
+        sumSq += v * v;
+    });
+    return std::sqrt(sumSq / static_cast<double>(clampedEnd - start));
+}
+
+} // namespace
+
+TEST_CASE("Analytic pitch integration keeps fast snap sweeps phase-accurate across rates", "[synth][dsp]") {
+    core::KickSettings settings{};
+    settings.attackMs = 0.05f;
+    settings.holdMs = 80.0f;
+    settings.decayMs = 120.0f;
+    settings.sweepOctaves = 4.5f;
+    settings.sweepMs = 18.0f;
+    settings.snapOctaves = 5.0f;
+    settings.snapMs = 0.25f;
+    settings.bodyTone = 0.0f;
+    settings.knockDb = 0.0f;
+    settings.subLevel = 0.0f;
+    settings.clickLevel = 0.0f;
+    settings.lowCutHz = 10.0f;
+    settings.toneHz = 20000.0f;
+
+    // 64 kHz runs 2x with an 11.5-sample decimator delay; 192 kHz runs 1x with zero delay.
+    const auto hit64 = core::renderKick(settings, 64000.0, 36);
+    const auto hit192 = core::renderKick(settings, 192000.0, 36);
+    const double hz = core::noteFrequencyHz(36);
+    const double decimatorDelaySec = 11.5 / 64000.0;
+    const double measureTimeSec = 0.035;
+    const size_t start64 = static_cast<size_t>(std::lround((measureTimeSec + decimatorDelaySec) * 64000.0));
+    const double exact64Time = static_cast<double>(start64) / 64000.0 - decimatorDelaySec;
+    const size_t start192 = static_cast<size_t>(std::lround(exact64Time * 192000.0));
+    const double phase64 = complexPhaseAt(hit64, start64, 1280, hz, 64000.0);
+    const double phase192 = complexPhaseAt(hit192, start192, 3840, hz, 192000.0);
+    const double timeDiff = static_cast<double>(start192) / 192000.0 - exact64Time;
+    const double compensated192 = phase192 - 2.0 * std::numbers::pi * hz * timeDiff;
+    const double wrappedDiff = std::abs(std::remainder(phase64 - compensated192, 2.0 * std::numbers::pi));
+    REQUIRE(wrappedDiff < 0.08);
+}
+
+TEST_CASE("Phase-locked sub reinforces the body throughout the pitch sweep transition", "[synth][sub][dsp]") {
+    core::KickSettings base{};
+    base.sweepOctaves = 2.6f;
+    base.snapOctaves = 1.4f;
+    base.bodyTone = 0.1f;
+    base.knockDb = 0.0f;
+    base.clickLevel = 0.0f;
+    base.holdMs = 120.0f;
+    base.decayMs = 200.0f;
+
+    const std::array<float, 6> sweepTimes{ 18.0f, 23.0f, 29.0f, 35.0f, 41.0f, 47.0f };
+    std::ranges::for_each(sweepTimes, [&](float sweepMs) {
+        auto noSub = base;
+        noSub.sweepMs = sweepMs;
+        noSub.subLevel = 0.0f;
+        auto fullSub = noSub;
+        fullSub.subLevel = 1.0f;
+
+        const auto dry = core::renderKick(noSub, 48000.0, 36);
+        const auto reinforced = core::renderKick(fullSub, 48000.0, 36);
+        // Around 0.24..0.34 * sweepMs, pitchOctavesAt crosses ~0.25 octaves (50/50 sub crossfade zone).
+        const size_t start = static_cast<size_t>(48.0f * sweepMs * 0.24f);
+        const size_t end = static_cast<size_t>(48.0f * sweepMs * 0.36f);
+        CAPTURE(sweepMs);
+        REQUIRE(windowRms(reinforced, start, end) > windowRms(dry, start, end) * 1.15);
+    });
+}
+
+TEST_CASE("Oversampled ADAA body saturation adds warm low-mid even harmonics on driven hits", "[synth][dsp]") {
+    core::KickSettings settings{};
+    settings.sweepOctaves = 0.0f;
+    settings.snapOctaves = 0.0f;
+    settings.bodyTone = 0.8f;
+    settings.knockDb = 0.0f;
+    settings.clickLevel = 0.0f;
+    settings.subLevel = 1.0f;
+    settings.clickPunch = 0.0f;
+    settings.holdMs = 200.0f;
+    settings.decayMs = 200.0f;
+    settings.toneHz = 12000.0f;
+
+    // A 4096-sample Hann window places 2*f0 5.6 bins above f0 so fundamental leakage stays below -70 dB.
+    const auto hit = core::renderKick(settings, 48000.0, 36);
+    const double f0 = core::noteFrequencyHz(36);
+    const auto hannMag = [&](double hz) {
+        double re = 0.0;
+        double im = 0.0;
+        constexpr size_t count = 4096;
+        std::ranges::for_each(std::views::iota(size_t{ 0 }, count), [&](size_t i) {
+            const double w = 0.5 * (1.0 - std::cos(2.0 * std::numbers::pi * static_cast<double>(i) / static_cast<double>(count - 1)));
+            const double s = static_cast<double>(hit[2400 + i]) * w;
+            const double a = 2.0 * std::numbers::pi * hz * static_cast<double>(i) / 48000.0;
+            re += s * std::cos(a);
+            im -= s * std::sin(a);
+        });
+        return std::hypot(re, im);
+    };
+    const double h1 = hannMag(f0);
+    const double h2 = hannMag(f0 * 2.0);
+    REQUIRE(h1 > 100.0);
+    REQUIRE(h2 > h1 * 0.008);
+}
+
+TEST_CASE("ZDF SVF voice filters preserve steady DC state under fast cutoff modulation", "[synth][dsp]") {
+    const double rate = 48000.0;
+    openedmkick::dsp::Biquad filter;
+    filter.c = openedmkick::dsp::lowpassCoeffs(200.0, 3.5, rate);
+    std::ranges::for_each(std::views::iota(0, 4096), [&](int) {
+        (void)filter.process(0.5f);
+    });
+
+    float maxDeviation = 0.0f;
+    std::ranges::for_each(std::views::iota(0, 1024), [&](int n) {
+        const double cutoff = 150.0 + 14850.0 * (0.5 + 0.5 * std::sin(0.31 * static_cast<double>(n)));
+        filter.c = openedmkick::dsp::lowpassCoeffs(cutoff, 3.5, rate);
+        const float y = filter.process(0.5f);
+        REQUIRE(std::isfinite(y));
+        maxDeviation = std::max(maxDeviation, std::abs(y - 0.5f));
+    });
+    REQUIRE(maxDeviation < 1.0e-4f);
+}
+
+TEST_CASE("Modal beater transient excites multiple inharmonic contact partials", "[synth][click][dsp]") {
+    core::KickSettings settings{};
+    settings.sweepOctaves = 0.0f;
+    settings.snapOctaves = 0.0f;
+    settings.bodyTone = 0.0f;
+    settings.knockDb = 0.0f;
+    settings.subLevel = 0.0f;
+    settings.clickType = core::ClickType::beater;
+    settings.clickLevel = 1.0f;
+    settings.clickHz = 2000.0f;
+    settings.clickMs = 16.0f;
+    settings.attackMs = 0.05f;
+    settings.holdMs = 20.0f;
+    settings.decayMs = 20.0f;
+    settings.lowCutHz = 20.0f;
+    settings.toneHz = 20000.0f;
+
+    const auto hit = core::renderKick(settings, 48000.0, 36);
+    const double mode1 = goertzel(hit, 0, 768, 2000.0, 48000.0);
+    const double valley = goertzel(hit, 0, 768, 2550.0, 48000.0);
+    const double mode2 = goertzel(hit, 0, 768, 3186.0, 48000.0);
+    const double mode3 = goertzel(hit, 0, 768, 4272.0, 48000.0);
+    REQUIRE(mode1 > 0.2);
+    REQUIRE(mode2 > valley * 1.45);
+    REQUIRE(mode3 > mode1 * 0.12);
+}
+
+TEST_CASE("Reverse playback renders causal forward filters into cache and plays strictly in reverse", "[synth][reverse][dsp]") {
+    core::KickSettings settings{};
+    settings.sweepOctaves = 2.5f;
+    settings.sweepMs = 45.0f;
+    settings.knockHz = 175.0f;
+    settings.knockDb = 9.0f;
+    settings.toneHz = 4500.0f;
+    settings.holdMs = 25.0f;
+    settings.decayMs = 220.0f;
+
+    const auto forward = core::renderKick(settings, 48000.0, 36);
+    REQUIRE(forward.size() > 2000);
+
+    core::KickVoice voice;
+    voice.prepare(48000.0);
+    voice.startReverse(settings, 36, 1.0f, static_cast<int>(forward.size()));
+    std::vector<float> reversed(forward.size(), 0.0f);
+    std::ranges::for_each(std::views::iota(size_t{ 0 }, forward.size()), [&](size_t i) {
+        reversed[i] = voice.nextSample();
+    });
+
+    // After the raised-cosine tail fade-in and before the end declick, reversed matches exact time-reversed forward.
+    const size_t checkStart = forward.size() / 3;
+    const size_t checkEnd = forward.size() - 256;
+    double dot = 0.0;
+    double normA = 0.0;
+    double normB = 0.0;
+    std::ranges::for_each(std::views::iota(checkStart, checkEnd), [&](size_t i) {
+        const double a = reversed[i];
+        const double b = forward[forward.size() - 1 - i];
+        dot += a * b;
+        normA += a * a;
+        normB += b * b;
+    });
+    const double correlation = dot / std::sqrt(std::max(1.0e-12, normA * normB));
+    REQUIRE(correlation > 0.998);
+    REQUIRE(std::abs(reversed.front()) < 1.0e-4f);
+}
+
+TEST_CASE("Snare layer synthesizes coupled dual-membrane modes and comb wire rattle", "[synth][layers][dsp]") {
+    core::KickSettings settings{};
+    settings.clickLevel = 0.0f;
+    settings.subLevel = 0.0f;
+    settings.bodyTone = 0.0f;
+    settings.knockDb = 0.0f;
+
+    std::array<core::DrumLayerSettings, core::kNumSoundLayers> layers{};
+    std::ranges::for_each(layers, [](auto& l) { l.enabled = false; });
+    layers[0] = { true, core::DrumSoundType::snare, 1.0f, 0.0f, 220.0f };
+
+    const auto snare = core::renderLayeredKick(settings, layers, 48000.0, 36);
+    const double modeLow = goertzel(snare, 48, 1024, 195.0, 48000.0);
+    const double betweenModes = goertzel(snare, 48, 1024, 244.0, 48000.0);
+    const double modeHigh = goertzel(snare, 48, 1024, 296.0, 48000.0);
+    REQUIRE(modeLow > 1.0);
+    REQUIRE(modeHigh > betweenModes * 1.45);
+}
+
+TEST_CASE("Hat layer synthesizes irrational square-ring sidebands without phase-wrap clicks", "[synth][layers][dsp]") {
+    core::KickSettings settings{};
+    settings.clickLevel = 0.0f;
+    settings.subLevel = 0.0f;
+    settings.bodyTone = 0.0f;
+    settings.knockDb = 0.0f;
+    settings.toneHz = 20000.0f;
+
+    std::array<core::DrumLayerSettings, core::kNumSoundLayers> layers{};
+    std::ranges::for_each(layers, [](auto& l) { l.enabled = false; });
+    layers[0] = { true, core::DrumSoundType::hat, 1.0f, 0.0f, 160.0f };
+
+    const auto hat = core::renderLayeredKick(settings, layers, 48000.0, 24);
+    // At note 24, base hat carrier is 3250 Hz; ring-mod sum sideband of (1.0, 1.342) sits at 3250 * 2.342 = 7611.5 Hz.
+    const double sumSideband = goertzel(hat, 0, 1024, 3250.0 * 2.342, 48000.0);
+    const double floor = goertzel(hat, 0, 1024, 420.0, 48000.0);
+    REQUIRE(sumSideband > floor * 2.2);
+}

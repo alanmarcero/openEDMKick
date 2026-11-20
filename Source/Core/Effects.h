@@ -1,5 +1,7 @@
 #pragma once
 
+#include "KickDsp.h"
+
 #include <array>
 #include <vector>
 
@@ -47,15 +49,21 @@ inline constexpr std::array<double, 5> kSyncDivisionBeats = {
     double beatsPerBar,
     double sampleRate) noexcept;
 
-// Sample-rate reducer and bit crusher.
 class BitCrusher {
 public:
     void reset() noexcept;
     [[nodiscard]] float process(float input, float rateHz, int bits, double sampleRate) noexcept;
 
 private:
-    float phase_ = 0.0f;
+    double phase_ = 1.0;
     float held_ = 0.0f;
+    float staged_ = 0.0f;
+    bool stagedValid_ = false;
+    double lastCutoffHz_ = 0.0;
+    double lastRate_ = 0.0;
+    dsp::Svf preFilter1_;
+    dsp::Svf preFilter2_;
+    dsp::Noise dither_;
 };
 
 // Host-clock-synced beat repeat / stutter effect.
@@ -157,20 +165,31 @@ private:
     std::array<Band, 3> bands_{};
 };
 
-// Zero-latency peak limiter. Instant attack keeps the kick transient on the
-// MIDI/grid sample; release recovers gain without a lookahead delay.
 class PeakLimiter {
 public:
     static constexpr int kMaxChannels = 2;
-    static constexpr int kLookahead = 0;
-    static constexpr int kLatency = 0;
+    static constexpr int kLookahead = 64;
+    static constexpr int kLatency = 64;
+    static constexpr int kIspTaps = 12;
+    static constexpr int kIspPhases = 4;
+    static constexpr int kIspCenter = 5;
 
     void prepare(double sampleRate) noexcept;
     void reset() noexcept;
     void process(float* const* channels, int numChannels, int numSamples, float ceiling) noexcept;
 
 private:
-    float releaseCoefficient_ = 0.0f;
+    std::array<std::array<float, kIspTaps>, kIspPhases> ispWeights_{};
+    std::array<std::array<float, kIspTaps>, kMaxChannels> ispHistory_{};
+    std::array<std::array<float, kLookahead>, kMaxChannels> delayBuffer_{};
+    std::array<float, kLookahead> peakBuffer_{};
+    size_t writeIndex_ = 0;
+    float fastReleaseCoeff_ = 0.0f;
+    float slowReleaseCoeff_ = 0.0f;
+    float peakEnvCoeff_ = 0.0f;
+    float rmsEnvCoeff_ = 0.0f;
+    float peakEnv_ = 0.0f;
+    float rmsEnv_ = 0.0f;
     float gain_ = 1.0f;
 };
 

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <cmath>
 #include <cstdint>
 #include <numbers>
@@ -20,87 +21,168 @@ inline constexpr double kTwoPi = 2.0 * std::numbers::pi;
     return std::isfinite(value) ? value : fallback;
 }
 
-struct BiquadCoeffs {
-    double b0 = 1.0;
-    double b1 = 0.0;
-    double b2 = 0.0;
+struct SvfCoeffs {
     double a1 = 0.0;
     double a2 = 0.0;
+    double a3 = 0.0;
+    double m0 = 1.0;
+    double m1 = 0.0;
+    double m2 = 0.0;
 };
+
+using BiquadCoeffs = SvfCoeffs;
 
 namespace detail {
 
-struct BiquadPrototype {
-    double cosW = 1.0;
-    double alpha = 0.0;
+struct SvfPrototype {
+    double g = 0.0;
+    double k = 1.0;
+    double a1 = 0.0;
+    double a2 = 0.0;
+    double a3 = 0.0;
 };
 
-[[nodiscard]] inline BiquadPrototype prototype(double hz, double q, double rate) noexcept {
+[[nodiscard]] inline SvfPrototype svfPrototype(double hz, double q, double rate) noexcept {
     const double safeRate = std::max(1000.0, rate);
     const double limited = std::clamp(hz, 5.0, safeRate * 0.49);
-    const double w = kTwoPi * limited / safeRate;
-    return { std::cos(w), std::sin(w) / (2.0 * std::max(0.05, q)) };
-}
-
-[[nodiscard]] inline BiquadCoeffs normalised(double b0, double b1, double b2, double a0, double a1, double a2) noexcept {
-    return { b0 / a0, b1 / a0, b2 / a0, a1 / a0, a2 / a0 };
+    const double g = std::tan(std::numbers::pi * limited / safeRate);
+    const double k = 1.0 / std::max(0.05, q);
+    const double a1 = 1.0 / (1.0 + g * (g + k));
+    const double a2 = g * a1;
+    return { g, k, a1, a2, g * a2 };
 }
 
 } // namespace detail
 
-// RBJ cookbook designs.
-[[nodiscard]] inline BiquadCoeffs lowpassCoeffs(double hz, double q, double rate) noexcept {
-    const auto [c, alpha] = detail::prototype(hz, q, rate);
-    return detail::normalised((1.0 - c) * 0.5, 1.0 - c, (1.0 - c) * 0.5, 1.0 + alpha, -2.0 * c, 1.0 - alpha);
+[[nodiscard]] inline SvfCoeffs lowpassCoeffs(double hz, double q, double rate) noexcept {
+    const auto p = detail::svfPrototype(hz, q, rate);
+    return { p.a1, p.a2, p.a3, 0.0, 0.0, 1.0 };
 }
 
-[[nodiscard]] inline BiquadCoeffs highpassCoeffs(double hz, double q, double rate) noexcept {
-    const auto [c, alpha] = detail::prototype(hz, q, rate);
-    return detail::normalised((1.0 + c) * 0.5, -(1.0 + c), (1.0 + c) * 0.5, 1.0 + alpha, -2.0 * c, 1.0 - alpha);
+[[nodiscard]] inline SvfCoeffs highpassCoeffs(double hz, double q, double rate) noexcept {
+    const auto p = detail::svfPrototype(hz, q, rate);
+    return { p.a1, p.a2, p.a3, 1.0, -p.k, -1.0 };
 }
 
 // Constant 0 dB peak gain band-pass.
-[[nodiscard]] inline BiquadCoeffs bandpassCoeffs(double hz, double q, double rate) noexcept {
-    const auto [c, alpha] = detail::prototype(hz, q, rate);
-    return detail::normalised(alpha, 0.0, -alpha, 1.0 + alpha, -2.0 * c, 1.0 - alpha);
+[[nodiscard]] inline SvfCoeffs bandpassCoeffs(double hz, double q, double rate) noexcept {
+    const auto p = detail::svfPrototype(hz, q, rate);
+    return { p.a1, p.a2, p.a3, 0.0, p.k, 0.0 };
 }
 
-[[nodiscard]] inline BiquadCoeffs peakCoeffs(double hz, double q, double gainDb, double rate) noexcept {
-    const auto [c, alpha] = detail::prototype(hz, q, rate);
+[[nodiscard]] inline SvfCoeffs peakCoeffs(double hz, double q, double gainDb, double rate) noexcept {
     const double a = std::pow(10.0, gainDb / 40.0);
-    return detail::normalised(1.0 + alpha * a, -2.0 * c, 1.0 - alpha * a,
-                              1.0 + alpha / a, -2.0 * c, 1.0 - alpha / a);
+    const auto p = detail::svfPrototype(hz, std::max(0.05, q) * a, rate);
+    return { p.a1, p.a2, p.a3, 1.0, p.k * (a * a - 1.0), 0.0 };
 }
 
-// Transposed direct form II. Double state keeps 15 Hz filters stable at 192 kHz.
-struct Biquad {
-    BiquadCoeffs c{};
-    double z1 = 0.0;
-    double z2 = 0.0;
+// Double state keeps 15 Hz filters clean at 192 kHz.
+struct Svf {
+    SvfCoeffs c{};
+    double ic1eq = 0.0;
+    double ic2eq = 0.0;
 
     [[nodiscard]] float process(float input) noexcept {
-        const double x = input;
-        const double y = c.b0 * x + z1;
-        z1 = c.b1 * x - c.a1 * y + z2;
-        z2 = c.b2 * x - c.a2 * y;
-        return static_cast<float>(y);
+        const double v0 = input;
+        const double v3 = v0 - ic2eq;
+        const double v1 = c.a1 * ic1eq + c.a2 * v3;
+        const double v2 = ic2eq + c.a2 * ic1eq + c.a3 * v3;
+        ic1eq = 2.0 * v1 - ic1eq;
+        ic2eq = 2.0 * v2 - ic2eq;
+        return static_cast<float>(c.m0 * v0 + c.m1 * v1 + c.m2 * v2);
     }
 
     void reset() noexcept {
-        z1 = 0.0;
-        z2 = 0.0;
+        ic1eq = 0.0;
+        ic2eq = 0.0;
     }
 };
 
-// Deterministic xorshift noise in [-1, 1].
+using Biquad = Svf;
+
 struct Noise {
     uint32_t state = 0x9E3779B9u;
+    uint32_t counter = 0u;
+    std::array<float, 5> pinkRows{};
+    float pinkSum = 0.0f;
+    int velvetCountdown = 0;
+    int velvetOffset = 0;
+    float velvetSign = 1.0f;
+
+    void seed(uint32_t value) noexcept {
+        state = value != 0u ? value : 0x9E3779B9u;
+        counter = 0u;
+        pinkRows.fill(0.0f);
+        pinkSum = 0.0f;
+        velvetCountdown = 0;
+        velvetOffset = 0;
+        velvetSign = 1.0f;
+    }
 
     [[nodiscard]] float next() noexcept {
         state ^= state << 13u;
         state ^= state >> 17u;
         state ^= state << 5u;
         return static_cast<float>(state >> 8u) * (2.0f / 16777216.0f) - 1.0f;
+    }
+
+    [[nodiscard]] float nextPink() noexcept {
+        ++counter;
+        const auto row = static_cast<size_t>(std::countr_zero(counter));
+        if (row < pinkRows.size()) {
+            const float fresh = next();
+            pinkSum += fresh - pinkRows[row];
+            pinkRows[row] = fresh;
+        }
+        return (pinkSum + next()) * (1.0f / 6.0f);
+    }
+
+    [[nodiscard]] float nextVelvet(double densityHz, double sampleRate) noexcept {
+        if (velvetCountdown <= 0) {
+            const double safeDensity = std::max(50.0, densityHz);
+            const int cell = std::clamp(static_cast<int>(std::lround(sampleRate / safeDensity)), 2, 4096);
+            velvetCountdown = cell;
+            const float uniform = 0.5f * (next() + 1.0f);
+            velvetOffset = std::clamp(static_cast<int>(uniform * static_cast<float>(cell)), 0, cell - 1);
+            velvetSign = next() >= 0.0f ? 1.0f : -1.0f;
+        }
+        --velvetCountdown;
+        if (velvetCountdown == velvetOffset) return velvetSign;
+        return 0.0f;
+    }
+};
+
+// Subtracting tanh(bias) and scaling by the bias derivative keeps silence at zero and small-signal gain at one.
+struct AdaaSaturator {
+    double prevU = 0.0;
+    bool primed = false;
+
+    [[nodiscard]] static double antiderivative(double u) noexcept {
+        const double a = std::abs(u);
+        return a + std::log1p(std::exp(-2.0 * a)) - std::numbers::ln2;
+    }
+
+    [[nodiscard]] float process(float input, float drive, float bias) noexcept {
+        const double d = std::max(0.1, static_cast<double>(drive));
+        const double b = static_cast<double>(bias);
+        const double u = d * static_cast<double>(input) + b;
+        if (!primed) {
+            primed = true;
+            prevU = u;
+        }
+        const double previous = prevU;
+        prevU = u;
+        const double du = u - previous;
+        double shaped = std::tanh(0.5 * (u + previous));
+        if (std::abs(du) > 0.015) shaped = (antiderivative(u) - antiderivative(previous)) / du;
+        const double zeroLevel = std::tanh(b);
+        const double smallSignalSlope = d * std::max(0.1, 1.0 - zeroLevel * zeroLevel);
+        return static_cast<float>((shaped - zeroLevel) / smallSignalSlope);
+    }
+
+    void reset() noexcept {
+        prevU = 0.0;
+        primed = false;
     }
 };
 
