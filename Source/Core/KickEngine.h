@@ -166,8 +166,8 @@ private:
     std::array<uint64_t, kPolyphony> voiceAges_{};
     uint64_t voiceCounter_ = 0;
     bool ampWasEnabled_ = false;
-    std::array<KickVoice, kNumSoundLayers * kPolyphony> forwardVoices_;
-    std::array<KickVoice, kNumSoundLayers * kPolyphony> reverseVoices_;
+    std::vector<KickVoice> forwardVoices_{ static_cast<size_t>(kNumSoundLayers * kPolyphony) };
+    std::vector<KickVoice> reverseVoices_{ static_cast<size_t>(kNumSoundLayers * kPolyphony) };
     AutoSequencer sequencer_;
     std::array<BitCrusher, 2> crusher_;
     std::array<BeatStutter, 2> stutter_;
