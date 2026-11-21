@@ -181,8 +181,8 @@ KickSynthPanel::KickSynthPanel(OpenEdmKickProcessor& processor)
       waveform_(processor),
       processor_(processor),
       clickSampleOn_(processor.parameters, params::kClickSampleOn, "Sample", theme::kCoral),
-      clickSampleSource_(processor.parameters, params::kClickSampleSource, "Source", theme::kCoral),
-      clickSampleLevel_(processor.parameters, params::kClickSampleLevel, "Level", theme::kCoral),
+      clickSampleSource_(processor.parameters, params::kClickSampleSource, "Click", theme::kCoral),
+      clickSampleLevel_(processor.parameters, params::kClickSampleLevel, "Click level", theme::kCoral),
       clickSampleStart_(processor.parameters, params::kClickSampleStart, "Start", theme::kCoral),
       clickSamplePitch_(processor.parameters, params::kClickSamplePitch, "Pitch", theme::kCoral),
       clickSampleHp_(processor.parameters, params::kClickSampleHp, "High pass", theme::kCoral),
@@ -346,7 +346,7 @@ void KickSynthPanel::resized() {
 
 LayerPage::LayerPage(OpenEdmKickProcessor& processor, int layer)
     : layer_(std::clamp(layer, 0, core::kNumSoundLayers - 1)),
-      enabled_(processor.parameters, params::layerId(layer_, params::kLayerEnabled), "Enable layer", theme::kViolet),
+      enabled_(processor.parameters, params::layerId(layer_, params::kLayerEnabled), "Layer on", theme::kViolet),
       sound_(processor.parameters, params::layerId(layer_, params::kLayerSound), "Sound", theme::kCoral),
       level_(processor.parameters, params::layerId(layer_, params::kLayerGain), "Level", theme::kMint),
       pitch_(processor.parameters, params::layerId(layer_, params::kLayerTranspose), "Pitch", theme::kViolet),
@@ -370,7 +370,7 @@ LayerPage::LayerPage(OpenEdmKickProcessor& processor, int layer)
     addAndMakeVisible(*layerKnobs_[5]);
     layerKnobs_[6] = std::make_unique<Knob>(processor.parameters, params::layerId(layer_, params::kLayerToneScale), "Tone scale", theme::kMint);
     addAndMakeVisible(*layerKnobs_[6]);
-    layerKnobs_[7] = std::make_unique<Knob>(processor.parameters, params::layerId(layer_, params::kLayerSweepScale), "Sweep scale", theme::kMint);
+    layerKnobs_[7] = std::make_unique<Knob>(processor.parameters, params::layerId(layer_, params::kLayerSweepScale), "Dive scale", theme::kMint);
     addAndMakeVisible(*layerKnobs_[7]);
     layerKnobs_[8] = std::make_unique<Knob>(processor.parameters, params::layerId(layer_, params::kLayerPan), "Pan", theme::kMint);
     addAndMakeVisible(*layerKnobs_[8]);
@@ -391,7 +391,7 @@ LayerPage::LayerPage(OpenEdmKickProcessor& processor, int layer)
 }
 
 void LayerPage::showEnabled(bool enabled) {
-    const juce::String off = "This layer is off. Turn on Enable layer to hear it.";
+    const juce::String off = "This layer is off. Turn on Layer on to hear it.";
     showActivity(sound_, enabled, "Choose a synthesized kick, snare, clap, or hi-hat voice.", off);
     showActivity(level_, enabled, "Set this layer's mix level.", off);
     showActivity(pitch_, enabled, "Transpose the layer in semitones. Hats use this to tune their metal partials.", off);
@@ -453,7 +453,7 @@ void LayerPanel::refreshActivity() {
         const auto& sounds = dynamic_cast<juce::AudioParameterChoice*>(processor_.parameters.getParameter(soundId))->choices;
         const bool enabled = routing.displayValue(params::layerId(layer, params::kLayerEnabled)) >= 0.5f;
         tabs_[index].setButtonText(letter + " " + sounds[juce::roundToInt(routing.displayValue(soundId))]);
-        showActivity(tabs_[index], enabled, {}, "Layer " + letter + " is off. Turn on Enable layer in its tab to hear it.");
+        showActivity(tabs_[index], enabled, {}, "Layer " + letter + " is off. Turn on Layer on in its tab to hear it.");
         pages_[index]->showEnabled(enabled);
     });
 }
@@ -602,7 +602,7 @@ AutoPianoRollPanel::AutoPianoRollPanel(OpenEdmKickProcessor& processor)
       bypass_(processor.parameters, params::kAutoBypass, "Bypass pattern", theme::kCoral),
       enabled_(processor.parameters, params::kAutoEnabled, "Run pattern", theme::kViolet),
       clockSync_(processor.parameters, params::kClockSync, "Host sync", theme::kMint),
-      timeSig_(processor.parameters, params::kTimeSignature, "Meter", theme::kMint),
+      timeSig_(processor.parameters, params::kTimeSignature, "Time signature", theme::kMint),
       bars_(processor.parameters, params::autoSlotId(0, params::kAutoBars), "Length", theme::kViolet),
       grid_(processor.parameters, params::autoSlotId(0, params::kAutoGrid), "Grid", theme::kViolet),
       fillPreset_(processor.parameters, params::autoSlotId(0, params::kAutoFillPreset), "Fill", theme::kViolet),
@@ -757,10 +757,10 @@ EffectsPanel::EffectsPanel(OpenEdmKickProcessor& processor)
     : reverseEnabled_(processor.parameters, params::kReverseEnabled, "Reverse MIDI", theme::kCoral),
       crushEnabled_(processor.parameters, params::kCrushEnabled, "Crush MIDI", theme::kMint),
       stutterEnabled_(processor.parameters, params::kStutterEnabled, "Stutter MIDI", theme::kViolet),
-      gateEnabled_(processor.parameters, params::kGateEnabled, "Chopper MIDI", theme::kViolet),
+      gateEnabled_(processor.parameters, params::kGateEnabled, "Gate MIDI", theme::kViolet),
       highPassMidi_(processor.parameters, params::kHighPassMidi, "High-pass MIDI", theme::kCoral),
       lowPassMidi_(processor.parameters, params::kLowPassMidi, "Low-pass MIDI", theme::kViolet),
-      midiVolume_(processor.parameters, params::kMidiVolume, "MIDI Volume", theme::kMint),
+      midiVolume_(processor.parameters, params::kMidiVolume, "MIDI volume", theme::kMint),
       midiExpression_(processor.parameters, params::kMidiExpression, "Expression", theme::kMint),
       midiBrightness_(processor.parameters, params::kMidiBrightness, "Brightness", theme::kMint),
       reverseMode_(processor.parameters, params::kReverseMode, "Reverse", theme::kCoral),
@@ -768,18 +768,18 @@ EffectsPanel::EffectsPanel(OpenEdmKickProcessor& processor)
       crushRate_(processor.parameters, params::kCrushRate, "Sample rate", theme::kMint),
       crushBits_(processor.parameters, params::kCrushBits, "Bit depth", theme::kMint),
       crushMix_(processor.parameters, params::kCrushMix, "Crush mix", theme::kMint),
-      stutterRate_(processor.parameters, params::kStutterRate, "Repeat rate", theme::kViolet),
-      stutterMix_(processor.parameters, params::kStutterMix, "Repeat mix", theme::kViolet),
+      stutterRate_(processor.parameters, params::kStutterRate, "Stutter rate", theme::kViolet),
+      stutterMix_(processor.parameters, params::kStutterMix, "Stutter mix", theme::kViolet),
       gateRate_(processor.parameters, params::kGateRate, "Gate rate", theme::kViolet),
       gateMix_(processor.parameters, params::kGateMix, "Gate depth", theme::kViolet),
-      pumpRate_(processor.parameters, params::kPumpRate, "Filter rate", theme::kViolet),
-      pumpMix_(processor.parameters, params::kPumpMix, "Filter depth", theme::kViolet),
+      pumpRate_(processor.parameters, params::kPumpRate, "Pump rate", theme::kViolet),
+      pumpMix_(processor.parameters, params::kPumpMix, "Pump depth", theme::kViolet),
       highPass_(processor.parameters, params::kHighPass, "High pass", theme::kMint),
       lowPass_(processor.parameters, params::kLowPass, "Low pass", theme::kMint),
       highPassSync_(processor.parameters, params::kHighPassSyncEnabled, "High-pass sync", theme::kCoral),
-      highPassSyncRate_(processor.parameters, params::kHighPassSyncRate, "HP rate", theme::kCoral),
+      highPassSyncRate_(processor.parameters, params::kHighPassSyncRate, "High-pass rate", theme::kCoral),
       lowPassSync_(processor.parameters, params::kLowPassSyncEnabled, "Low-pass sync", theme::kViolet),
-      lowPassSyncRate_(processor.parameters, params::kLowPassSyncRate, "LP rate", theme::kViolet) {
+      lowPassSyncRate_(processor.parameters, params::kLowPassSyncRate, "Low-pass rate", theme::kViolet) {
     std::ranges::for_each(std::array<juce::Component*, 17>{
         &reverseMode_, &reverseMix_, &crushRate_, &crushBits_, &crushMix_,
         &stutterRate_, &stutterMix_, &gateRate_, &gateMix_, &pumpRate_, &pumpMix_,
@@ -817,12 +817,12 @@ void EffectsPanel::setAdvancedMode(bool advanced) {
 
 std::array<juce::Rectangle<int>, 4> EffectsPanel::sections() const {
     auto area = getLocalBounds();
-    const int row = (area.getHeight() - 3 * kCardGap) / (advancedMode_ ? 7 : 4);
+    const int row = (area.getHeight() - 3 * kCardGap) / (advancedMode_ ? 8 : 4);
     const auto reverse = area.removeFromTop(row);
     area.removeFromTop(kCardGap);
     const auto texture = area.removeFromTop(row);
     area.removeFromTop(kCardGap);
-    const auto rhythm = area.removeFromTop(advancedMode_ ? 2 * row : row);
+    const auto rhythm = area.removeFromTop(advancedMode_ ? 3 * row : row);
     return { reverse, texture, rhythm, area.withTrimmedTop(kCardGap) };
 }
 
@@ -851,9 +851,10 @@ void EffectsPanel::resized() {
         layoutRow(cards[3], { &highPassMidi_, &lowPassMidi_ });
         return;
     }
-    auto stutter = cards[2].removeFromTop(cards[2].getHeight() / 2);
-    layoutRow(stutter, { &stutterEnabled_, &stutterRate_, &stutterMix_, &pumpRate_, &pumpMix_ });
-    layoutRow(cards[2], { &gateEnabled_, &gateRate_, &gateMix_ });
+    const int rhythmRow = cards[2].getHeight() / 3;
+    layoutRow(cards[2].removeFromTop(rhythmRow), { &stutterEnabled_, &stutterRate_, &stutterMix_ });
+    layoutRow(cards[2].removeFromTop(rhythmRow), { &gateEnabled_, &gateRate_, &gateMix_ });
+    layoutRow(cards[2], { &pumpRate_, &pumpMix_ });
     const int third = cards[3].getHeight() / 3;
     layoutRow(cards[3].removeFromTop(third), { &highPassMidi_, &highPass_, &highPassSync_, &highPassSyncRate_ });
     layoutRow(cards[3].removeFromTop(third), { &lowPassMidi_, &lowPass_, &lowPassSync_, &lowPassSyncRate_ });

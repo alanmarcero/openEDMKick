@@ -288,6 +288,40 @@ TEST_CASE("The waveform redraws the full hit soon after a change", "[plugin][ui]
     CHECK(changed > 200);
 }
 
+TEST_CASE("Every visible control shows the name its host parameter uses", "[plugin][ui][names]") {
+    juce::ScopedJuceInitialiser_GUI gui;
+    OpenEdmKickProcessor processor;
+    std::unique_ptr<juce::AudioProcessorEditor> editor(processor.createEditor());
+    auto* native = dynamic_cast<OpenEdmKickEditor*>(editor.get());
+    REQUIRE(native != nullptr);
+    native->setAdvancedView(true);
+    const auto words = [](const juce::String& text) {
+        juce::StringArray tokens;
+        tokens.addTokens(text.toLowerCase().replaceCharacter('-', ' '), " ", {});
+        tokens.removeEmptyStrings();
+        return tokens;
+    };
+    int named = 0;
+    const auto visit = [&](auto&& self, juce::Component& parent) -> void {
+        std::ranges::for_each(parent.getChildren(), [&](juce::Component* child) {
+            if (!child->isVisible()) return;
+            auto* parameter = processor.parameters.getParameter(child->getComponentID());
+            if (parameter != nullptr && child->getName().isNotEmpty()) {
+                const auto hostWords = words(parameter->getName(100));
+                CAPTURE(child->getName(), parameter->getName(100));
+                CHECK(std::ranges::all_of(words(child->getName()), [&](const juce::String& word) { return hostWords.contains(word); }));
+                ++named;
+            }
+            self(self, *child);
+        });
+    };
+    std::ranges::for_each(std::array{ "kick", "layers", "pattern", "fx" }, [&](const char* page) {
+        dynamic_cast<juce::TextButton*>(native->findChildWithID(juce::String("page_") + page))->onClick();
+        visit(visit, *native);
+    });
+    CHECK(named > 80);
+}
+
 TEST_CASE("Double-click returns every visible dial to its default", "[plugin][ui]") {
     juce::ScopedJuceInitialiser_GUI gui;
     OpenEdmKickProcessor processor;
