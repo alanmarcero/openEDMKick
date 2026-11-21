@@ -30,6 +30,8 @@ bool PresetLibrary::isFactory(const juce::String& name) const {
     return std::find(factoryNames_.begin(), factoryNames_.end(), trimmed) != factoryNames_.end();
 }
 
+bool PresetLibrary::exists(const juce::String& name) const { return fileFor(sanitise(name)).existsAsFile(); }
+
 std::vector<juce::String> PresetLibrary::readFavorites() const {
     std::vector<juce::String> names;
     const auto file = directory_.getChildFile("favorites.txt");

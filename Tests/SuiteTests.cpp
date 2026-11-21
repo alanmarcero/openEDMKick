@@ -295,7 +295,22 @@ TEST_CASE("Editor exposes undo, compare, drag, and preset search", "[suite][ui]"
     REQUIRE(save != nullptr);
     name->setText("Night Kick");
     save->onClick();
-    REQUIRE(directory.getChildFile("Night Kick.oekpreset").existsAsFile());
+    const auto saved = directory.getChildFile("Night Kick.oekpreset");
+    REQUIRE(saved.existsAsFile());
+    const auto savedDecay = [&saved] {
+        juce::MemoryBlock state;
+        REQUIRE(saved.loadFileAsData(state));
+        OpenEdmKickProcessor reloaded;
+        REQUIRE(reloaded.applySoundState(state, true));
+        return raw(reloaded, "decay_ms");
+    };
+    setParam(processor, "decay_ms", 900.0f);
+    save->onClick();
+    CHECK(save->getButtonText() == "Replace?");
+    CHECK_THAT(savedDecay(), WithinAbs(500.0f, 0.1f));
+    save->onClick();
+    CHECK(save->getButtonText() == "Save");
+    CHECK_THAT(savedDecay(), WithinAbs(900.0f, 0.1f));
     search->setText("night");
     search->onTextChange();
     REQUIRE(browser->rowName(0) == "Night Kick");
@@ -305,6 +320,9 @@ TEST_CASE("Editor exposes undo, compare, drag, and preset search", "[suite][ui]"
     REQUIRE(remove != nullptr);
     list->selectRow(0);
     remove->onClick();
-    REQUIRE_FALSE(directory.getChildFile("Night Kick.oekpreset").existsAsFile());
+    CHECK(remove->getButtonText() == "Delete?");
+    REQUIRE(saved.existsAsFile());
+    remove->onClick();
+    REQUIRE_FALSE(saved.existsAsFile());
     directory.deleteRecursively();
 }

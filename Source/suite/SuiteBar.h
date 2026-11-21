@@ -54,7 +54,7 @@ private:
     juce::TextButton presets_{ "Presets" };
 };
 
-class PresetBrowser : public juce::Component, private juce::ListBoxModel {
+class PresetBrowser : public juce::Component, private juce::ListBoxModel, private juce::Timer {
 public:
     explicit PresetBrowser(std::vector<juce::String> factoryNames);
     void setDirectory(juce::File directory);
@@ -73,6 +73,8 @@ private:
     void paintListBoxItem(int row, juce::Graphics& g, int width, int height, bool selected) override;
     void listBoxItemClicked(int row, const juce::MouseEvent& event) override;
     void selectedRowsChanged(int lastRowSelected) override;
+    void timerCallback() override { disarm(); }
+    void disarm();
     void refresh();
     void loadRow(int row);
     void setStatus(const juce::String& text);
@@ -87,6 +89,7 @@ private:
     juce::TextButton rename_{ "Rename" };
     juce::TextButton remove_{ "Delete" };
     juce::Label status_{ {}, {} };
+    juce::TextButton* armed_ = nullptr;
     int selected_ = -1;
 };
 

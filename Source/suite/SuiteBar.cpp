@@ -10,6 +10,7 @@ const juce::Colour kTextDim{ 0xff869ca8 };
 const juce::Colour kViolet{ 0xff5ce1ff };
 const juce::Colour kCoral{ 0xffffbe3b };
 const juce::Colour kMint{ 0xff48f0c8 };
+constexpr int kConfirmMs = 3000;
 
 void styleTool(juce::TextButton& button, const juce::String& id, const juce::String& tip) {
     button.setComponentID(id);
@@ -113,6 +114,7 @@ PresetBrowser::PresetBrowser(std::vector<juce::String> factoryNames)
     name_.setTextToShowWhenEmpty("Preset name", kTextDim);
     name_.setColour(juce::TextEditor::backgroundColourId, kInk);
     name_.setColour(juce::TextEditor::textColourId, kText);
+    name_.onTextChange = [this] { disarm(); };
     list_.setComponentID("presetList");
     list_.setRowHeight(28);
     list_.setColour(juce::ListBox::backgroundColourId, kInk);
@@ -145,6 +147,14 @@ PresetBrowser::PresetBrowser(std::vector<juce::String> factoryNames)
             setStatus("Factory presets stay read-only.");
             return;
         }
+        if (library_.exists(presetName) && armed_ != &save_) {
+            disarm();
+            armed_ = &save_;
+            save_.setButtonText("Replace?");
+            startTimer(kConfirmMs);
+            return;
+        }
+        disarm();
         setStatus(library_.save(presetName, captureState()) ? "Saved " + presetName : "Could not save that preset.");
         refresh();
     };
@@ -166,6 +176,14 @@ PresetBrowser::PresetBrowser(std::vector<juce::String> factoryNames)
             setStatus("Factory presets stay read-only.");
             return;
         }
+        if (armed_ != &remove_) {
+            disarm();
+            armed_ = &remove_;
+            remove_.setButtonText("Delete?");
+            startTimer(kConfirmMs);
+            return;
+        }
+        disarm();
         const auto presetName = entry.name;
         setStatus(library_.remove(presetName) ? "Deleted " + presetName : "Could not delete that preset.");
         selected_ = -1;
@@ -245,7 +263,17 @@ void PresetBrowser::listBoxItemClicked(int row, const juce::MouseEvent& event) {
     loadRow(row);
 }
 
-void PresetBrowser::selectedRowsChanged(int row) { selected_ = row; }
+void PresetBrowser::selectedRowsChanged(int row) {
+    selected_ = row;
+    disarm();
+}
+
+void PresetBrowser::disarm() {
+    stopTimer();
+    armed_ = nullptr;
+    save_.setButtonText("Save");
+    remove_.setButtonText("Delete");
+}
 
 void PresetBrowser::loadRow(int row) {
     const auto& entry = entries_[static_cast<size_t>(row)];

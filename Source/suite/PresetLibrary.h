@@ -24,6 +24,7 @@ public:
 
     [[nodiscard]] std::vector<PresetEntry> list(const juce::String& query) const;
     [[nodiscard]] bool isFactory(const juce::String& name) const;
+    [[nodiscard]] bool exists(const juce::String& name) const;
     bool save(const juce::String& name, const juce::MemoryBlock& state);
     bool rename(const juce::String& from, const juce::String& to);
     bool remove(const juce::String& name);
