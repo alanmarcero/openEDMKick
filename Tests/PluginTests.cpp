@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <array>
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 #include <cmath>
 #include <chrono>
@@ -293,6 +294,57 @@ TEST_CASE("Layer and host-sync FX controls are automatable and saved with the se
     REQUIRE_THAT(layer.highPassHz, WithinAbs(1800.0f, 1.0f));
     REQUIRE_THAT(restored.parameters.getRawParameterValue("hp_sync_on")->load(), WithinAbs(1.0f, 0.001f));
     REQUIRE_THAT(restored.parameters.getRawParameterValue("lp_sync_rate")->load(), WithinAbs(4.0f, 0.001f));
+}
+
+TEST_CASE("Every float parameter reads back the text it shows", "[plugin][parameters]") {
+    OpenEdmKickProcessor processor;
+    const float position = GENERATE(0.0f, 0.13f, 0.5f, 0.77f, 1.0f);
+    int checked = 0;
+    std::ranges::for_each(processor.getParameters(), [&](juce::AudioProcessorParameter* parameter) {
+        const auto* ranged = dynamic_cast<juce::AudioParameterFloat*>(parameter);
+        if (ranged == nullptr) return;
+        const auto text = parameter->getText(position, 64);
+        CAPTURE(ranged->paramID, text);
+        const float parsed = parameter->getValueForText(text);
+        CHECK(parameter->getText(parsed, 64) == text);
+        ++checked;
+    });
+    CHECK(checked > 100);
+}
+
+TEST_CASE("Typed units land on the typed value and displays use the suite formats", "[plugin][parameters]") {
+    OpenEdmKickProcessor processor;
+    const auto typed = [&](const char* id, const char* text) {
+        auto* parameter = processor.parameters.getParameter(id);
+        return parameter->convertFrom0to1(parameter->getValueForText(text));
+    };
+    const auto shown = [&](const char* id, float value) {
+        auto* parameter = processor.parameters.getParameter(id);
+        return parameter->getText(parameter->convertTo0to1(value), 64);
+    };
+    CHECK_THAT(typed("sub_level", "40%"), WithinAbs(0.4f, 0.001f));
+    CHECK_THAT(typed("sub_level", "40"), WithinAbs(0.4f, 0.001f));
+    CHECK_THAT(typed("tone_hz", "8 kHz"), WithinAbs(8000.0f, 1.0f));
+    CHECK_THAT(typed("tone_hz", "8k"), WithinAbs(8000.0f, 1.0f));
+    CHECK_THAT(typed("decay_ms", "1.2 s"), WithinAbs(1200.0f, 0.5f));
+    CHECK_THAT(typed("lp_cutoff", "Off"), WithinAbs(20000.0f, 0.5f));
+    CHECK_THAT(typed("hp_cutoff", "Off"), WithinAbs(20.0f, 0.01f));
+    CHECK_THAT(typed("layer_a_key_low", "C2"), WithinAbs(36.0f, 0.01f));
+    CHECK_THAT(typed("layer_a_key_high", "F#3"), WithinAbs(54.0f, 0.01f));
+    CHECK_THAT(typed("layer_a_pan", "40 L"), WithinAbs(-0.4f, 0.001f));
+    CHECK_THAT(typed("sweep_shape", "+20%"), WithinAbs(0.2f, 0.001f));
+    CHECK_THAT(typed("output", "+3.0 dB"), WithinAbs(3.0f, 0.001f));
+    CHECK(shown("sub_level", 0.55f) == "55%");
+    CHECK(shown("sweep_shape", 0.2f) == "+20%");
+    CHECK(shown("output", 3.0f) == "+3.0 dB");
+    CHECK(shown("output", -0.04f) == "0.0 dB");
+    CHECK(shown("knock_hz", 650.0f) == "650 Hz");
+    CHECK(shown("tone_hz", 6800.0f) == "6.80 kHz");
+    CHECK(shown("click_ms", 4.5f) == "4.5 ms");
+    CHECK(shown("decay_ms", 160.0f) == "160 ms");
+    CHECK(shown("decay_ms", 1200.0f) == "1.20 s");
+    CHECK(shown("layer_a_pan", 0.0f) == "C");
+    CHECK(shown("layer_a_pan", 0.4f) == "40 R");
 }
 
 TEST_CASE("MIDI CC21 activates the host-synced high-pass in the plug-in", "[plugin][midi][effects]") {

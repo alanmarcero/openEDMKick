@@ -1,4 +1,5 @@
 #include "Parameters.h"
+#include "Effects.h"
 #include "KickSynth.h"
 
 #include <algorithm>
@@ -10,28 +11,84 @@ namespace {
 
 using Layout = juce::AudioProcessorValueTreeState::ParameterLayout;
 using Formatter = std::function<juce::String(float, int)>;
+using Parser = std::function<float(const juce::String&)>;
 constexpr int kVersion = 1;
 
-const Formatter kFormatHz = [](float hz, int) { return formatHz(hz); };
-const Formatter kFormatOctaves = [](float value, int) { return juce::String(value, 1) + " oct"; };
-const Formatter kFormatNumber = [](float value, int) { return juce::String(value, 2); };
-const Formatter kFormatMidi = [](float value, int) { return juce::String(juce::roundToInt(value)); };
-const Formatter kFormatPercent = [](float value, int) { return juce::String(juce::roundToInt(value * 100.0f)) + "%"; };
-const Formatter kFormatBipolar = [](float value, int) {
+// Each parser reads the text that its formatter writes.
+struct Format {
+    Formatter toText;
+    Parser fromText;
+};
+
+const Parser kParseNumber = [](const juce::String& text) { return text.getFloatValue(); };
+const Parser kParsePercent = [](const juce::String& text) { return text.getFloatValue() / 100.0f; };
+const Parser kParseHz = [](const juce::String& text) {
+    return text.getFloatValue() * (text.containsIgnoreCase("k") ? 1000.0f : 1.0f);
+};
+
+const Format kFormatHz{ [](float hz, int) { return formatHz(hz); }, kParseHz };
+const Format kFormatOctaves{ [](float value, int) { return juce::String(value, 1) + " oct"; }, kParseNumber };
+const Format kFormatNumber{ [](float value, int) { return juce::String(value, 2); }, kParseNumber };
+const Format kFormatMidi{ [](float value, int) { return juce::String(juce::roundToInt(value)); }, kParseNumber };
+// Key zones also accept note names. C2 is MIDI note 36.
+const Format kFormatKey{ kFormatMidi.toText, [](const juce::String& text) {
+    const auto trimmed = text.trim();
+    const int semitone = juce::String("C D EF G A B").indexOfIgnoreCase(trimmed.substring(0, 1));
+    if (semitone < 0) return trimmed.getFloatValue();
+    const auto afterLetter = trimmed.substring(1);
+    const int sharp = afterLetter.startsWithChar('#') ? 1 : 0;
+    const int flat = afterLetter.startsWithChar('b') ? 1 : 0;
+    const int octave = afterLetter.substring(sharp + flat).getIntValue();
+    return static_cast<float>((octave + 1) * 12 + semitone + sharp - flat);
+} };
+const Format kFormatPercent{ [](float value, int) { return juce::String(juce::roundToInt(value * 100.0f)) + "%"; }, kParsePercent };
+const Format kFormatBipolar{ [](float value, int) {
     const int percent = juce::roundToInt(value * 100.0f);
     return (percent > 0 ? "+" : "") + juce::String(percent) + "%";
-};
-const Formatter kFormatMs = [](float ms, int) {
-    return (ms < 10.0f ? juce::String(ms, 1) : juce::String(juce::roundToInt(ms))) + " ms";
-};
-const Formatter kFormatDb = [](float db, int) { return (db > 0.05f ? "+" : "") + juce::String(db, 1) + " dB"; };
-const Formatter kFormatSemitones = [](float semitones, int) {
+}, kParsePercent };
+const Format kFormatPan{ [](float value, int) {
+    const int percent = juce::roundToInt(value * 100.0f);
+    if (percent == 0) return juce::String("C");
+    return juce::String(std::abs(percent)) + (percent < 0 ? " L" : " R");
+}, [](const juce::String& text) {
+    const float amount = std::abs(text.getFloatValue()) / 100.0f;
+    if (text.containsIgnoreCase("l")) return -amount;
+    if (text.containsIgnoreCase("r")) return amount;
+    return text.getFloatValue() / 100.0f;
+} };
+const Format kFormatMs{ [](float ms, int) {
+    if (std::round(ms) >= 1000.0f) return juce::String(ms / 1000.0f, 2) + " s";
+    if (std::round(ms * 10.0f) >= 100.0f) return juce::String(juce::roundToInt(ms)) + " ms";
+    return juce::String(ms, 1) + " ms";
+}, [](const juce::String& text) {
+    const auto unit = text.trim();
+    const bool seconds = unit.endsWithIgnoreCase("s") && !unit.endsWithIgnoreCase("ms");
+    return text.getFloatValue() * (seconds ? 1000.0f : 1.0f);
+} };
+const Format kFormatDb{ [](float db, int) {
+    const float tenths = std::round(db * 10.0f) / 10.0f;
+    if (tenths == 0.0f) return juce::String("0.0 dB");
+    return (tenths > 0.0f ? "+" : "") + juce::String(tenths, 1) + " dB";
+}, kParseNumber };
+const Format kFormatSemitones{ [](float semitones, int) {
     const int value = juce::roundToInt(semitones);
     return (value > 0 ? "+" : "") + juce::String(value) + " st";
-};
-const Formatter kFormatBpm = [](float bpm, int) { return juce::String(bpm, 1) + " BPM"; };
-const Formatter kFormatHighPass = [](float hz, int) { return hz <= 20.5f ? juce::String("Off") : formatHz(hz); };
-const Formatter kFormatLowPass = [](float hz, int) { return hz >= 19900.0f ? juce::String("Off") : formatHz(hz); };
+}, kParseNumber };
+const Format kFormatBpm{ [](float bpm, int) { return juce::String(bpm, 1) + " BPM"; }, kParseNumber };
+const Format kFormatHighPass{ [](float hz, int) {
+    if (hz <= 20.5f) return juce::String("Off");
+    return formatHz(hz);
+}, [](const juce::String& text) {
+    if (text.trim().equalsIgnoreCase("off")) return core::ToneFilter::kHighPassBypassHz;
+    return kParseHz(text);
+} };
+const Format kFormatLowPass{ [](float hz, int) {
+    if (hz >= 19900.0f) return juce::String("Off");
+    return formatHz(hz);
+}, [](const juce::String& text) {
+    if (text.trim().equalsIgnoreCase("off")) return core::ToneFilter::kLowPassBypassHz;
+    return kParseHz(text);
+} };
 
 juce::NormalisableRange<float> skewedRange(float min, float max, float centre) {
     juce::NormalisableRange<float> range(min, max);
@@ -40,11 +97,12 @@ juce::NormalisableRange<float> skewedRange(float min, float max, float centre) {
 }
 
 void addFloat(Layout& layout, const juce::String& id, const juce::String& name,
-              juce::NormalisableRange<float> range, float defaultValue, const Formatter& formatter,
+              juce::NormalisableRange<float> range, float defaultValue, const Format& format,
               int version = kVersion) {
     layout.add(std::make_unique<juce::AudioParameterFloat>(
         juce::ParameterID{ id, version }, name, range, defaultValue,
-        juce::AudioParameterFloatAttributes().withStringFromValueFunction(formatter)));
+        juce::AudioParameterFloatAttributes().withStringFromValueFunction(format.toText)
+                                             .withValueFromStringFunction(format.fromText)));
 }
 
 void addChoice(Layout& layout, const juce::String& id, const juce::String& name,
@@ -79,8 +137,9 @@ double beatsPerBarForSignature(int index) noexcept {
 
 juce::String formatHz(float hz) {
     if (!std::isfinite(hz)) return "0 Hz";
-    if (hz >= 1000.0f) return juce::String(hz / 1000.0f, 2) + " kHz";
-    return (hz < 100.0f ? juce::String(hz, 1) : juce::String(juce::roundToInt(hz))) + " Hz";
+    if (std::round(hz) >= 1000.0f) return juce::String(hz / 1000.0f, 2) + " kHz";
+    if (std::round(hz * 10.0f) < 1000.0f) return juce::String(hz, 1) + " Hz";
+    return juce::String(juce::roundToInt(hz)) + " Hz";
 }
 
 juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout() {
@@ -181,14 +240,14 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout() {
         const auto prefix = "Layer " + juce::String::charToString(static_cast<juce::juce_wchar>('A' + layer)) + " ";
         addFloat(layout, layerId(layer, kLayerVelocityCurve), prefix + "Velocity curve", { 0.1f, 4.0f }, 1.45f, kFormatNumber, 3);
         addFloat(layout, layerId(layer, kLayerVelocityTimbre), prefix + "Velocity timbre", { 0.0f, 1.0f }, 1.0f, kFormatPercent, 3);
-        addFloat(layout, layerId(layer, kLayerKeyLow), prefix + "Key low", { 0.0f, 127.0f, 1.0f }, 0.0f, kFormatMidi, 3);
-        addFloat(layout, layerId(layer, kLayerKeyHigh), prefix + "Key high", { 0.0f, 127.0f, 1.0f }, 127.0f, kFormatMidi, 3);
+        addFloat(layout, layerId(layer, kLayerKeyLow), prefix + "Key low", { 0.0f, 127.0f, 1.0f }, 0.0f, kFormatKey, 3);
+        addFloat(layout, layerId(layer, kLayerKeyHigh), prefix + "Key high", { 0.0f, 127.0f, 1.0f }, 127.0f, kFormatKey, 3);
         addFloat(layout, layerId(layer, kLayerVelocityLow), prefix + "Velocity low", { 1.0f, 127.0f, 1.0f }, 1.0f, kFormatMidi, 3);
         addFloat(layout, layerId(layer, kLayerVelocityHigh), prefix + "Velocity high", { 1.0f, 127.0f, 1.0f }, 127.0f, kFormatMidi, 3);
         addFloat(layout, layerId(layer, kLayerToneScale), prefix + "Tone scale", { 0.1f, 2.0f }, 1.0f, kFormatPercent, 3);
         addFloat(layout, layerId(layer, kLayerSweepScale), prefix + "Sweep scale", { 0.0f, 2.0f }, 1.0f, kFormatPercent, 3);
         addBool(layout, layerId(layer, kLayerSolo), prefix + "Solo", false, 3);
-        addFloat(layout, layerId(layer, kLayerPan), prefix + "Pan", { -1.0f, 1.0f }, 0.0f, kFormatPercent, 3);
+        addFloat(layout, layerId(layer, kLayerPan), prefix + "Pan", { -1.0f, 1.0f }, 0.0f, kFormatPan, 3);
         addBool(layout, layerId(layer, kLayerPolarity), prefix + "Invert", false, 3);
     }
     addBool(layout, kAmpEnabled, "Amp Enabled", false, 4);
