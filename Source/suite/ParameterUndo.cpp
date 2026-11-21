@@ -43,11 +43,13 @@ ParameterUndo::~ParameterUndo() {
         parameter->removeListener(this);
 }
 
-bool ParameterUndo::undo() { return undo_.undo(); }
-bool ParameterUndo::redo() { return undo_.redo(); }
-bool ParameterUndo::canUndo() const { return undo_.canUndo(); }
-bool ParameterUndo::canRedo() const { return undo_.canRedo(); }
-void ParameterUndo::clear() { undo_.clearUndoHistory(); }
+bool ParameterUndo::undo() { return histories_[active_].undo(); }
+bool ParameterUndo::redo() { return histories_[active_].redo(); }
+bool ParameterUndo::canUndo() const { return histories_[active_].canUndo(); }
+bool ParameterUndo::canRedo() const { return histories_[active_].canRedo(); }
+void ParameterUndo::clear() { std::ranges::for_each(histories_, [](juce::UndoManager& history) { history.clearUndoHistory(); }); }
+void ParameterUndo::clearHistory(int slot) { histories_[slot == 0 ? 0 : 1].clearUndoHistory(); }
+void ParameterUndo::selectHistory(int slot) { active_ = slot == 0 ? 0 : 1; }
 
 void ParameterUndo::beginGroup(const juce::String& name) {
     if (suppress_ > 0) return;
@@ -100,8 +102,8 @@ void ParameterUndo::restore(const Snapshot& snapshot) {
 
 void ParameterUndo::commit(const Snapshot& before, const Snapshot& after, const juce::String& name) {
     if (same(before, after)) return;
-    undo_.beginNewTransaction(name);
-    undo_.perform(new ChangeAction(*this, before, after));
+    histories_[active_].beginNewTransaction(name);
+    histories_[active_].perform(new ChangeAction(*this, before, after));
 }
 
 bool ParameterUndo::onUiThread() const {

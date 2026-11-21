@@ -2,6 +2,7 @@
 
 #include <juce_audio_processors/juce_audio_processors.h>
 
+#include <array>
 #include <functional>
 #include <utility>
 #include <vector>
@@ -15,18 +16,20 @@ struct EditContext {
     bool edited = false;
 };
 
-// Records UI parameter gestures in a JUCE UndoManager. One drag, click, or preset load is one step.
+// Records UI parameter gestures in one JUCE UndoManager per A/B slot. One drag, click, or preset load is one step.
 class ParameterUndo : private juce::AudioProcessorParameter::Listener {
 public:
     explicit ParameterUndo(juce::AudioProcessor& processor);
     ~ParameterUndo() override;
 
-    [[nodiscard]] juce::UndoManager& manager() noexcept { return undo_; }
+    [[nodiscard]] juce::UndoManager& manager() noexcept { return histories_[active_]; }
     bool undo();
     bool redo();
     [[nodiscard]] bool canUndo() const;
     [[nodiscard]] bool canRedo() const;
     void clear();
+    void clearHistory(int slot);
+    void selectHistory(int slot);
 
     void beginGroup(const juce::String& name);
     void endGroup();
@@ -58,7 +61,8 @@ private:
     [[nodiscard]] static bool same(const Snapshot& left, const Snapshot& right);
 
     juce::AudioProcessor& processor_;
-    juce::UndoManager undo_;
+    std::array<juce::UndoManager, 2> histories_;
+    size_t active_ = 0;
     int suppress_ = 0;
     int gestureDepth_ = 0;
     int groupDepth_ = 0;

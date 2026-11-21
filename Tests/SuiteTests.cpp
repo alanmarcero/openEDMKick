@@ -88,6 +88,32 @@ TEST_CASE("A and B keep two full sounds", "[suite][ab]") {
     REQUIRE_THAT(raw(restored, "decay_ms"), WithinAbs(420.0f, 0.1f));
 }
 
+TEST_CASE("Each compare slot keeps its own undo history", "[suite][ab][undo]") {
+    juce::ScopedJuceInitialiser_GUI gui;
+    OpenEdmKickProcessor processor;
+    auto* decay = processor.parameters.getParameter("decay_ms");
+    const auto drag = [decay](float ms) {
+        decay->beginChangeGesture();
+        decay->setValueNotifyingHost(decay->convertTo0to1(ms));
+        decay->endChangeGesture();
+    };
+    const float original = raw(processor, "decay_ms");
+    drag(120.0f);
+    processor.selectAbSlot(1);
+    CHECK_FALSE(processor.canUndo());
+    drag(900.0f);
+    REQUIRE(processor.undo());
+    CHECK_THAT(raw(processor, "decay_ms"), WithinAbs(original, 0.1f));
+    processor.selectAbSlot(0);
+    CHECK_THAT(raw(processor, "decay_ms"), WithinAbs(120.0f, 0.1f));
+    REQUIRE(processor.undo());
+    CHECK_THAT(raw(processor, "decay_ms"), WithinAbs(original, 0.1f));
+    processor.copyAbSlot(true);
+    processor.selectAbSlot(1);
+    CHECK_FALSE(processor.canUndo());
+    CHECK_FALSE(processor.canRedo());
+}
+
 TEST_CASE("User presets save, search, star, rename, and delete", "[suite][presets]") {
     auto directory = juce::File::getSpecialLocation(juce::File::tempDirectory)
                          .getChildFile("openkicker-preset-test-" + juce::String(juce::Time::currentTimeMillis()));

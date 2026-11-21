@@ -661,7 +661,7 @@ void OpenEdmKickProcessor::selectAbSlot(int slot) {
     }
     if (restored.getSize() > 0)
         recallSound(restored.getData(), static_cast<int>(restored.getSize()), false, false);
-    if (history_ != nullptr) history_->clear();
+    if (history_ != nullptr) history_->selectHistory(next);
 }
 
 void OpenEdmKickProcessor::copyAbSlot(bool aToB) {
@@ -676,7 +676,8 @@ void OpenEdmKickProcessor::copyAbSlot(bool aToB) {
         ab_.setSlot(destination, copied);
         apply = ab_.active() == destination;
     }
-    if (apply && copied.getSize() > 0) applySoundState(copied);
+    if (apply && copied.getSize() > 0) recallSound(copied.getData(), static_cast<int>(copied.getSize()), false, false);
+    if (history_ != nullptr) history_->clearHistory(destination);
 }
 
 bool OpenEdmKickProcessor::applySoundState(const juce::MemoryBlock& state, const juce::String& userPresetName) {
