@@ -71,7 +71,7 @@ OpenEdmKickEditor::OpenEdmKickEditor(OpenEdmKickProcessor& processorToEdit)
     }
     presetBox_.getRootMenu()->addSubMenu(family, sounds);
     presetBox_.setComponentID("factoryPreset");
-    presetBox_.setName("Factory preset");
+    presetBox_.setName("Preset");
     presetBox_.setTextWhenNothingSelected("Custom sound");
     presetBox_.setTooltip("Choose a factory kick. Locked controls keep their current values.");
     presetBox_.setColour(juce::ComboBox::outlineColourId, theme::kViolet);
@@ -83,22 +83,10 @@ OpenEdmKickEditor::OpenEdmKickEditor(OpenEdmKickProcessor& processorToEdit)
 
     prevPresetBtn_.setComponentID("prevPreset");
     nextPresetBtn_.setComponentID("nextPreset");
-    prevPresetBtn_.setTooltip("Previous factory kick.");
-    nextPresetBtn_.setTooltip("Next factory kick.");
-    prevPresetBtn_.onClick = [this] {
-        const int count = processor_.getNumPrograms();
-        if (count <= 0) return;
-        const int current = processor_.hasRestoredCustomState() ? 0 : processor_.getCurrentProgram();
-        processor_.setCurrentProgram((current + count - 1) % count);
-        syncPresetBox();
-    };
-    nextPresetBtn_.onClick = [this] {
-        const int count = processor_.getNumPrograms();
-        if (count <= 0) return;
-        const int next = processor_.hasRestoredCustomState() ? 0 : (processor_.getCurrentProgram() + 1) % count;
-        processor_.setCurrentProgram(next);
-        syncPresetBox();
-    };
+    prevPresetBtn_.setTooltip("Previous preset");
+    nextPresetBtn_.setTooltip("Next preset");
+    prevPresetBtn_.onClick = [this] { presetBrowser_.step(processor_.presetName(), -1); };
+    nextPresetBtn_.onClick = [this] { presetBrowser_.step(processor_.presetName(), 1); };
 
     viewToggleBtn_.setComponentID("viewToggle");
     viewToggleBtn_.setTooltip("Show the essential controls or every sound design control.");
@@ -140,8 +128,12 @@ OpenEdmKickEditor::OpenEdmKickEditor(OpenEdmKickProcessor& processorToEdit)
         processor_.setCurrentProgram(index);
         syncPresetBox();
     };
-    presetBrowser_.loadUser = [this](const juce::MemoryBlock& state) {
-        processor_.applySoundState(state, true);
+    presetBrowser_.loadUser = [this](const juce::MemoryBlock& state, const juce::String& name) {
+        processor_.applySoundState(state, name);
+        syncPresetBox();
+    };
+    presetBrowser_.onSave = [this](const juce::String& name) {
+        processor_.setUserPreset(name);
         syncPresetBox();
     };
     addAndMakeVisible(suiteBar_);
@@ -165,12 +157,8 @@ void OpenEdmKickEditor::timerCallback() {
 }
 
 void OpenEdmKickEditor::syncPresetBox() {
-    if (processor_.hasRestoredCustomState()) {
-        if (presetBox_.getSelectedId() != 0) presetBox_.setSelectedId(0, juce::dontSendNotification);
-        return;
-    }
-    const int id = processor_.getCurrentProgram() + 1;
-    if (presetBox_.getSelectedId() != id) presetBox_.setSelectedId(id, juce::dontSendNotification);
+    const auto shown = processor_.presetDisplayName();
+    if (presetBox_.getText() != shown) presetBox_.setText(shown, juce::dontSendNotification);
 }
 
 bool OpenEdmKickEditor::keyPressed(const juce::KeyPress& key) {
@@ -228,7 +216,7 @@ void OpenEdmKickEditor::paint(juce::Graphics& g) {
     g.setFont(juce::FontOptions(13.0f));
     g.drawText("Tuned drum synthesizer", 73, 40, 175, 18, juce::Justification::centredLeft);
     auto presetLabel = presetBox_.getBounds().translated(3, -17).withHeight(16);
-    g.drawText("Factory preset", presetLabel, juce::Justification::centredLeft);
+    g.drawText("Preset", presetLabel, juce::Justification::centredLeft);
 }
 
 void OpenEdmKickEditor::resized() {

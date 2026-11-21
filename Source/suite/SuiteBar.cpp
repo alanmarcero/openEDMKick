@@ -155,7 +155,9 @@ PresetBrowser::PresetBrowser(std::vector<juce::String> factoryNames)
             return;
         }
         disarm();
-        setStatus(library_.save(presetName, captureState()) ? "Saved " + presetName : "Could not save that preset.");
+        const bool saved = library_.save(presetName, captureState());
+        setStatus(saved ? "Saved " + presetName : "Could not save that preset.");
+        if (saved && onSave) onSave(presetName);
         refresh();
     };
     rename_.onClick = [this] {
@@ -287,8 +289,19 @@ void PresetBrowser::loadRow(int row) {
         setStatus("Could not load " + entry.name);
         return;
     }
-    loadUser(state);
+    loadUser(state, entry.name);
     setStatus(entry.name);
+}
+
+void PresetBrowser::step(const juce::String& current, int direction) {
+    const int count = rowCount();
+    if (count == 0) return;
+    const auto found = std::find_if(entries_.begin(), entries_.end(), [&](const PresetEntry& entry) { return entry.name == current; });
+    const int notListed = direction > 0 ? count - 1 : 0;
+    const int position = found == entries_.end() ? notListed : static_cast<int>(found - entries_.begin());
+    const int row = (position + direction + count) % count;
+    list_.selectRow(row);
+    loadRow(row);
 }
 
 void PresetBrowser::refresh() {

@@ -301,7 +301,7 @@ TEST_CASE("Editor exposes undo, compare, drag, and preset search", "[suite][ui]"
         juce::MemoryBlock state;
         REQUIRE(saved.loadFileAsData(state));
         OpenEdmKickProcessor reloaded;
-        REQUIRE(reloaded.applySoundState(state, true));
+        REQUIRE(reloaded.applySoundState(state, "Night Kick"));
         return raw(reloaded, "decay_ms");
     };
     setParam(processor, "decay_ms", 900.0f);

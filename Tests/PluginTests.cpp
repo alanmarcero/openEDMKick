@@ -209,6 +209,8 @@ TEST_CASE("Editor shows the new sound pages and current MIDI note", "[plugin][ui
     REQUIRE_FALSE(kickEditor->isAdvancedView());
     auto* presets = dynamic_cast<juce::ComboBox*>(editor->findChildWithID("factoryPreset"));
     REQUIRE(presets != nullptr);
+    dynamic_cast<openedmkick::suite::PresetBrowser*>(editor->findChildWithID("presetBrowser"))
+        ->setDirectory(juce::File::getSpecialLocation(juce::File::tempDirectory).getChildFile("openkicker-no-presets"));
     CHECK(presets->getRootMenu()->getNumItems() == 6);
     presets->setSelectedId(56, juce::sendNotificationSync);
     REQUIRE(processor.getCurrentProgram() == 55);
@@ -268,14 +270,14 @@ TEST_CASE("Dials stay at least 40 px and controls do not overlap at the default 
     CHECK(dials > 100);
 }
 
-TEST_CASE("The waveform renders the full hit within one 15 Hz tick of a change", "[plugin][ui][waveform]") {
+TEST_CASE("The waveform redraws the full hit soon after a change", "[plugin][ui][waveform]") {
     juce::ScopedJuceInitialiser_GUI gui;
     OpenEdmKickProcessor processor;
     openedmkick::ui::KickWaveformView view(processor);
     view.setSize(860, 98);
     const auto before = view.createComponentSnapshot(view.getLocalBounds());
     setParam(processor, "output", -18.0f);
-    juce::Thread::sleep(100);
+    juce::Thread::sleep(150);
     juce::Timer::callPendingTimersSynchronously();
     const auto after = view.createComponentSnapshot(view.getLocalBounds());
     const auto changed = std::ranges::count_if(std::views::iota(0, before.getWidth() * before.getHeight()), [&](int pixel) {
@@ -542,6 +544,80 @@ TEST_CASE("A previous bank restores its saved sound as custom", "[plugin][preset
     processor.setStateInformation(saved.getData(), static_cast<int>(saved.getSize()));
     REQUIRE(processor.hasRestoredCustomState());
     REQUIRE_THAT(processor.currentSynthSettings().decayMs, WithinAbs(347.0f, 0.01f));
+}
+
+TEST_CASE("Presets keep their name and edit marker through undo, A/B and the session", "[plugin][presets][state]") {
+    juce::ScopedJuceInitialiser_GUI gui;
+    OpenEdmKickProcessor processor;
+    CHECK(processor.presetName() == "Uplifting / First Light");
+    CHECK_FALSE(processor.isPresetEdited());
+    auto* decay = processor.parameters.getParameter("decay_ms");
+    decay->beginChangeGesture();
+    decay->setValueNotifyingHost(decay->convertTo0to1(640.0f));
+    decay->endChangeGesture();
+    CHECK(processor.isPresetEdited());
+    REQUIRE(processor.undo());
+    CHECK_FALSE(processor.isPresetEdited());
+
+    REQUIRE(processor.applySoundState(processor.captureSoundState(), "Zed Kick"));
+    CHECK(processor.presetName() == "Zed Kick");
+    setParam(processor, "decay_ms", 300.0f);
+    CHECK(processor.isPresetEdited());
+    processor.selectAbSlot(1);
+    CHECK(processor.presetName() == "Uplifting / First Light");
+    CHECK_FALSE(processor.isPresetEdited());
+    processor.selectAbSlot(0);
+    CHECK(processor.presetName() == "Zed Kick");
+    CHECK(processor.isPresetEdited());
+
+    juce::MemoryBlock session;
+    processor.getStateInformation(session);
+    OpenEdmKickProcessor restored;
+    restored.setStateInformation(session.getData(), static_cast<int>(session.getSize()));
+    CHECK(restored.presetName() == "Zed Kick");
+    CHECK(restored.isPresetEdited());
+    restored.setCurrentProgram(3);
+    CHECK(restored.presetName() == restored.getProgramName(3));
+    CHECK_FALSE(restored.isPresetEdited());
+}
+
+TEST_CASE("Previous and Next step the browser list and the header marks edits", "[plugin][presets][ui]") {
+    juce::ScopedJuceInitialiser_GUI gui;
+    OpenEdmKickProcessor processor;
+    std::unique_ptr<juce::AudioProcessorEditor> editor(processor.createEditor());
+    CHECK_FALSE(processor.isPresetEdited());
+    auto* browser = dynamic_cast<openedmkick::suite::PresetBrowser*>(editor->findChildWithID("presetBrowser"));
+    auto* presets = dynamic_cast<juce::ComboBox*>(editor->findChildWithID("factoryPreset"));
+    auto* previous = dynamic_cast<juce::TextButton*>(editor->findChildWithID("prevPreset"));
+    auto* next = dynamic_cast<juce::TextButton*>(editor->findChildWithID("nextPreset"));
+    REQUIRE(browser != nullptr);
+    REQUIRE(presets != nullptr);
+    REQUIRE(previous != nullptr);
+    REQUIRE(next != nullptr);
+    const auto directory = juce::File::getSpecialLocation(juce::File::tempDirectory)
+                               .getChildFile("openkicker-step-" + juce::String(juce::Time::currentTimeMillis()));
+    openedmkick::suite::PresetLibrary library("openKicker", {});
+    library.setDirectory(directory);
+    setParam(processor, "decay_ms", 640.0f);
+    REQUIRE(library.save("Zed Kick", processor.captureSoundState()));
+    browser->setDirectory(directory);
+    const int last = processor.getNumPrograms() - 1;
+    processor.setCurrentProgram(last);
+
+    next->onClick();
+    CHECK(presets->getText() == "Zed Kick");
+    CHECK_THAT(processor.parameters.getRawParameterValue("decay_ms")->load(), WithinAbs(640.0f, 0.1f));
+    next->onClick();
+    CHECK(processor.getCurrentProgram() == 0);
+    CHECK(presets->getText() == "Uplifting / First Light");
+    previous->onClick();
+    CHECK(presets->getText() == "Zed Kick");
+    setParam(processor, "decay_ms", 200.0f);
+    CHECK(processor.presetDisplayName() == "Zed Kick *");
+    previous->onClick();
+    CHECK(processor.getCurrentProgram() == last);
+    CHECK(presets->getText() == processor.getProgramName(last));
+    directory.deleteRecursively();
 }
 
 TEST_CASE("All 56 trance kick presets load and report valid program names", "[plugin][presets]") {

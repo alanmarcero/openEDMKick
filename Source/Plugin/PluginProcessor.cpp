@@ -80,12 +80,15 @@ OpenEdmKickProcessor::OpenEdmKickProcessor()
     openedmkick::presets::apply(openedmkick::presets::factoryPresets().front(), parameters);
     history_ = std::make_unique<suite::ParameterUndo>(*this);
     history_->captureContext = [this] {
-        return suite::EditContext{ currentProgram_, restoredCustomState_.load() };
+        return suite::EditContext{ currentProgram_, restoredCustomState_.load(), userPresetName_, presetEdited_.load() };
     };
     history_->restoreContext = [this](const suite::EditContext& context) {
         currentProgram_ = context.program;
         restoredCustomState_.store(context.custom);
+        userPresetName_ = context.presetName;
+        presetEdited_.store(context.edited);
     };
+    history_->onParameterChange = [this] { presetEdited_.store(true); };
     ab_.seed(captureSoundState());
 }
 
@@ -445,11 +448,30 @@ void OpenEdmKickProcessor::setCurrentProgram(int index) {
         openedmkick::presets::apply(presets[static_cast<size_t>(index)], parameters);
         routing_.restoreLocked(locked);
         restoredCustomState_.store(false);
+        userPresetName_ = {};
+        presetEdited_.store(false);
     }
     if (record) history_->endGroup();
     juce::AudioProcessorListener::ChangeDetails details;
     details.programChanged = true;
     updateHostDisplay(details);
+}
+
+juce::String OpenEdmKickProcessor::presetName() {
+    if (!restoredCustomState_.load()) return getProgramName(currentProgram_);
+    return userPresetName_;
+}
+
+juce::String OpenEdmKickProcessor::presetDisplayName() {
+    const auto name = presetName();
+    if (name.isEmpty()) return "Custom sound";
+    return name + (presetEdited_.load() ? " *" : "");
+}
+
+void OpenEdmKickProcessor::setUserPreset(const juce::String& name) {
+    restoredCustomState_.store(true);
+    userPresetName_ = name;
+    presetEdited_.store(false);
 }
 
 const juce::String OpenEdmKickProcessor::getProgramName(int index) {
@@ -464,6 +486,8 @@ juce::ValueTree OpenEdmKickProcessor::buildSoundTree() {
     state.setProperty("program", currentProgram_, nullptr);
     state.setProperty("presetCatalogVersion", openedmkick::presets::kCatalogVersion, nullptr);
     state.setProperty("programCustom", restoredCustomState_.load(), nullptr);
+    state.setProperty("presetName", userPresetName_, nullptr);
+    state.setProperty("presetEdited", presetEdited_.load(), nullptr);
     syncEditorSequencer();
     juce::ValueTree patterns("LayerPatterns");
     for (int slot = 0; slot < core::kNumAutoSlots; ++slot) {
@@ -542,6 +566,8 @@ bool OpenEdmKickProcessor::recallSound(const void* data, int sizeInBytes, bool l
     if (forceCustom) restoredCustomState_.store(true);
     parameters.replaceState(state);
     routing_.restoreState(state);
+    userPresetName_ = state.getProperty("presetName").toString();
+    presetEdited_.store(state.getProperty("presetEdited", false));
     const auto sample = state.getChildWithName("ClickSample");
     if (sample.isValid()) {
         juce::MemoryBlock pcm;
@@ -650,15 +676,16 @@ void OpenEdmKickProcessor::copyAbSlot(bool aToB) {
         ab_.setSlot(destination, copied);
         apply = ab_.active() == destination;
     }
-    if (apply && copied.getSize() > 0) applySoundState(copied, false);
+    if (apply && copied.getSize() > 0) applySoundState(copied);
 }
 
-bool OpenEdmKickProcessor::applySoundState(const juce::MemoryBlock& state, bool forceCustom) {
+bool OpenEdmKickProcessor::applySoundState(const juce::MemoryBlock& state, const juce::String& userPresetName) {
     auto* manager = juce::MessageManager::getInstanceWithoutCreating();
     const bool record = history_ != nullptr && manager != nullptr && manager->isThisTheMessageThread();
     juce::MemoryBlock before;
     if (record) before = captureSoundState();
-    if (!recallSound(state.getData(), static_cast<int>(state.getSize()), false, forceCustom)) return false;
+    if (!recallSound(state.getData(), static_cast<int>(state.getSize()), false, userPresetName.isNotEmpty())) return false;
+    if (userPresetName.isNotEmpty()) setUserPreset(userPresetName);
     if (record) {
         history_->manager().beginNewTransaction("Sound");
         history_->manager().perform(new SoundSwapAction(*this, std::move(before), captureSoundState()));

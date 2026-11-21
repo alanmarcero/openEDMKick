@@ -46,6 +46,10 @@ public:
     [[nodiscard]] openedmkick::core::AutoSlotSettings autoSlotSettings(int slot) const noexcept;
     [[nodiscard]] int currentAutoSlot() const noexcept;
     [[nodiscard]] bool hasRestoredCustomState() const noexcept { return restoredCustomState_.load(); }
+    [[nodiscard]] juce::String presetName();
+    [[nodiscard]] juce::String presetDisplayName();
+    [[nodiscard]] bool isPresetEdited() const noexcept { return presetEdited_.load(); }
+    void setUserPreset(const juce::String& name);
     [[nodiscard]] int currentMidiNote() const noexcept { return displayMidiNote.load(); }
     static constexpr double hitSampleRate = 44100.0;
     [[nodiscard]] int userClickSlot() const noexcept { return userPublished_.load(std::memory_order_acquire); }
@@ -64,7 +68,7 @@ public:
     void copyAbSlot(bool aToB);
 
     [[nodiscard]] juce::MemoryBlock captureSoundState();
-    bool applySoundState(const juce::MemoryBlock& state, bool forceCustom);
+    bool applySoundState(const juce::MemoryBlock& state, const juce::String& userPresetName = {});
     bool loadUserClickSample(const juce::AudioBuffer<float>& buffer, double sampleRate, const juce::String& name);
     bool loadUserClickSample(const juce::File& file);
     bool renderCurrentHit(juce::AudioBuffer<float>& destination) const;
@@ -239,6 +243,8 @@ private:
     std::array<int, openedmkick::core::kNumAutoSlots> lastSlotBars_{ 0, 0, 0, 0 };
     std::atomic<bool> auditionPending_{ false };
     std::atomic<bool> restoredCustomState_{ false };
+    juce::String userPresetName_;
+    std::atomic<bool> presetEdited_{ false };
     struct UserSampleSlot {
         std::vector<float> samples;
         double sampleRate = 44100.0;

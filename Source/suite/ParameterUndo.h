@@ -11,6 +11,8 @@ namespace openedmkick::suite {
 struct EditContext {
     int program = 0;
     bool custom = false;
+    juce::String presetName;
+    bool edited = false;
 };
 
 // Records UI parameter gestures in a JUCE UndoManager. One drag, click, or preset load is one step.
@@ -31,6 +33,8 @@ public:
 
     std::function<EditContext()> captureContext;
     std::function<void(const EditContext&)> restoreContext;
+    // Runs on the thread that changed the value, which can be the audio thread.
+    std::function<void()> onParameterChange;
 
 private:
     struct Value {
@@ -44,7 +48,7 @@ private:
 
     class ChangeAction;
 
-    void parameterValueChanged(int, float) override {}
+    void parameterValueChanged(int, float) override { if (onParameterChange) onParameterChange(); }
     void parameterGestureChanged(int parameterIndex, bool gestureIsStarting) override;
 
     [[nodiscard]] Snapshot capture() const;

@@ -63,10 +63,12 @@ public:
 
     std::function<juce::MemoryBlock()> captureState;
     std::function<void(int factoryIndex)> loadFactory;
-    std::function<void(const juce::MemoryBlock&)> loadUser;
+    std::function<void(const juce::MemoryBlock&, const juce::String& name)> loadUser;
+    std::function<void(const juce::String& name)> onSave;
 
     [[nodiscard]] int rowCount() const { return static_cast<int>(entries_.size()); }
     [[nodiscard]] juce::String rowName(int row) const;
+    void step(const juce::String& current, int direction);
 
 private:
     int getNumRows() override { return rowCount(); }

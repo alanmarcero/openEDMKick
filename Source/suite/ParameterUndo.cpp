@@ -110,7 +110,8 @@ bool ParameterUndo::onUiThread() const {
 }
 
 bool ParameterUndo::same(const Snapshot& left, const Snapshot& right) {
-    if (left.context.program != right.context.program || left.context.custom != right.context.custom)
+    if (left.context.program != right.context.program || left.context.custom != right.context.custom
+        || left.context.presetName != right.context.presetName || left.context.edited != right.context.edited)
         return false;
     if (left.values.size() != right.values.size()) return false;
     for (size_t index = 0; index < left.values.size(); ++index) {
