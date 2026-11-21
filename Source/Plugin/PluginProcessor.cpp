@@ -161,17 +161,6 @@ core::AutoSlotSettings OpenEdmKickProcessor::currentAutoSlotSettings() const noe
     return autoSlotSettings(currentAutoSlot());
 }
 
-std::vector<float> OpenEdmKickProcessor::previewKickWaveform() const {
-    auto wave = core::renderLayeredKick(currentSynthSettings(), currentLayerSettings(), previewSampleRate, currentMidiNote());
-    core::ToneFilter filter;
-    const float highPass = values_.highPass->load();
-    const float lowPass = values_.lowPass->load();
-    std::ranges::for_each(wave, [&](float& sample) {
-        sample = filter.process(sample, highPass, lowPass, previewSampleRate);
-    });
-    return wave;
-}
-
 std::vector<core::PianoRollNote> OpenEdmKickProcessor::currentPianoRollNotes() const {
     const std::scoped_lock lock(stateMutex_);
     syncEditorSequencer();
@@ -743,7 +732,7 @@ bool OpenEdmKickProcessor::loadUserClickSample(const juce::File& file) {
 }
 
 bool OpenEdmKickProcessor::renderCurrentHit(juce::AudioBuffer<float>& destination) const {
-    constexpr double rate = 44100.0;
+    constexpr double rate = hitSampleRate;
     core::KickEngine engine;
     engine.prepare(rate);
     std::vector<float> clickCopy;
@@ -807,7 +796,7 @@ juce::File OpenEdmKickProcessor::renderHitToTemporaryWav() const {
     const auto noteText = juce::String(core::noteName(note).data()) + juce::String(core::noteOctave(note));
     const auto file = directory.getChildFile("openKicker-" + noteText.replaceCharacter('#', 's') + "-"
         + juce::String(juce::Time::currentTimeMillis()) + ".wav");
-    if (!suite::writeStereoWav(file, hit, 44100.0, 24)) return {};
+    if (!suite::writeStereoWav(file, hit, hitSampleRate, 24)) return {};
     return file;
 }
 

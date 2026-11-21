@@ -47,8 +47,8 @@ public:
     [[nodiscard]] int currentAutoSlot() const noexcept;
     [[nodiscard]] bool hasRestoredCustomState() const noexcept { return restoredCustomState_.load(); }
     [[nodiscard]] int currentMidiNote() const noexcept { return displayMidiNote.load(); }
-    static constexpr double previewSampleRate = 24000.0;
-    [[nodiscard]] std::vector<float> previewKickWaveform() const;
+    static constexpr double hitSampleRate = 44100.0;
+    [[nodiscard]] int userClickSlot() const noexcept { return userPublished_.load(std::memory_order_acquire); }
     [[nodiscard]] std::vector<openedmkick::core::PianoRollNote> currentPianoRollNotes() const;
     void togglePianoRollNote(int step64, int length64, int layer = -1, int ratchets = 1);
     void cyclePianoRollRatchets(int step64, int layer);

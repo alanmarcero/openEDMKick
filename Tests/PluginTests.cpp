@@ -268,6 +268,24 @@ TEST_CASE("Dials stay at least 40 px and controls do not overlap at the default 
     CHECK(dials > 100);
 }
 
+TEST_CASE("The waveform renders the full hit within one 15 Hz tick of a change", "[plugin][ui][waveform]") {
+    juce::ScopedJuceInitialiser_GUI gui;
+    OpenEdmKickProcessor processor;
+    openedmkick::ui::KickWaveformView view(processor);
+    view.setSize(860, 98);
+    const auto before = view.createComponentSnapshot(view.getLocalBounds());
+    setParam(processor, "output", -18.0f);
+    juce::Thread::sleep(100);
+    juce::Timer::callPendingTimersSynchronously();
+    const auto after = view.createComponentSnapshot(view.getLocalBounds());
+    const auto changed = std::ranges::count_if(std::views::iota(0, before.getWidth() * before.getHeight()), [&](int pixel) {
+        const int x = pixel % before.getWidth();
+        const int y = pixel / before.getWidth();
+        return before.getPixelAt(x, y) != after.getPixelAt(x, y);
+    });
+    CHECK(changed > 200);
+}
+
 TEST_CASE("Double-click returns every visible dial to its default", "[plugin][ui]") {
     juce::ScopedJuceInitialiser_GUI gui;
     OpenEdmKickProcessor processor;

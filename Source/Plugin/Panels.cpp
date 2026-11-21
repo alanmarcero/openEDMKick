@@ -64,12 +64,24 @@ juce::String noteLabel(int note) {
 
 KickWaveformView::KickWaveformView(OpenEdmKickProcessor& processor) : processor_(processor) {
     setOpaque(false);
-    startTimerHz(3);
+    std::ranges::for_each(processor.getParameters(), [this](juce::AudioProcessorParameter* parameter) {
+        sources_.push_back(processor_.routing().effectiveRaw(dynamic_cast<juce::RangedAudioParameter*>(parameter)->paramID));
+    });
+    startTimerHz(15);
     timerCallback();
 }
 
 void KickWaveformView::timerCallback() {
-    samples_ = processor_.previewKickWaveform();
+    // Render the Drag hit again only when one of its inputs changed.
+    std::vector<float> inputs;
+    inputs.reserve(sources_.size() + 3);
+    std::ranges::transform(sources_, std::back_inserter(inputs), [](const std::atomic<float>* source) { return source->load(); });
+    inputs.push_back(static_cast<float>(processor_.currentMidiNote()));
+    inputs.push_back(processor_.lastVelocity());
+    inputs.push_back(static_cast<float>(processor_.userClickSlot()));
+    if (inputs == renderedInputs_) return;
+    renderedInputs_ = std::move(inputs);
+    processor_.renderCurrentHit(hit_);
     repaint();
 }
 
@@ -93,7 +105,8 @@ void KickWaveformView::paint(juce::Graphics& g) {
     g.setFont(juce::FontOptions(14.0f, juce::Font::bold));
     g.drawText("One-shot waveform", area.removeFromTop(20), juce::Justification::centredLeft);
     const auto scale = area.removeFromBottom(19);
-    const int durationMs = juce::roundToInt(1000.0 * static_cast<double>(samples_.size()) / processor_.previewSampleRate);
+    const auto length = static_cast<size_t>(hit_.getNumSamples());
+    const int durationMs = juce::roundToInt(1000.0 * static_cast<double>(length) / OpenEdmKickProcessor::hitSampleRate);
     g.setFont(juce::FontOptions(12.0f));
     g.drawText("0 ms", scale, juce::Justification::bottomLeft);
     g.drawText(juce::String(durationMs) + " ms", scale, juce::Justification::bottomRight);
@@ -111,16 +124,16 @@ void KickWaveformView::paint(juce::Graphics& g) {
                        juce::Justification::centredBottom);
         }
     }
-    if (samples_.size() < 2) return;
+    if (length < 2) return;
 
     juce::Path wave;
     const float mid = plot.getCentreY();
     const float amplitude = plot.getHeight() * 0.42f;
-    const size_t count = std::min<size_t>(samples_.size(), 1200);
+    const size_t count = std::min<size_t>(length, 1200);
     for (size_t i = 0; i < count; ++i) {
         const float x = plot.getX() + plot.getWidth() * static_cast<float>(i) / static_cast<float>(count - 1);
-        const size_t sampleIndex = i * (samples_.size() - 1) / (count - 1);
-        const float y = mid - samples_[sampleIndex] * amplitude;
+        const size_t sampleIndex = i * (length - 1) / (count - 1);
+        const float y = mid - std::clamp(hit_.getSample(0, static_cast<int>(sampleIndex)), -1.0f, 1.0f) * amplitude;
         if (i == 0) wave.startNewSubPath(x, y);
         else wave.lineTo(x, y);
     }

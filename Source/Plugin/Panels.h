@@ -16,7 +16,9 @@ public:
 private:
     void timerCallback() override;
     OpenEdmKickProcessor& processor_;
-    std::vector<float> samples_;
+    std::vector<std::atomic<float>*> sources_;
+    std::vector<float> renderedInputs_;
+    juce::AudioBuffer<float> hit_;
 };
 
 class PeakMeter final : public juce::Component, public juce::SettableTooltipClient, private juce::Timer {
