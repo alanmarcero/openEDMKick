@@ -36,6 +36,7 @@ EdmLookAndFeel::EdmLookAndFeel() {
 
 void EdmLookAndFeel::drawRotarySlider(juce::Graphics& g, int x, int y, int width, int height, float position,
                                       float startAngle, float endAngle, juce::Slider& slider) {
+    const float alpha = slider.isEnabled() ? 1.0f : 0.4f;
     const auto area = juce::Rectangle<int>(x, y, width, height).toFloat().reduced(4.0f);
     const float radius = std::min(area.getWidth(), area.getHeight()) * 0.5f;
     const auto centre = area.getCentre();
@@ -48,46 +49,49 @@ void EdmLookAndFeel::drawRotarySlider(juce::Graphics& g, int x, int y, int width
 
     juce::Path base;
     base.addCentredArc(centre.x, centre.y, arcRadius, arcRadius, 0.0f, startAngle, endAngle, true);
-    g.setColour(theme::kTrack);
+    g.setColour(theme::kTrack.withMultipliedAlpha(alpha));
     g.strokePath(base, stroke);
 
     juce::Path value;
     value.addCentredArc(centre.x, centre.y, arcRadius, arcRadius, 0.0f, origin, angle, true);
-    g.setColour(slider.findColour(juce::Slider::rotarySliderFillColourId));
+    g.setColour(slider.findColour(juce::Slider::rotarySliderFillColourId).withMultipliedAlpha(alpha));
     g.strokePath(value, stroke);
 
     const float bodyRadius = std::max(2.0f, arcRadius - 5.5f);
     const auto body = juce::Rectangle<float>(bodyRadius * 2.0f, bodyRadius * 2.0f).withCentre(centre);
-    g.setColour(juce::Colours::black.withAlpha(0.28f));
+    g.setColour(juce::Colours::black.withAlpha(0.28f * alpha));
     g.fillEllipse(body.translated(0.0f, 2.0f));
-    g.setGradientFill(juce::ColourGradient(theme::kSteel.brighter(0.2f), body.getX(), body.getY(),
-                                           theme::kInk, body.getRight(), body.getBottom(), false));
+    g.setGradientFill(juce::ColourGradient(theme::kSteel.brighter(0.2f).withMultipliedAlpha(alpha), body.getX(), body.getY(),
+                                           theme::kInk.withMultipliedAlpha(alpha), body.getRight(), body.getBottom(), false));
     g.fillEllipse(body);
-    g.setColour(theme::kEdge);
+    g.setColour(theme::kEdge.withMultipliedAlpha(alpha));
     g.drawEllipse(body, 1.0f);
-    if (slider.hasKeyboardFocus(true)) {
+    if (slider.isEnabled() && slider.hasKeyboardFocus(true)) {
         g.setColour(theme::kViolet);
         g.drawEllipse(area.reduced(1), 1.5f);
     }
     const auto tip = centre.getPointOnCircumference(bodyRadius * 0.78f, angle);
     const auto root = centre.getPointOnCircumference(bodyRadius * 0.15f, angle);
-    g.setColour(theme::kText);
+    g.setColour(theme::kText.withMultipliedAlpha(alpha));
     g.drawLine({root, tip}, 1.7f);
 }
 
 void EdmLookAndFeel::drawComboBox(juce::Graphics& g, int width, int height, bool, int, int, int, int, juce::ComboBox& box) {
+    const float alpha = box.isEnabled() ? 1.0f : 0.4f;
     const auto bounds = juce::Rectangle<float>(0.5f, 0.5f, static_cast<float>(width) - 1.0f,
                                                static_cast<float>(height) - 1.0f);
-    g.setColour(box.findColour(juce::ComboBox::backgroundColourId));
+    g.setColour(box.findColour(juce::ComboBox::backgroundColourId).withMultipliedAlpha(alpha));
     g.fillRoundedRectangle(bounds, kCorner);
-    g.setColour(box.findColour(juce::ComboBox::outlineColourId).withAlpha((box.isMouseOver(true) || box.hasKeyboardFocus(true)) ? 0.9f : 0.55f));
-    if (box.hasKeyboardFocus(true)) g.setColour(theme::kViolet);
+    const bool hot = box.isEnabled() && (box.isMouseOver(true) || box.hasKeyboardFocus(true));
+    auto outline = box.findColour(juce::ComboBox::outlineColourId).withAlpha(hot ? 0.9f : 0.55f);
+    if (box.isEnabled() && box.hasKeyboardFocus(true)) outline = theme::kViolet;
+    g.setColour(outline.withMultipliedAlpha(alpha));
     g.drawRoundedRectangle(bounds, kCorner, 1.0f);
     const auto arrow = bounds.withLeft(bounds.getRight() - 19.0f)
         .reduced(5.0f, static_cast<float>(height) * 0.36f);
     juce::Path triangle;
     triangle.addTriangle(arrow.getX(), arrow.getY(), arrow.getRight(), arrow.getY(), arrow.getCentreX(), arrow.getBottom());
-    g.setColour(box.findColour(juce::ComboBox::arrowColourId));
+    g.setColour(box.findColour(juce::ComboBox::arrowColourId).withMultipliedAlpha(alpha));
     g.fillPath(triangle);
 }
 
@@ -98,33 +102,40 @@ void EdmLookAndFeel::positionComboBoxText(juce::ComboBox& box, juce::Label& labe
 
 void EdmLookAndFeel::drawButtonBackground(juce::Graphics& g, juce::Button& button,
                                           const juce::Colour&, bool highlighted, bool down) {
+    const float alpha = button.isEnabled() ? 1.0f : 0.4f;
+    const bool showHot = button.isEnabled() && highlighted;
+    const bool showDown = button.isEnabled() && down;
     const auto bounds = button.getLocalBounds().toFloat().reduced(0.5f);
     const auto accent = button.findColour(juce::TextButton::buttonOnColourId);
     const bool active = button.getToggleState();
     if (button.getComponentID().startsWith("page_")) {
-        if (highlighted || down) {
-            g.setColour(theme::kSteel);
+        if (showHot || showDown) {
+            g.setColour(theme::kSteel.withMultipliedAlpha(alpha));
             g.fillRoundedRectangle(bounds, kCorner);
         }
-        if (active || button.hasKeyboardFocus(true)) {
-            g.setColour(theme::kViolet);
+        if (active || (button.isEnabled() && button.hasKeyboardFocus(true))) {
+            g.setColour(theme::kViolet.withMultipliedAlpha(alpha));
             g.fillRoundedRectangle(bounds.withTrimmedLeft(8).withTrimmedRight(8).withHeight(3)
                                        .withY(bounds.getBottom() - 3), 1.5f);
         }
         return;
     }
     const auto fill = active ? accent : button.findColour(juce::TextButton::buttonColourId);
-    g.setColour(down ? fill.brighter(0.12f) : (highlighted ? fill.brighter(0.07f) : fill));
+    const auto drawnFill = showDown ? fill.brighter(0.12f) : (showHot ? fill.brighter(0.07f) : fill);
+    g.setColour(drawnFill.withMultipliedAlpha(alpha));
     g.fillRoundedRectangle(bounds, kCorner);
-    g.setColour(active || highlighted ? accent : theme::kEdge);
-    if (button.hasKeyboardFocus(true)) g.setColour(theme::kViolet);
-    g.drawRoundedRectangle(bounds, kCorner, button.hasKeyboardFocus(true) ? 1.8f : 1.0f);
+    auto edge = active || showHot ? accent : theme::kEdge;
+    if (button.isEnabled() && button.hasKeyboardFocus(true)) edge = theme::kViolet;
+    g.setColour(edge.withMultipliedAlpha(alpha));
+    g.drawRoundedRectangle(bounds, kCorner, (button.isEnabled() && button.hasKeyboardFocus(true)) ? 1.8f : 1.0f);
 }
 
 void EdmLookAndFeel::drawButtonText(juce::Graphics& g, juce::TextButton& button, bool, bool) {
+    const float alpha = button.isEnabled() ? 1.0f : 0.4f;
     const bool active = button.getToggleState();
-    g.setColour(button.findColour(active ? juce::TextButton::textColourOnId : juce::TextButton::textColourOffId));
-    if (active && button.getComponentID().startsWith("page_")) g.setColour(theme::kViolet);
+    auto colour = button.findColour(active ? juce::TextButton::textColourOnId : juce::TextButton::textColourOffId);
+    if (active && button.getComponentID().startsWith("page_")) colour = theme::kViolet;
+    g.setColour(colour.withMultipliedAlpha(alpha));
     const float size = button.getHeight() < 23 ? 9.0f : kControlFont;
     g.setFont(juce::FontOptions(size, juce::Font::bold));
     g.drawFittedText(button.getButtonText(), button.getLocalBounds().reduced(4, 0), juce::Justification::centred, 1);
