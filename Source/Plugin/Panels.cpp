@@ -201,6 +201,7 @@ KickSynthPanel::KickSynthPanel(OpenEdmKickProcessor& processor)
         &clickSampleHp_, &loadClick_},
         [this](juce::Component* component) { addAndMakeVisible(component); });
     loadClick_.setComponentID("loadClickSample");
+    loadClick_.setTitle("Load click sample");
     loadClick_.setColour(juce::TextButton::buttonColourId, theme::kSteel);
     loadClick_.onClick = [this] {
         auto chooser = std::make_shared<juce::FileChooser>("Load a short click sample", juce::File{}, "*.wav");
@@ -466,7 +467,9 @@ void LayerPanel::refreshActivity() {
         const auto soundId = params::layerId(layer, params::kLayerSound);
         const auto& sounds = dynamic_cast<juce::AudioParameterChoice*>(processor_.parameters.getParameter(soundId))->choices;
         const bool enabled = routing.displayValue(params::layerId(layer, params::kLayerEnabled)) >= 0.5f;
-        tabs_[index].setButtonText(letter + " " + sounds[juce::roundToInt(routing.displayValue(soundId))]);
+        const auto label = letter + " " + sounds[juce::roundToInt(routing.displayValue(soundId))];
+        tabs_[index].setButtonText(label);
+        tabs_[index].setTitle(label);
         showActivity(tabs_[index], enabled, {}, "Layer " + letter + " is off. Turn on Layer on in its tab to hear it.");
         pages_[index]->showEnabled(enabled);
     });

@@ -106,7 +106,9 @@ SectionLock::SectionLock(Apvts& state, juce::String name, juce::StringArray ids)
 void SectionLock::bind(juce::StringArray ids) { ids_ = std::move(ids); timerCallback(); }
 void SectionLock::timerCallback() {
     const bool locked = static_cast<OpenEdmKickProcessor&>(state_.processor).routing().sectionLocked(ids_);
-    setButtonText(locked ? "Unlock section" : "Lock section");
+    const auto text = locked ? "Unlock section" : "Lock section";
+    setButtonText(text);
+    setTitle(text);
     setToggleState(locked, juce::dontSendNotification);
 }
 
@@ -114,6 +116,7 @@ Knob::Knob(Apvts& state, const juce::String& parameterId, const juce::String& ti
     : slider_(juce::Slider::RotaryHorizontalVerticalDrag, juce::Slider::TextBoxBelow),
       title_({}, title) {
     slider_.setName(title);
+    slider_.setTitle(title);
     slider_.setComponentID(parameterId);
     slider_.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 68, kKnobValueHeight);
     slider_.setPopupDisplayEnabled(false, false, nullptr);
@@ -206,6 +209,7 @@ DualEqKnob::DualEqKnob(Apvts& state, const juce::String& freqId, const juce::Str
     auto* dbParam = state.getParameter(dbId);
     const auto& dbRange = dbParam->getNormalisableRange();
     dbSlider_.setName(title + " Gain");
+    dbSlider_.setTitle(title + " Gain");
     dbSlider_.setComponentID(dbId);
     dbSlider_.setRange(dbRange.start, dbRange.end, dbRange.interval);
     dbSlider_.setSkewFactor(dbRange.skew, dbRange.symmetricSkew);
@@ -217,6 +221,7 @@ DualEqKnob::DualEqKnob(Apvts& state, const juce::String& freqId, const juce::Str
     auto* freqParam = state.getParameter(freqId);
     const auto& freqRange = freqParam->getNormalisableRange();
     freqMirror_.setName(title + " Freq");
+    freqMirror_.setTitle(title + " Freq");
     freqMirror_.setComponentID(freqId);
     freqMirror_.setRange(freqRange.start, freqRange.end, freqRange.interval);
     freqMirror_.setSkewFactor(freqRange.skew, freqRange.symmetricSkew);
@@ -448,6 +453,7 @@ void DualEqKnob::setTooltip(const juce::String& text) {
 Choice::Choice(Apvts& state, const juce::String& parameterId, const juce::String& title, juce::Colour accent)
     : title_({}, title) {
     box_.setName(title);
+    box_.setTitle(title);
     box_.setComponentID(parameterId);
     if (auto* parameter = dynamic_cast<juce::AudioParameterChoice*>(state.getParameter(parameterId)))
         box_.addItemList(parameter->choices, 1);
@@ -489,6 +495,7 @@ void Choice::resized() {
 Toggle::Toggle(Apvts& state, const juce::String& parameterId, const juce::String& text, juce::Colour accent,
                const juce::String& partnerId)
     : button_(text) {
+    button_.setTitle(text);
     button_.setComponentID(parameterId);
     button_.setClickingTogglesState(true);
     button_.setColour(juce::TextButton::buttonOnColourId, accent);

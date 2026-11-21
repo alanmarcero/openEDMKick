@@ -14,6 +14,7 @@ constexpr int kConfirmMs = 3000;
 
 void styleTool(juce::TextButton& button, const juce::String& id, const juce::String& tip) {
     button.setComponentID(id);
+    button.setTitle(button.getButtonText());
     button.setTooltip(tip);
     button.setColour(juce::TextButton::buttonOnColourId, kViolet);
     button.setMouseClickGrabsKeyboardFocus(false);
@@ -54,6 +55,10 @@ SuiteBar::SuiteBar() {
     styleTool(copyBtoA_, "copyBtoA", "Copy slot B into slot A.");
     styleTool(drag_, "dragHit", "Drag the current hit as a WAV onto a track or the desktop.");
     styleTool(presets_, "presets", "Search factory and saved presets. Star, save, rename, or delete your own.");
+    slotA_.setTitle("Slot A");
+    slotB_.setTitle("Slot B");
+    copyAtoB_.setTitle("Copy A to B");
+    copyBtoA_.setTitle("Copy B to A");
     drag_.setColour(juce::TextButton::buttonColourId, kMint);
     drag_.setColour(juce::TextButton::textColourOffId, kInk);
     slotA_.setClickingTogglesState(false);
@@ -120,6 +125,7 @@ PresetBrowser::PresetBrowser(std::vector<juce::String> factoryNames)
     list_.setColour(juce::ListBox::backgroundColourId, kInk);
     list_.setColour(juce::ListBox::outlineColourId, kEdge);
     for (auto* button : { &save_, &rename_, &remove_ }) {
+        button->setTitle(button->getButtonText());
         button->setColour(juce::TextButton::buttonOnColourId, kViolet);
         addAndMakeVisible(button);
     }
@@ -151,6 +157,7 @@ PresetBrowser::PresetBrowser(std::vector<juce::String> factoryNames)
             disarm();
             armed_ = &save_;
             save_.setButtonText("Replace?");
+            save_.setTitle("Replace?");
             startTimer(kConfirmMs);
             return;
         }
@@ -182,6 +189,7 @@ PresetBrowser::PresetBrowser(std::vector<juce::String> factoryNames)
             disarm();
             armed_ = &remove_;
             remove_.setButtonText("Delete?");
+            remove_.setTitle("Delete?");
             startTimer(kConfirmMs);
             return;
         }
@@ -274,7 +282,9 @@ void PresetBrowser::disarm() {
     stopTimer();
     armed_ = nullptr;
     save_.setButtonText("Save");
+    save_.setTitle("Save");
     remove_.setButtonText("Delete");
+    remove_.setTitle("Delete");
 }
 
 void PresetBrowser::loadRow(int row) {

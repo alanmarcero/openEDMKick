@@ -24,6 +24,7 @@ std::vector<juce::String> factoryPresetNames() {
 
 void styleTab(juce::TextButton& button, const juce::String& id) {
     button.setComponentID(id);
+    button.setTitle(button.getButtonText());
     button.setClickingTogglesState(false);
     button.setColour(juce::TextButton::buttonOnColourId, theme::kViolet);
     button.setTooltip("Open the " + button.getButtonText() + " workspace.");
@@ -50,6 +51,7 @@ OpenEdmKickEditor::OpenEdmKickEditor(OpenEdmKickProcessor& processorToEdit)
     workspace_.setScrollOnDragMode(juce::Viewport::ScrollOnDragMode::never);
     addAndMakeVisible(workspace_);
     auditionBtn_.setComponentID("audition");
+    auditionBtn_.setTitle("Audition C2");
     auditionBtn_.setTooltip("Play a one-shot at C2 with the current layers and effects.");
     auditionBtn_.setColour(juce::TextButton::buttonColourId, theme::kMint);
     auditionBtn_.setColour(juce::TextButton::textColourOffId, theme::kInk);
@@ -72,6 +74,7 @@ OpenEdmKickEditor::OpenEdmKickEditor(OpenEdmKickProcessor& processorToEdit)
     presetBox_.getRootMenu()->addSubMenu(family, sounds);
     presetBox_.setComponentID("factoryPreset");
     presetBox_.setName("Preset");
+    presetBox_.setTitle("Preset");
     presetBox_.setTextWhenNothingSelected("Custom sound");
     presetBox_.setTooltip("Choose a factory kick. Locked controls keep their current values.");
     presetBox_.setColour(juce::ComboBox::outlineColourId, theme::kViolet);
@@ -83,12 +86,15 @@ OpenEdmKickEditor::OpenEdmKickEditor(OpenEdmKickProcessor& processorToEdit)
 
     prevPresetBtn_.setComponentID("prevPreset");
     nextPresetBtn_.setComponentID("nextPreset");
+    prevPresetBtn_.setTitle("Previous preset");
+    nextPresetBtn_.setTitle("Next preset");
     prevPresetBtn_.setTooltip("Previous preset");
     nextPresetBtn_.setTooltip("Next preset");
     prevPresetBtn_.onClick = [this] { presetBrowser_.step(processor_.presetName(), -1); };
     nextPresetBtn_.onClick = [this] { presetBrowser_.step(processor_.presetName(), 1); };
 
     viewToggleBtn_.setComponentID("viewToggle");
+    viewToggleBtn_.setTitle("Advanced controls");
     viewToggleBtn_.setTooltip("Show the essential controls or every sound design control.");
     viewToggleBtn_.onClick = [this] { setAdvancedView(!isAdvancedView()); };
     styleTab(kickTab_, "page_kick");

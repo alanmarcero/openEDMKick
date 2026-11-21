@@ -1463,3 +1463,72 @@ TEST_CASE("Main page shows Output controls + 3-band EQ while drive/distortion pa
             CHECK(control->findParentComponentOfClass<openedmkick::ui::KickSynthPanel>() != nullptr);
         });
 }
+
+TEST_CASE("Every slider, combo box, and button has a screen-reader title", "[plugin][ui]") {
+    juce::ScopedJuceInitialiser_GUI gui;
+    OpenEdmKickProcessor processor;
+    std::unique_ptr<juce::AudioProcessorEditor> editor(processor.createEditor());
+    REQUIRE(editor != nullptr);
+
+    int checked = 0;
+    const auto walk = [&](auto&& self, juce::Component& root) -> void {
+        for (auto* child : root.getChildren()) {
+            if (dynamic_cast<juce::Slider*>(child) != nullptr
+                || dynamic_cast<juce::ComboBox*>(child) != nullptr
+                || dynamic_cast<juce::Button*>(child) != nullptr) {
+                INFO(child->getComponentID() << " / " << child->getName());
+                CHECK(child->getTitle().isNotEmpty());
+                ++checked;
+            }
+            self(self, *child);
+        }
+    };
+    walk(walk, *editor);
+    CHECK(checked > 50);
+}
+
+TEST_CASE("Look and feel dims disabled buttons, sliders, and combo boxes", "[plugin][ui]") {
+    juce::ScopedJuceInitialiser_GUI gui;
+    openedmkick::ui::EdmLookAndFeel lookAndFeel;
+    const auto meanAlpha = [](const juce::Image& image) {
+        double sum = 0.0;
+        for (int y = 0; y < image.getHeight(); ++y)
+            for (int x = 0; x < image.getWidth(); ++x)
+                sum += image.getPixelAt(x, y).getFloatAlpha();
+        return static_cast<float>(sum / static_cast<double>(image.getWidth() * image.getHeight()));
+    };
+    const auto renderControl = [&](juce::Component& c, int w, int h) {
+        c.setLookAndFeel(&lookAndFeel);
+        c.setSize(w, h);
+        juce::Image image(juce::Image::ARGB, w, h, true);
+        juce::Graphics g(image);
+        c.paintEntireComponent(g, true);
+        c.setLookAndFeel(nullptr);
+        return meanAlpha(image);
+    };
+
+    juce::TextButton button("Undo");
+    const float buttonEnabledAlpha = renderControl(button, 80, 40);
+    button.setEnabled(false);
+    const float buttonDisabledAlpha = renderControl(button, 80, 40);
+    CHECK(buttonEnabledAlpha > 0.5f);
+    CHECK(buttonDisabledAlpha < buttonEnabledAlpha * 0.6f);
+
+    juce::Slider slider(juce::Slider::RotaryHorizontalVerticalDrag, juce::Slider::NoTextBox);
+    slider.setRange(0.0, 1.0);
+    slider.setValue(0.5);
+    const float sliderEnabledAlpha = renderControl(slider, 60, 60);
+    slider.setEnabled(false);
+    const float sliderDisabledAlpha = renderControl(slider, 60, 60);
+    CHECK(sliderEnabledAlpha > 0.3f);
+    CHECK(sliderDisabledAlpha < sliderEnabledAlpha * 0.6f);
+
+    juce::ComboBox box;
+    box.addItem("One", 1);
+    box.setSelectedId(1);
+    const float boxEnabledAlpha = renderControl(box, 120, 40);
+    box.setEnabled(false);
+    const float boxDisabledAlpha = renderControl(box, 120, 40);
+    CHECK(boxEnabledAlpha > 0.5f);
+    CHECK(boxDisabledAlpha < boxEnabledAlpha * 0.6f);
+}
