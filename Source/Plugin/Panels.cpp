@@ -21,6 +21,7 @@ constexpr int kMidiModeWidth = 164;
 constexpr int kCardHeader = 43;
 constexpr int kSectionLockWidth = 112;
 constexpr int kSectionLockHeight = 40;
+constexpr float kMeterFloorDb = -36.0f;
 
 void setControlsVisible(std::initializer_list<juce::Component*> controls, bool visible) {
     std::ranges::for_each(controls, [visible](juce::Component* control) { control->setVisible(visible); });
@@ -284,7 +285,6 @@ void KickSynthPanel::paint(juce::Graphics& g) {
     drawCard(g, cards[5], "Output", theme::kMint);
     g.setColour(theme::kText);
     g.setFont(juce::FontOptions(13.0f, juce::Font::bold));
-    g.drawText("Output peak", meter_.getBounds().withY(meter_.getY() - 22).withHeight(18), juce::Justification::centred);
     auto mode = cards[6].withLeft(cards[6].getRight() - kMidiModeWidth);
     g.setColour(theme::kSteel);
     g.fillRoundedRectangle(mode.toFloat(), 9);
@@ -325,8 +325,6 @@ void KickSynthPanel::resized() {
         { &stereoWidth_, 9.5f }, { &output_, 9.5f }, { &ceiling_, 9.5f },
         { &limiter_, 9.5f }, { &masterBypass_, 9.5f }, { &meter_, 10.5f }
     }, 4);
-    const auto meterBox = meter_.getBounds().withTrimmedBottom(40);
-    meter_.setBounds(meterBox.withSizeKeepingCentre(std::max(24, meterBox.getWidth() - 8), 14));
     if (!advancedMode_) return;
     placeRow(cards[0], 1, 2, { &snapOctaves_, &snapMs_ });
     placeRow(cards[1], 1, 2, { &knockHz_, &toneHz_, &subOctave_, &startPhase_ });
@@ -630,17 +628,71 @@ void AutoPianoRollPanel::resized() {
     pianoRoll_.setBounds(area.withTrimmedTop(kCardGap));
 }
 
-PeakMeter::PeakMeter(OpenEdmKickProcessor& processor) : processor_(processor) { startTimerHz(15); }
+PeakMeter::PeakMeter(OpenEdmKickProcessor& processor) : processor_(processor) {
+    setTooltip("Output peak after the limiter, in dBFS. The number holds the highest peak for 1 s. "
+               "The box lights above 0 dBFS. Click the meter to clear it.");
+    startTimerHz(30);
+}
+
+void PeakMeter::timerCallback() {
+    const float peakDb = juce::Decibels::gainToDecibels(processor_.displayPeak.exchange(0.0f), -100.0f);
+    const double now = juce::Time::getMillisecondCounterHiRes();
+    levelDb_ = std::max(peakDb, levelDb_ - 1.5f);
+    if (peakDb >= heldDb_ || now - heldAtMs_ > 1000.0) {
+        heldDb_ = peakDb;
+        heldAtMs_ = now;
+    }
+    clipped_ = clipped_ || peakDb > 0.0f;
+    repaint();
+}
+
+void PeakMeter::mouseDown(const juce::MouseEvent&) {
+    clipped_ = false;
+    repaint();
+}
+
 void PeakMeter::paint(juce::Graphics& g) {
-    const auto bounds = getLocalBounds().toFloat();
+    auto area = getLocalBounds().reduced(4, 0);
+    g.setColour(theme::kText);
+    g.setFont(juce::FontOptions(13.0f, juce::Font::bold));
+    g.drawText("Output peak", area.removeFromTop(18), juce::Justification::centred);
+    g.setFont(juce::FontOptions(14.0f, juce::Font::bold));
+    auto readout = juce::String("-inf dB");
+    if (heldDb_ > -99.0f) readout = juce::String(heldDb_, 1) + " dB";
+    g.drawText(readout, area.removeFromTop(22), juce::Justification::centred);
+    area.removeFromTop(4);
+
+    auto bar = area.removeFromTop(14);
+    const auto clip = bar.removeFromRight(14).toFloat();
+    bar.removeFromRight(4);
+    const auto track = bar.toFloat();
+    const auto xFor = [&track](float db) {
+        return track.getX() + track.getWidth() * juce::jmap(std::clamp(db, kMeterFloorDb, 0.0f), kMeterFloorDb, 0.0f, 0.0f, 1.0f);
+    };
     g.setColour(theme::kInk);
-    g.fillRoundedRectangle(bounds, 5.0f);
+    g.fillRoundedRectangle(track, 4.0f);
+    g.setColour(theme::kMint);
+    g.fillRoundedRectangle(track.withRight(xFor(levelDb_)), 4.0f);
+    g.setColour(theme::kText);
+    if (heldDb_ > kMeterFloorDb) g.fillRect(juce::Rectangle<float>(xFor(heldDb_) - 1.0f, track.getY(), 2.0f, track.getHeight()));
+    if (processor_.routing().displayValue(params::kLimiter) >= 0.5f) {
+        g.setColour(theme::kViolet);
+        g.fillRect(juce::Rectangle<float>(xFor(processor_.routing().displayValue(params::kCeiling)) - 1.0f,
+                                          track.getY() - 3.0f, 2.0f, track.getHeight() + 6.0f));
+    }
+    g.setColour(clipped_ ? theme::kCoral : theme::kInk);
+    g.fillRoundedRectangle(clip, 3.0f);
     g.setColour(theme::kEdge);
-    g.drawRoundedRectangle(bounds.reduced(0.5f), 5.0f, 1.0f);
-    const float peak = processor_.displayPeak.load(std::memory_order_relaxed);
-    auto fill = bounds.reduced(1.5f).withWidth(std::max(0.0f, (bounds.getWidth() - 3.0f) * std::clamp(peak, 0.0f, 1.0f)));
-    g.setColour(peak > 0.9f ? theme::kCoral : theme::kMint);
-    g.fillRoundedRectangle(fill, 4.0f);
+    g.drawRoundedRectangle(clip.reduced(0.5f), 3.0f, 1.0f);
+
+    g.setColour(theme::kTextDim);
+    g.setFont(juce::FontOptions(10.0f));
+    const auto ticks = area.removeFromTop(16).toFloat();
+    std::ranges::for_each(std::array{ -24.0f, -12.0f, 0.0f }, [&](float db) {
+        g.fillRect(xFor(db) - 0.5f, ticks.getY(), 1.0f, 3.0f);
+        g.drawText(juce::String(juce::roundToInt(db)), juce::Rectangle<float>(xFor(db) - 12.0f, ticks.getY() + 3.0f, 24.0f, 12.0f),
+                   juce::Justification::centred);
+    });
 }
 
 EffectsPanel::EffectsPanel(OpenEdmKickProcessor& processor)

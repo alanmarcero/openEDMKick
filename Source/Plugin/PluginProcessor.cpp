@@ -416,7 +416,10 @@ void OpenEdmKickProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
     engine_.process(settings, transport, {}, buffer.getArrayOfWritePointers(),
                     buffer.getNumChannels(), buffer.getNumSamples(), {}, midiEventScratch_, routing);
     displayTailSeconds_.store(engine_.remainingTailSeconds());
-    displayPeak.store(engine_.currentPeak());
+    // The editor takes the peak with exchange, so keep the highest block peak until it reads.
+    const float blockPeak = engine_.currentPeak();
+    float unread = displayPeak.load(std::memory_order_relaxed);
+    while (blockPeak > unread && !displayPeak.compare_exchange_weak(unread, blockPeak, std::memory_order_relaxed)) {}
     displayAutoPhase.store(engine_.currentAutoPhase());
     if (transport.isPlaying || settings.manualBpm > 0)
         displayBeatPhase.store(engine_.currentBeatPhase(), std::memory_order_relaxed);

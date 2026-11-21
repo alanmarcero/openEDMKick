@@ -19,14 +19,19 @@ private:
     std::vector<float> samples_;
 };
 
-class PeakMeter final : public juce::Component, private juce::Timer {
+class PeakMeter final : public juce::Component, public juce::SettableTooltipClient, private juce::Timer {
 public:
     explicit PeakMeter(OpenEdmKickProcessor& processor);
     void paint(juce::Graphics& g) override;
+    void mouseDown(const juce::MouseEvent&) override;
 
 private:
-    void timerCallback() override { repaint(); }
+    void timerCallback() override;
     OpenEdmKickProcessor& processor_;
+    float levelDb_ = -100.0f;
+    float heldDb_ = -100.0f;
+    double heldAtMs_ = 0.0;
+    bool clipped_ = false;
 };
 
 class KickSynthPanel final : public juce::Component, private juce::Value::Listener {

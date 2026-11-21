@@ -416,6 +416,25 @@ TEST_CASE("Typed units land on the typed value and displays use the suite format
     CHECK(shown("layer_a_pan", 0.4f) == "40 R");
 }
 
+TEST_CASE("Output peak reads after the limiter and holds until the editor takes it", "[plugin][meter]") {
+    OpenEdmKickProcessor processor;
+    processor.prepareToPlay(48000.0, 4096);
+    setParam(processor, "output", 12.0f);
+    juce::AudioBuffer<float> buffer(2, 4096);
+    juce::MidiBuffer midi;
+    midi.addEvent(juce::MidiMessage::noteOn(1, 36, 1.0f), 0);
+    processor.processBlock(buffer, midi);
+    const float limited = processor.displayPeak.exchange(0.0f);
+    CHECK_THAT(limited, WithinAbs(std::max(buffer.getMagnitude(0, 0, 4096), buffer.getMagnitude(1, 0, 4096)), 1.0e-6f));
+    CHECK(limited > 0.5f);
+    CHECK(limited <= juce::Decibels::decibelsToGain(-0.3f) + 1.0e-3f);
+    CHECK(processor.displayPeak.exchange(0.0f) == 0.0f);
+
+    setParam(processor, "limiter", 0.0f);
+    processor.processBlock(buffer, midi);
+    CHECK(processor.displayPeak.exchange(0.0f) > 1.0f);
+}
+
 TEST_CASE("MIDI CC21 activates the host-synced high-pass in the plug-in", "[plugin][midi][effects]") {
     const auto render = [](bool sendCc) {
         OpenEdmKickProcessor processor;

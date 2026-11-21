@@ -549,8 +549,6 @@ void KickEngine::process(
             }
             channels[ch][sample] = scaled;
         });
-        peak = std::max(peak, std::abs(channels[0][sample]));
-        if (numChannels > 1) peak = std::max(peak, std::abs(channels[1][sample]));
         if (effectTailRemaining_ > 0) --effectTailRemaining_;
         if (settings.effects.limiterEnabled && !settings.masterBypass) {
             float* secondChannel = nullptr;
@@ -558,10 +556,12 @@ void KickEngine::process(
             const std::array<float*, 2> frame{ channels[0] + sample, secondChannel };
             limiter_.process(frame.data(), std::min(2, numChannels), 1, settings.effects.ceilingGain);
         }
+        peak = std::max(peak, std::abs(channels[0][sample]));
+        if (numChannels > 1) peak = std::max(peak, std::abs(channels[1][sample]));
     }
 
     if (transport.isPlaying || settings.manualBpm > 0) fallbackPpq_ = ppqCursor;
-    currentPeak_ = std::max(peak, currentPeak_ * 0.82f);
+    currentPeak_ = peak;
 }
 
 } // namespace openedmkick::core
