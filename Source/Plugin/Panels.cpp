@@ -276,6 +276,7 @@ void KickSynthPanel::setAdvancedMode(bool advanced) {
     heldNotes_ = ampEnabled_.button().getToggleState();
     setControlsVisible({ &hold_, &decay_, sectionLocks_[3].get() }, advanced || !heldNotes_);
     setControlsVisible({ &ampAttack_, &ampDecay_, &ampSustain_, &ampRelease_, sectionLocks_[4].get() }, advanced || heldNotes_);
+    refreshActivity();
     resized();
     repaint();
 }

@@ -33,6 +33,7 @@ const Format kFormatMidi{ [](float value, int) { return juce::String(juce::round
 // Key zones also accept note names. C2 is MIDI note 36.
 const Format kFormatKey{ kFormatMidi.toText, [](const juce::String& text) {
     const auto trimmed = text.trim();
+    if (trimmed.isEmpty()) return 0.0f;
     const int semitone = juce::String("C D EF G A B").indexOfIgnoreCase(trimmed.substring(0, 1));
     if (semitone < 0) return trimmed.getFloatValue();
     const auto afterLetter = trimmed.substring(1);

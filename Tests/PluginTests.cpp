@@ -525,6 +525,8 @@ TEST_CASE("Typed units land on the typed value and displays use the suite format
     CHECK_THAT(typed("lp_cutoff", "Off"), WithinAbs(20000.0f, 0.5f));
     CHECK_THAT(typed("hp_cutoff", "Off"), WithinAbs(20.0f, 0.01f));
     CHECK_THAT(typed("layer_a_key_low", "C2"), WithinAbs(36.0f, 0.01f));
+    CHECK_THAT(typed("layer_a_key_low", ""), WithinAbs(0.0f, 0.01f));
+    CHECK_THAT(typed("layer_a_key_low", "   "), WithinAbs(0.0f, 0.01f));
     CHECK_THAT(typed("layer_a_key_high", "F#3"), WithinAbs(54.0f, 0.01f));
     CHECK_THAT(typed("layer_a_pan", "40 L"), WithinAbs(-0.4f, 0.001f));
     CHECK_THAT(typed("sweep_shape", "+20%"), WithinAbs(0.2f, 0.001f));
