@@ -14,7 +14,7 @@ The drum badge pulses on each quarter note. It follows the host playhead, tempo 
 
 ## Shape the kick
 
-Choose a style under **Factory preset**, then press **Audition C2** to hear a hit. **Previous** and **Next** step through the bank from any page. The 56 factory kicks come in six dance styles: 16 Uplifting and eight each of Rolling, Progressive, Psy, Tech, and Classic. Try *First Light* for a firm beater, *Velvet Sub* for a soft attack, or *Triplet* for a running bass line.
+Choose a style under **Preset**, then press **Audition C2** to hear a hit. **Previous** and **Next** step through the preset browser list from any page. The 56 factory kicks come in six dance styles: 16 Uplifting and eight each of Rolling, Progressive, Psy, Tech, and Classic. Try *First Light* for a firm beater, *Velvet Sub* for a soft attack, or *Triplet* for a running bass line.
 
 Drag **Drag hit** onto a track or the desktop to bounce the last note and velocity, including layers and the effect tail, as a WAV.
 
@@ -36,7 +36,7 @@ The **Layers** pages A–D each add a Kick, Snare, Clap, or Hat voice. Set level
 
 ## Play and automate
 
-Velocity changes the hit level and tone. Notes follow their MIDI pitch; the layer pitch control can transpose each voice. Right-click a control to assign or clear its MIDI CC. The default CCs control output volume (7), expression (11), reverse (20), high-pass sync (21), low-pass sync (22), crush (23), stutter (24), chopper (25), and brightness (74). CC 120 stops the sound and effect tails. CC 121 resets controller overrides. With **Hold MIDI notes** enabled, a matching note-off starts the release stage.
+Velocity changes the hit level and tone. Notes follow their MIDI pitch; the layer pitch control can transpose each voice. Right-click a control to assign or clear its MIDI CC. The default CCs control output volume (7), expression (11), reverse (20), high-pass sweep (21), low-pass sweep (22), crush (23), stutter (24), gate (25), and brightness (74). CC 120 stops the sound and effect tails. CC 121 resets controller overrides. With **Hold MIDI notes** enabled, a matching note-off starts the release stage.
 
 Protect a section with its lock while browsing presets. Locked controls stay editable, and the lock state saves with the project.
 
