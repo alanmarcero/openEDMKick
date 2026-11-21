@@ -1502,7 +1502,7 @@ TEST_CASE("Look and feel dims disabled buttons, sliders, and combo boxes", "[plu
     const auto renderControl = [&](juce::Component& c, int w, int h) {
         c.setLookAndFeel(&lookAndFeel);
         c.setSize(w, h);
-        juce::Image image(juce::Image::ARGB, w, h, true);
+        juce::Image image(juce::Image::ARGB, w, h, true, juce::SoftwareImageType());
         juce::Graphics g(image);
         c.paintEntireComponent(g, true);
         c.setLookAndFeel(nullptr);
