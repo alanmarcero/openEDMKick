@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.10.1
+
+- **UI & Suite Fixes:** UI polish, full-size kick knobs, truncated preset saves, double-click resets, unit formatting and typed-value entry, per-slot A/B undo, dBFS post-limiter meter, and screen-reader titles.
+
 ## v3.10.0 — 2026-11-20
 
 - **Zero-Delay Feedback SVF Voice & Tone Filters**: Replaced RBJ biquads with TPT/ZDF state-variable filters so fast cutoff modulation preserves steady DC state.
