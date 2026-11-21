@@ -139,7 +139,6 @@ double beatsPerBarForSignature(int index) noexcept {
 juce::String formatHz(float hz) {
     if (!std::isfinite(hz)) return "0 Hz";
     if (std::round(hz) >= 1000.0f) return juce::String(hz / 1000.0f, 2) + " kHz";
-    if (std::round(hz * 10.0f) < 1000.0f) return juce::String(hz, 1) + " Hz";
     return juce::String(juce::roundToInt(hz)) + " Hz";
 }
 

@@ -21,6 +21,7 @@ public:
     // A merged switch shows on while either parameter is on.
     void mirrorPartner(juce::String id) { partnerId_ = std::move(id); }
 private:
+    void updateTitle();
     void timerCallback() override { refresh(); }
     Apvts& state_;
     juce::String id_;

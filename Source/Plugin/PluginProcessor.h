@@ -244,6 +244,7 @@ private:
     std::array<int, openedmkick::core::kNumAutoSlots> lastSlotBars_{ 0, 0, 0, 0 };
     std::atomic<bool> auditionPending_{ false };
     std::atomic<bool> restoredCustomState_{ false };
+    mutable std::mutex userPresetMutex_;
     juce::String userPresetName_;
     std::atomic<bool> presetEdited_{ false };
     struct UserSampleSlot {

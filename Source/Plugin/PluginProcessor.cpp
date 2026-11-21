@@ -80,12 +80,16 @@ OpenEdmKickProcessor::OpenEdmKickProcessor()
     openedmkick::presets::apply(openedmkick::presets::factoryPresets().front(), parameters);
     history_ = std::make_unique<suite::ParameterUndo>(*this);
     history_->captureContext = [this] {
+        const std::scoped_lock lock(userPresetMutex_);
         return suite::EditContext{ currentProgram_, restoredCustomState_.load(), userPresetName_, presetEdited_.load() };
     };
     history_->restoreContext = [this](const suite::EditContext& context) {
         currentProgram_ = context.program;
         restoredCustomState_.store(context.custom);
-        userPresetName_ = context.presetName;
+        {
+            const std::scoped_lock lock(userPresetMutex_);
+            userPresetName_ = context.presetName;
+        }
         presetEdited_.store(context.edited);
     };
     history_->onParameterChange = [this] { presetEdited_.store(true); };
@@ -456,7 +460,10 @@ void OpenEdmKickProcessor::setCurrentProgram(int index) {
         openedmkick::presets::apply(presets[static_cast<size_t>(index)], parameters);
         routing_.restoreLocked(locked);
         restoredCustomState_.store(false);
-        userPresetName_ = {};
+        {
+            const std::scoped_lock presetLock(userPresetMutex_);
+            userPresetName_ = {};
+        }
         presetEdited_.store(false);
     }
     if (record) history_->endGroup();
@@ -467,6 +474,7 @@ void OpenEdmKickProcessor::setCurrentProgram(int index) {
 
 juce::String OpenEdmKickProcessor::presetName() {
     if (!restoredCustomState_.load()) return getProgramName(currentProgram_);
+    const std::scoped_lock lock(userPresetMutex_);
     return userPresetName_;
 }
 
@@ -478,7 +486,10 @@ juce::String OpenEdmKickProcessor::presetDisplayName() {
 
 void OpenEdmKickProcessor::setUserPreset(const juce::String& name) {
     restoredCustomState_.store(true);
-    userPresetName_ = name;
+    {
+        const std::scoped_lock lock(userPresetMutex_);
+        userPresetName_ = name;
+    }
     presetEdited_.store(false);
 }
 
@@ -494,7 +505,10 @@ juce::ValueTree OpenEdmKickProcessor::buildSoundTree() {
     state.setProperty("program", currentProgram_, nullptr);
     state.setProperty("presetCatalogVersion", openedmkick::presets::kCatalogVersion, nullptr);
     state.setProperty("programCustom", restoredCustomState_.load(), nullptr);
-    state.setProperty("presetName", userPresetName_, nullptr);
+    {
+        const std::scoped_lock lock(userPresetMutex_);
+        state.setProperty("presetName", userPresetName_, nullptr);
+    }
     state.setProperty("presetEdited", presetEdited_.load(), nullptr);
     syncEditorSequencer();
     juce::ValueTree patterns("LayerPatterns");
@@ -574,7 +588,10 @@ bool OpenEdmKickProcessor::recallSound(const void* data, int sizeInBytes, bool l
     if (forceCustom) restoredCustomState_.store(true);
     parameters.replaceState(state);
     routing_.restoreState(state);
-    userPresetName_ = state.getProperty("presetName").toString();
+    {
+        const std::scoped_lock lock(userPresetMutex_);
+        userPresetName_ = state.getProperty("presetName").toString();
+    }
     presetEdited_.store(state.getProperty("presetEdited", false));
     const auto sample = state.getChildWithName("ClickSample");
     if (sample.isValid()) {
@@ -625,7 +642,10 @@ bool OpenEdmKickProcessor::recallSound(const void* data, int sizeInBytes, bool l
 
 void OpenEdmKickProcessor::setStateInformation(const void* data, int sizeInBytes) {
     if (!recallSound(data, sizeInBytes, true, false)) return;
-    if (history_ != nullptr) history_->clear();
+    if (history_ != nullptr) {
+        history_->clear();
+        history_->selectHistory(abSlot());
+    }
 }
 
 struct SoundSwapAction : public juce::UndoableAction {

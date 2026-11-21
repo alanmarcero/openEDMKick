@@ -59,7 +59,7 @@ C2 is the synthesis frequency reference. Main/layer transpose, knock, transient 
 
 ## Performance FX and parameter routing
 
-Default activation bindings are Reverse CC20, HP CC21, LP CC22, Crush CC23, Stutter CC24, Chopper CC25, Volume CC7, Expression CC11, and Brightness CC74. HP/LP MIDI activation is distinct from each automated sync switch. Crush/Stutter/Chopper activation uses configured nonzero Mix/Depth or full activation at zero; automated amounts remain independent when MIDI activation is off.
+Default activation bindings are Reverse CC20, HP CC21, LP CC22, Crush CC23, Stutter CC24, Gate CC25, Volume CC7, Expression CC11, and Brightness CC74. HP/LP MIDI activation is distinct from each automated sync switch. Crush/Stutter/Gate activation uses configured nonzero Mix/Depth or full activation at zero; automated amounts remain independent when MIDI activation is off.
 
 Reverse setup uses a fixed 128-point phase integration and then renders backward source time per sample, with a 3 ms end fade. There is no full-hit rendering or reverse sample buffer in note-on handling. This preserves the rising reverse character while intentionally changing sample-exact filtered/noise reversal. Reverse is retimed when tempo changes and stops at its PPQ target; performance reverse and stutter use the next quarter-note boundary, including a full beat for on-beat notes.
 

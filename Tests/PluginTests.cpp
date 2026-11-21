@@ -536,6 +536,10 @@ TEST_CASE("Typed units land on the typed value and displays use the suite format
     CHECK(shown("output", 3.0f) == "+3.0 dB");
     CHECK(shown("output", -0.04f) == "0.0 dB");
     CHECK(shown("knock_hz", 650.0f) == "650 Hz");
+    CHECK(shown("eq_low_freq", 80.0f) == "80 Hz");
+    CHECK_THAT(typed("eq_low_freq", shown("eq_low_freq", 80.0f).toRawUTF8()), WithinAbs(80.0f, 0.5f));
+    CHECK(shown("low_cut_hz", 25.0f) == "25 Hz");
+    CHECK_THAT(typed("low_cut_hz", shown("low_cut_hz", 25.0f).toRawUTF8()), WithinAbs(25.0f, 0.5f));
     CHECK(shown("tone_hz", 6800.0f) == "6.80 kHz");
     CHECK(shown("click_ms", 4.5f) == "4.5 ms");
     CHECK(shown("decay_ms", 160.0f) == "160 ms");
@@ -687,6 +691,38 @@ TEST_CASE("Presets keep their name and edit marker through undo, A/B and the ses
     restored.setCurrentProgram(3);
     CHECK(restored.presetName() == restored.getProgramName(3));
     CHECK_FALSE(restored.isPresetEdited());
+}
+
+TEST_CASE("Restoring a session saved on slot B keeps undo isolated from slot A", "[plugin][presets]") {
+    juce::ScopedJuceInitialiser_GUI gui;
+    OpenEdmKickProcessor processor;
+    setParam(processor, "decay_ms", 400.0f);
+    processor.selectAbSlot(1);
+    setParam(processor, "decay_ms", 700.0f);
+
+    juce::MemoryBlock session;
+    processor.getStateInformation(session);
+
+    OpenEdmKickProcessor restored;
+    restored.setStateInformation(session.getData(), static_cast<int>(session.getSize()));
+    REQUIRE(restored.abSlot() == 1);
+
+    auto* decay = restored.parameters.getParameter("decay_ms");
+    REQUIRE(decay != nullptr);
+    decay->beginChangeGesture();
+    decay->setValueNotifyingHost(decay->convertTo0to1(900.0f));
+    decay->endChangeGesture();
+    CHECK(restored.canUndo());
+
+    restored.selectAbSlot(0);
+    CHECK_FALSE(restored.canUndo());
+    CHECK_FALSE(restored.undo());
+    CHECK_THAT(decay->convertFrom0to1(decay->getValue()), WithinAbs(400.0f, 1.0f));
+
+    restored.selectAbSlot(1);
+    REQUIRE(restored.canUndo());
+    REQUIRE(restored.undo());
+    CHECK_THAT(decay->convertFrom0to1(decay->getValue()), WithinAbs(700.0f, 1.0f));
 }
 
 TEST_CASE("Previous and Next step the browser list and the header marks edits", "[plugin][presets][ui]") {
@@ -1477,7 +1513,8 @@ TEST_CASE("Every slider, combo box, and button has a screen-reader title", "[plu
         for (auto* child : root.getChildren()) {
             if (dynamic_cast<juce::Slider*>(child) != nullptr
                 || dynamic_cast<juce::ComboBox*>(child) != nullptr
-                || dynamic_cast<juce::Button*>(child) != nullptr) {
+                || dynamic_cast<juce::Button*>(child) != nullptr
+                || dynamic_cast<openedmkick::ui::ParameterControl*>(child) != nullptr) {
                 INFO(child->getComponentID() << " / " << child->getName());
                 CHECK(child->getTitle().isNotEmpty());
                 ++checked;

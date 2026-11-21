@@ -18,6 +18,7 @@ constexpr float kLabelFont = 13.0f;
 ParameterControl::ParameterControl(Apvts& state, juce::String id, juce::Component& owner, juce::Component& input, bool attachChildren)
     : state_(state), id_(std::move(id)), owner_(owner), input_(input), attachChildren_(attachChildren) {
     setComponentID("routing_" + id_);
+    updateTitle();
     setTooltip("Click the lock to keep this value when loading a preset. Right-click to assign a MIDI CC.");
     owner_.addMouseListener(this, false);
     if (attachChildren_) {
@@ -35,7 +36,12 @@ ParameterControl::~ParameterControl() {
         });
     }
 }
-void ParameterControl::bind(juce::String id) { id_ = std::move(id); setComponentID("routing_" + id_); refresh(); }
+void ParameterControl::updateTitle() {
+    auto* parameter = state_.getParameter(id_);
+    const auto name = parameter != nullptr ? parameter->getName(128) : input_.getTitle();
+    setTitle("Lock " + (name.isNotEmpty() ? name : id_));
+}
+void ParameterControl::bind(juce::String id) { id_ = std::move(id); setComponentID("routing_" + id_); updateTitle(); refresh(); }
 void ParameterControl::paint(juce::Graphics& g) {
     auto& routing = static_cast<OpenEdmKickProcessor&>(state_.processor).routing();
     const bool locked = routing.isLocked(id_);
