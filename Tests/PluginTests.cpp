@@ -231,6 +231,38 @@ TEST_CASE("Editor shows the new sound pages and current MIDI note", "[plugin][ui
     }
 }
 
+TEST_CASE("Double-click returns every visible dial to its default", "[plugin][ui]") {
+    juce::ScopedJuceInitialiser_GUI gui;
+    OpenEdmKickProcessor processor;
+    std::unique_ptr<juce::AudioProcessorEditor> editor(processor.createEditor());
+    auto* native = dynamic_cast<OpenEdmKickEditor*>(editor.get());
+    REQUIRE(native != nullptr);
+    native->setAdvancedView(true);
+    int dials = 0;
+    const auto visit = [&](auto&& self, juce::Component& parent) -> void {
+        std::ranges::for_each(parent.getChildren(), [&](juce::Component* child) {
+            if (!child->isVisible()) return;
+            auto* slider = dynamic_cast<juce::Slider*>(child);
+            auto* parameter = processor.parameters.getParameter(child->getComponentID());
+            if (slider != nullptr && parameter != nullptr) {
+                CAPTURE(slider->getComponentID());
+                CHECK(slider->isDoubleClickReturnEnabled());
+                CHECK_THAT(slider->getDoubleClickReturnValue(),
+                           WithinAbs(parameter->convertFrom0to1(parameter->getDefaultValue()), 0.0001));
+                ++dials;
+            }
+            self(self, *child);
+        });
+    };
+    std::ranges::for_each(std::array{ "kick", "layers", "pattern", "fx" }, [&](const char* page) {
+        auto* tab = dynamic_cast<juce::TextButton*>(native->findChildWithID(juce::String("page_") + page));
+        REQUIRE(tab != nullptr);
+        tab->onClick();
+        visit(visit, *native);
+    });
+    CHECK(dials > 60);
+}
+
 TEST_CASE("MIDI input tracks pitch and octave, including notes from other channels", "[plugin][midi]") {
     OpenEdmKickProcessor processor;
     processor.prepareToPlay(48000.0, 512);

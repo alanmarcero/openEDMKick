@@ -68,6 +68,7 @@ void ParameterControl::mouseDown(const juce::MouseEvent& event) {
     juce::PopupMenu menu;
     menu.addSubMenu("MIDI CC", routing.midiMenu(id_));
     menu.addItem(200, routing.isLocked(id_) ? "Unlock for presets" : "Lock for presets");
+    menu.addItem(201, "Reset to default");
     menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(this),
         [safe = juce::Component::SafePointer<ParameterControl>(this)](int selected) {
             if (safe == nullptr || selected == 0) return;
@@ -75,6 +76,12 @@ void ParameterControl::mouseDown(const juce::MouseEvent& event) {
             if (selected == 200) model.setLocked(safe->id_, !model.isLocked(safe->id_));
             if (selected >= 1 && selected <= 129) model.assignCc(safe->id_, selected - 2);
             if (selected == 130) model.assignCc(safe->id_, model.defaultAssignment(safe->id_));
+            if (selected == 201) {
+                auto* parameter = safe->state_.getParameter(safe->id_);
+                parameter->beginChangeGesture();
+                parameter->setValueNotifyingHost(parameter->getDefaultValue());
+                parameter->endChangeGesture();
+            }
             safe->refresh();
         });
 }
@@ -133,6 +140,7 @@ void Knob::bind(Apvts& state, const juce::String& parameterId) {
     const auto& range = parameter->getNormalisableRange();
     slider_.setRange(range.start, range.end, range.interval);
     slider_.setSkewFactor(range.skew, range.symmetricSkew);
+    slider_.setDoubleClickReturnValue(true, parameter->convertFrom0to1(parameter->getDefaultValue()));
     slider_.textFromValueFunction = [parameter](double value) { return parameter->getText(parameter->convertTo0to1(static_cast<float>(value)), 64); };
     slider_.valueFromTextFunction = [parameter](const juce::String& text) { return parameter->convertFrom0to1(parameter->getValueForText(text)); };
     attachment_ = std::make_unique<juce::ParameterAttachment>(*parameter,
