@@ -100,6 +100,7 @@ public:
     LayerPage(OpenEdmKickProcessor& processor, int layer);
     void paint(juce::Graphics& g) override;
     void resized() override;
+    void showEnabled(bool enabled);
 
 private:
     std::unique_ptr<SectionLock> sectionLock_;
@@ -115,19 +116,22 @@ private:
     std::array<std::unique_ptr<Toggle>, 2> layerToggles_;
 };
 
-class LayerPanel final : public juce::Component {
+class LayerPanel final : public juce::Component, private juce::Timer {
 public:
     explicit LayerPanel(OpenEdmKickProcessor& processor);
     void resized() override;
     void selectLayer(int layer);
+    void refreshActivity();
 
 private:
+    void timerCallback() override { refreshActivity(); }
+    OpenEdmKickProcessor& processor_;
     std::array<std::unique_ptr<LayerPage>, openedmkick::core::kNumSoundLayers> pages_;
     std::array<juce::TextButton, openedmkick::core::kNumSoundLayers> tabs_;
     int selectedLayer_ = 0;
 };
 
-class PianoRollView final : public juce::Component, private juce::Timer {
+class PianoRollView final : public juce::Component, public juce::SettableTooltipClient, private juce::Timer {
 public:
     explicit PianoRollView(OpenEdmKickProcessor& processor);
     void paint(juce::Graphics& g) override;

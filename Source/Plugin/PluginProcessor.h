@@ -94,6 +94,7 @@ private:
         const std::array<openedmkick::core::AutoSlotSettings, openedmkick::core::kNumAutoSlots>& slots);
     [[nodiscard]] juce::ValueTree buildSoundTree();
     bool recallSound(const void* data, int sizeInBytes, bool loadCompareSlots, bool forceCustom);
+    bool changeSound(const juce::String& name, const std::function<bool()>& change);
     void publishUserSample(std::vector<float> samples, double sampleRate, juce::String name);
     void selectClickSource(const float*& data, int& length, double& rate) const noexcept;
     [[nodiscard]] juce::MemoryBlock encodeTree(const juce::ValueTree& tree) const;

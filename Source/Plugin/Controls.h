@@ -153,6 +153,13 @@ private:
     std::unique_ptr<juce::ParameterAttachment> attachment_;
 };
 
+// Dims a control while its setting has no effect. Its tooltip then says what turns it on.
+template <typename Control>
+void showActivity(Control& control, bool active, const juce::String& activeTip, const juce::String& inactiveTip) {
+    control.setAlpha(active ? 1.0f : 0.4f);
+    control.setTooltip(active ? activeTip : inactiveTip);
+}
+
 void layoutRow(juce::Rectangle<int> area, std::initializer_list<juce::Component*> components, int gap = 5);
 void drawCard(juce::Graphics& g, juce::Rectangle<int> area, const juce::String& title,
               juce::Colour accent, bool inset = false);

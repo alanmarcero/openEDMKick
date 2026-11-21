@@ -215,20 +215,28 @@ void OpenEdmKickProcessor::publishPatterns() {
 }
 
 void OpenEdmKickProcessor::togglePianoRollNote(int step64, int length64, int layer, int ratchets) {
-    const std::scoped_lock lock(stateMutex_);
-    adoptDisplayedPattern();
-    syncEditorSequencer();
-    const int slot = currentAutoSlot();
-    editorSequencer_.toggleNoteAt(slot, step64, length64, autoSlotSettings(slot).bars, layer, ratchets);
-    publishPatterns();
+    changeSound("Pattern", [&] {
+        const std::scoped_lock lock(stateMutex_);
+        adoptDisplayedPattern();
+        syncEditorSequencer();
+        const int slot = currentAutoSlot();
+        editorSequencer_.toggleNoteAt(slot, step64, length64, autoSlotSettings(slot).bars, layer, ratchets);
+        publishPatterns();
+        presetEdited_.store(true);
+        return true;
+    });
 }
 
 void OpenEdmKickProcessor::cyclePianoRollRatchets(int step64, int layer) {
-    const std::scoped_lock lock(stateMutex_);
-    adoptDisplayedPattern();
-    syncEditorSequencer();
-    editorSequencer_.cycleRatchetsAt(currentAutoSlot(), step64, layer);
-    publishPatterns();
+    changeSound("Pattern", [&] {
+        const std::scoped_lock lock(stateMutex_);
+        adoptDisplayedPattern();
+        syncEditorSequencer();
+        editorSequencer_.cycleRatchetsAt(currentAutoSlot(), step64, layer);
+        publishPatterns();
+        presetEdited_.store(true);
+        return true;
+    });
 }
 
 void OpenEdmKickProcessor::syncSequencerPresets(
@@ -681,16 +689,23 @@ void OpenEdmKickProcessor::copyAbSlot(bool aToB) {
 }
 
 bool OpenEdmKickProcessor::applySoundState(const juce::MemoryBlock& state, const juce::String& userPresetName) {
+    return changeSound("Sound", [&] {
+        if (!recallSound(state.getData(), static_cast<int>(state.getSize()), false, userPresetName.isNotEmpty())) return false;
+        if (userPresetName.isNotEmpty()) setUserPreset(userPresetName);
+        return true;
+    });
+}
+
+// Records the change as one undo step when it runs on the message thread.
+bool OpenEdmKickProcessor::changeSound(const juce::String& name, const std::function<bool()>& change) {
     auto* manager = juce::MessageManager::getInstanceWithoutCreating();
     const bool record = history_ != nullptr && manager != nullptr && manager->isThisTheMessageThread();
     juce::MemoryBlock before;
     if (record) before = captureSoundState();
-    if (!recallSound(state.getData(), static_cast<int>(state.getSize()), false, userPresetName.isNotEmpty())) return false;
-    if (userPresetName.isNotEmpty()) setUserPreset(userPresetName);
-    if (record) {
-        history_->manager().beginNewTransaction("Sound");
-        history_->manager().perform(new SoundSwapAction(*this, std::move(before), captureSoundState()));
-    }
+    if (!change()) return false;
+    if (!record) return true;
+    history_->manager().beginNewTransaction(name);
+    history_->manager().perform(new SoundSwapAction(*this, std::move(before), captureSoundState()));
     return true;
 }
 

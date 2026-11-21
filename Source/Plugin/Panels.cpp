@@ -388,14 +388,19 @@ LayerPage::LayerPage(OpenEdmKickProcessor& processor, int layer)
     sectionLock_ = std::make_unique<SectionLock>(processor.parameters, "layer_" + juce::String(layer_), ids);
     addAndMakeVisible(*sectionLock_);
     enabled_.setTooltip("Include this sound layer in every kick hit.");
-    sound_.setTooltip("Choose a synthesized kick, snare, clap, or hi-hat voice.");
-    layerToggles_[0]->setTooltip("Hear only enabled layers with Solo switched on.");
-    layerToggles_[1]->setTooltip("Reverse this layer's polarity before mixing it with the other layers.");
-    level_.setTooltip("Set this layer's mix level.");
-    pitch_.setTooltip("Transpose the layer in semitones. Hats use this to tune their metal partials.");
-    decay_.setTooltip("Set this layer's one-shot length. Kick layers scale their main kick decay by this value.");
-    highPass_.setTooltip("Filter this layer before it is mixed with the other layers.");
-    lowPass_.setTooltip("Filter this layer before it is mixed with the other layers.");
+}
+
+void LayerPage::showEnabled(bool enabled) {
+    const juce::String off = "This layer is off. Turn on Enable layer to hear it.";
+    showActivity(sound_, enabled, "Choose a synthesized kick, snare, clap, or hi-hat voice.", off);
+    showActivity(level_, enabled, "Set this layer's mix level.", off);
+    showActivity(pitch_, enabled, "Transpose the layer in semitones. Hats use this to tune their metal partials.", off);
+    showActivity(decay_, enabled, "Set this layer's one-shot length. Kick layers scale their main kick decay by this value.", off);
+    showActivity(highPass_, enabled, "Filter this layer before it is mixed with the other layers.", off);
+    showActivity(lowPass_, enabled, "Filter this layer before it is mixed with the other layers.", off);
+    showActivity(*layerToggles_[0], enabled, "Hear only enabled layers with Solo switched on.", off);
+    showActivity(*layerToggles_[1], enabled, "Reverse this layer's polarity before mixing it with the other layers.", off);
+    std::ranges::for_each(layerKnobs_, [&](const std::unique_ptr<Knob>& knob) { showActivity(*knob, enabled, {}, off); });
 }
 
 void LayerPage::paint(juce::Graphics& g) {
@@ -421,14 +426,13 @@ void LayerPage::resized() {
     layoutRow(area.reduced(0, 4), { layerKnobs_[2].get(), layerKnobs_[3].get(), layerKnobs_[4].get(), layerKnobs_[5].get() }, 8);
 }
 
-LayerPanel::LayerPanel(OpenEdmKickProcessor& processor) {
+LayerPanel::LayerPanel(OpenEdmKickProcessor& processor) : processor_(processor) {
     std::ranges::for_each(std::views::iota(0, core::kNumSoundLayers), [&](int layer) {
         const auto index = static_cast<size_t>(layer);
         pages_[index] = std::make_unique<LayerPage>(processor, layer);
         addAndMakeVisible(*pages_[index]);
         auto& tab = tabs_[index];
         const auto letter = juce::String::charToString(static_cast<juce::juce_wchar>('A' + layer));
-        tab.setButtonText("Layer " + letter);
         tab.setComponentID("layer_tab_" + letter.toLowerCase());
         tab.setClickingTogglesState(false);
         tab.setColour(juce::TextButton::buttonOnColourId, theme::kViolet);
@@ -436,6 +440,22 @@ LayerPanel::LayerPanel(OpenEdmKickProcessor& processor) {
         addAndMakeVisible(tab);
     });
     selectLayer(0);
+    refreshActivity();
+    startTimerHz(10);
+}
+
+void LayerPanel::refreshActivity() {
+    auto& routing = processor_.routing();
+    std::ranges::for_each(std::views::iota(0, core::kNumSoundLayers), [&](int layer) {
+        const auto index = static_cast<size_t>(layer);
+        const auto letter = juce::String::charToString(static_cast<juce::juce_wchar>('A' + layer));
+        const auto soundId = params::layerId(layer, params::kLayerSound);
+        const auto& sounds = dynamic_cast<juce::AudioParameterChoice*>(processor_.parameters.getParameter(soundId))->choices;
+        const bool enabled = routing.displayValue(params::layerId(layer, params::kLayerEnabled)) >= 0.5f;
+        tabs_[index].setButtonText(letter + " " + sounds[juce::roundToInt(routing.displayValue(soundId))]);
+        showActivity(tabs_[index], enabled, {}, "Layer " + letter + " is off. Turn on Enable layer in its tab to hear it.");
+        pages_[index]->showEnabled(enabled);
+    });
 }
 
 void LayerPanel::selectLayer(int layer) {
@@ -462,11 +482,13 @@ void LayerPanel::resized() {
 
 PianoRollView::PianoRollView(OpenEdmKickProcessor& processor) : processor_(processor) {
     setMouseCursor(juce::MouseCursor::PointingHandCursor);
+    setTooltip("Click to add or remove a hit. Shift-click a hit to change its ratchets. "
+               "Lanes of layers that are off are dim. Click a dim layer name to turn that layer on.");
     startTimerHz(12);
 }
 
 juce::Rectangle<float> PianoRollView::gridArea() const {
-    return getLocalBounds().toFloat().reduced(13.0f, 10.0f).withTrimmedTop(40.0f).withTrimmedLeft(25.0f).withTrimmedBottom(4.0f);
+    return getLocalBounds().toFloat().reduced(13.0f, 10.0f).withTrimmedTop(40.0f).withTrimmedLeft(66.0f).withTrimmedBottom(4.0f);
 }
 
 void PianoRollView::paint(juce::Graphics& g) {
@@ -502,13 +524,27 @@ void PianoRollView::paint(juce::Graphics& g) {
     }
 
     const float rowHeight = grid.getHeight() / 5.0f;
+    auto& routing = processor_.routing();
+    const auto playing = [&routing](int layer) {
+        return layer < 0 || routing.displayValue(params::layerId(layer, params::kLayerEnabled)) >= 0.5f;
+    };
     for (int lane = 0; lane < 5; ++lane) {
         const float y = grid.getY() + static_cast<float>(lane) * rowHeight;
         g.setColour(theme::kEdge);
         g.drawHorizontalLine(juce::roundToInt(y), grid.getX(), grid.getRight());
-        g.setColour(theme::kTextDim);
-        const auto label = lane == 0 ? juce::String("ALL") : juce::String::charToString(static_cast<juce::juce_wchar>('A' + lane - 1));
-        g.drawText(label, juce::Rectangle<float>(grid.getX() - 24, y + 4, 22, 12), juce::Justification::centredLeft);
+        auto label = juce::String("All");
+        if (lane > 0) {
+            const auto soundId = params::layerId(lane - 1, params::kLayerSound);
+            const auto& sounds = dynamic_cast<juce::AudioParameterChoice*>(processor_.parameters.getParameter(soundId))->choices;
+            label = juce::String::charToString(static_cast<juce::juce_wchar>('A' + lane - 1)) + " "
+                  + sounds[juce::roundToInt(routing.displayValue(soundId))];
+        }
+        if (!playing(lane - 1)) {
+            g.setColour(theme::kInk.withAlpha(0.5f));
+            g.fillRect(juce::Rectangle<float>(grid.getX(), y, grid.getWidth(), rowHeight));
+        }
+        g.setColour(theme::kTextDim.withMultipliedAlpha(playing(lane - 1) ? 1.0f : 0.4f));
+        g.drawText(label, juce::Rectangle<float>(grid.getX() - 64, y + 4, 62, 12), juce::Justification::centredLeft);
     }
     const auto notes = processor_.currentPianoRollNotes();
     for (const auto& note : notes) {
@@ -519,7 +555,7 @@ void PianoRollView::paint(juce::Graphics& g) {
         const auto hit = juce::Rectangle<float>(x + 1.0f, grid.getY() + static_cast<float>(std::clamp(note.layer + 1, 0, 4)) * rowHeight + (rowHeight - laneHeight) * 0.5f,
                                                  std::min(w - 1.0f, grid.getRight() - x), laneHeight);
         const auto accent = note.reverseCue ? theme::kCoral : theme::kViolet;
-        g.setColour(accent.withAlpha(0.32f + note.velocity * 0.58f));
+        g.setColour(accent.withAlpha((0.32f + note.velocity * 0.58f) * (playing(note.layer) ? 1.0f : 0.4f)));
         g.fillRoundedRectangle(hit, 4.0f);
         if (note.ratchets > 1) {
             g.setColour(theme::kText);
@@ -537,13 +573,22 @@ void PianoRollView::paint(juce::Graphics& g) {
 
 void PianoRollView::mouseDown(const juce::MouseEvent& event) {
     const auto grid = gridArea();
+    const int lane = std::clamp(static_cast<int>((event.position.y - grid.getY()) * 5 / grid.getHeight()), 0, 4);
+    const bool onLabel = event.position.x < grid.getX() && event.position.y >= grid.getY() && event.position.y < grid.getBottom();
+    if (onLabel && lane > 0) {
+        auto* enabled = processor_.parameters.getParameter(params::layerId(lane - 1, params::kLayerEnabled));
+        enabled->beginChangeGesture();
+        enabled->setValueNotifyingHost(1.0f);
+        enabled->endChangeGesture();
+        return;
+    }
     if (!grid.contains(event.position)) return;
     const auto settings = processor_.currentAutoSlotSettings();
     const int totalSteps = std::max(1, settings.bars) * core::kStepsPerBar64;
     const int gridStep = core::kGridStepSizes64[static_cast<size_t>(std::clamp(settings.gridResolution, 0, 4))];
     const float normalized = std::clamp((event.position.x - grid.getX()) / grid.getWidth(), 0.0f, 0.99999f);
     const int step = (static_cast<int>(normalized * static_cast<float>(totalSteps)) / gridStep) * gridStep;
-    const int layer = std::clamp(static_cast<int>((event.position.y - grid.getY()) * 5 / grid.getHeight()), 0, 4) - 1;
+    const int layer = lane - 1;
     if (event.mods.isShiftDown()) {
         processor_.cyclePianoRollRatchets(step, layer);
         return;

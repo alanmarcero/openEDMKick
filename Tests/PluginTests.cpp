@@ -862,6 +862,44 @@ TEST_CASE("Layer editor lays out additive controls on each layer page", "[layer-
     REQUIRE(pan->getWidth() > 60);
 }
 
+TEST_CASE("Layer tabs and lanes name each sound, dim layers that are off, and grid edits undo", "[layer-improvements][ui]") {
+    juce::ScopedJuceInitialiser_GUI gui;
+    OpenEdmKickProcessor processor;
+    openedmkick::ui::LayerPanel layers(processor);
+    layers.setSize(1040, 576);
+    auto* tab = dynamic_cast<juce::TextButton*>(layers.findChildWithID("layer_tab_b"));
+    REQUIRE(tab != nullptr);
+    setParam(processor, "layer_b_sound", 1.0f);
+    layers.refreshActivity();
+    CHECK(tab->getButtonText() == "B Snare");
+    CHECK(tab->getAlpha() < 0.5f);
+    setParam(processor, "layer_b_enabled", 1.0f);
+    setParam(processor, "layer_b_sound", 2.0f);
+    layers.refreshActivity();
+    CHECK(tab->getButtonText() == "B Clap");
+    CHECK(tab->getAlpha() == 1.0f);
+
+    openedmkick::ui::PianoRollView roll(processor);
+    roll.setSize(1000, 220);
+    const juce::Point<float> laneCName{ 20.0f, 159.0f };
+    const auto now = juce::Time::getCurrentTime();
+    roll.mouseDown(juce::MouseEvent(juce::Desktop::getInstance().getMainMouseSource(), laneCName, {},
+                                    juce::MouseInputSource::defaultPressure, 0.0f, 0.0f, 0.0f, 0.0f,
+                                    &roll, &roll, now, laneCName, now, 1, false));
+    CHECK(processor.parameters.getRawParameterValue("layer_c_enabled")->load() > 0.5f);
+
+    const auto hasHit = [&processor] {
+        const auto notes = processor.currentPianoRollNotes();
+        return std::ranges::any_of(notes, [](const auto& note) { return note.step64 == 7 && note.layer == 2; });
+    };
+    processor.togglePianoRollNote(7, 4, 2);
+    REQUIRE(hasHit());
+    REQUIRE(processor.undo());
+    CHECK_FALSE(hasHit());
+    REQUIRE(processor.redo());
+    CHECK(hasHit());
+}
+
 TEST_CASE("Audition remains at sample zero before later MIDI controller events", "[layer-improvements][midi]") {
     OpenEdmKickProcessor processor;
     processor.prepareToPlay(48000, 256);
