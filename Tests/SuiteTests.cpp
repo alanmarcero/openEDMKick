@@ -99,6 +99,11 @@ TEST_CASE("User presets save, search, star, rename, and delete", "[suite][preset
     REQUIRE_FALSE(library.remove("Rolling / Pocket"));
     REQUIRE(library.save("My Room", state));
     REQUIRE(directory.getChildFile("My Room.oekpreset").existsAsFile());
+    const juce::MemoryBlock replacement("deep", 4);
+    REQUIRE(library.save("My Room", replacement));
+    juce::MemoryBlock resaved;
+    REQUIRE(library.load("My Room", resaved));
+    REQUIRE(resaved == replacement);
     auto found = library.list("room");
     REQUIRE(found.size() == 1);
     REQUIRE(found.front().name == "My Room");

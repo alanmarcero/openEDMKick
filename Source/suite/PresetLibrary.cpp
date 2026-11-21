@@ -80,11 +80,7 @@ bool PresetLibrary::save(const juce::String& name, const juce::MemoryBlock& stat
     const auto clean = sanitise(name);
     if (clean.isEmpty()) return false;
     if (!directory_.createDirectory()) return false;
-    auto stream = fileFor(clean).createOutputStream();
-    if (stream == nullptr) return false;
-    const bool wrote = stream->write(state.getData(), state.getSize());
-    stream->flush();
-    return wrote;
+    return fileFor(clean).replaceWithData(state.getData(), state.getSize());
 }
 
 bool PresetLibrary::rename(const juce::String& from, const juce::String& to) {
