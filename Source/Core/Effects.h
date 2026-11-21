@@ -115,6 +115,9 @@ class ToneFilter {
 public:
     static constexpr float kHighPassBypassHz = 20.0f;
     static constexpr float kLowPassBypassHz = 20000.0f;
+    // A sweep goes to these limits while its cutoff is at the bypass end.
+    static constexpr float kHighPassSweepTopHz = 8000.0f;
+    static constexpr float kLowPassSweepFloorHz = 200.0f;
 
     void reset() noexcept;
     [[nodiscard]] float process(float input, float highPassHz, float lowPassHz, double sampleRate) noexcept;

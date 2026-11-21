@@ -201,7 +201,6 @@ KickSynthPanel::KickSynthPanel(OpenEdmKickProcessor& processor)
         &clickSampleHp_, &loadClick_},
         [this](juce::Component* component) { addAndMakeVisible(component); });
     loadClick_.setComponentID("loadClickSample");
-    loadClick_.setTooltip("Load a short WAV for the sample click. The audio is stored in the session.");
     loadClick_.setColour(juce::TextButton::buttonColourId, theme::kSteel);
     loadClick_.onClick = [this] {
         auto chooser = std::make_shared<juce::FileChooser>("Load a short click sample", juce::File{}, "*.wav");
@@ -235,17 +234,32 @@ KickSynthPanel::KickSynthPanel(OpenEdmKickProcessor& processor)
     subLevel_.setTooltip("Blend a clean fundamental under the kick body.");
     clickLevel_.setTooltip("Add a short beater transient ahead of the body.");
     clickSampleOn_.setTooltip("Mix a sample click with the transient. Off leaves existing sounds unchanged.");
-    clickSampleSource_.setTooltip("Play a built-in click or the WAV you loaded.");
-    clickSampleLevel_.setTooltip("Level of the sample click.");
-    clickSampleStart_.setTooltip("Skip into the sample before it plays.");
-    clickSamplePitch_.setTooltip("Playback pitch of the sample click, in semitones.");
-    clickSampleHp_.setTooltip("High-pass the sample click.");
     eqLow_.setTooltip("Inner cap sets Low EQ gain (-12 to +12 dB); outer collar glides Low frequency smoothly.");
     eqMid_.setTooltip("Inner cap sets Mid EQ gain (-12 to +12 dB); outer collar glides Mid frequency smoothly.");
     eqHigh_.setTooltip("Inner cap sets High EQ gain (-12 to +12 dB); outer collar glides High frequency smoothly.");
     ampEnabled_.setTooltip("Hold incoming MIDI notes until note-off and shape them with attack, decay, sustain and release.");
     ampEnabled_.button().getToggleStateValue().addListener(this);
     setAdvancedMode(false);
+    refreshActivity();
+    startTimerHz(10);
+}
+
+void KickSynthPanel::refreshActivity() {
+    auto& routing = processor_.routing();
+    const auto on = [&routing](const char* id) { return routing.displayValue(id) >= 0.5f; };
+    showActivity(ceiling_, on(params::kLimiter), {}, "Turn on Limiter to use Ceiling.");
+    const bool sample = on(params::kClickSampleOn);
+    const juce::String sampleOff = "Turn on Sample to hear the sample click.";
+    showActivity(clickSampleSource_, sample, "Play a built-in click or the WAV you loaded.", sampleOff);
+    showActivity(clickSampleLevel_, sample, "Level of the sample click.", sampleOff);
+    showActivity(clickSampleStart_, sample, "Skip into the sample before it plays.", sampleOff);
+    showActivity(clickSamplePitch_, sample, "Playback pitch of the sample click, in semitones.", sampleOff);
+    showActivity(clickSampleHp_, sample, "High-pass the sample click.", sampleOff);
+    showActivity(loadClick_, sample, "Load a short WAV for the sample click. The audio is stored in the session.", sampleOff);
+    const bool held = on(params::kAmpEnabled);
+    std::ranges::for_each(std::array<Knob*, 4>{ &ampAttack_, &ampDecay_, &ampSustain_, &ampRelease_ }, [held](Knob* knob) {
+        showActivity(*knob, held, {}, "Turn on Hold MIDI notes to use the MIDI envelope.");
+    });
 }
 
 KickSynthPanel::~KickSynthPanel() {
@@ -621,15 +635,27 @@ AutoPianoRollPanel::AutoPianoRollPanel(OpenEdmKickProcessor& processor)
     addAndMakeVisible(*clockLock_);
     addAndMakeVisible(*sceneLock_);
     enabled_.setTooltip("Play this scene using the host transport or internal clock.");
-    bypass_.setTooltip("Mute the sequencer while keeping incoming MIDI playable.");
     clockSync_.setTooltip("Follow the host transport, tempo and time signature.");
     fillPreset_.setTooltip("Select a shared-lane trance pattern.");
     slotWatcher_.sendInitialUpdate();
     startTimerHz(12);
     setAdvancedMode(false);
+    refreshActivity();
 }
 
-void AutoPianoRollPanel::timerCallback() { syncSelectedSlot(processor_.currentAutoSlot()); }
+void AutoPianoRollPanel::timerCallback() {
+    syncSelectedSlot(processor_.currentAutoSlot());
+    refreshActivity();
+}
+
+void AutoPianoRollPanel::refreshActivity() {
+    auto& routing = processor_.routing();
+    const bool hostClock = routing.displayValue(params::kClockSync) >= 0.5f
+        && processor_.wrapperType != juce::AudioProcessor::wrapperType_Standalone;
+    showActivity(tempo_, !hostClock, {}, "Host sync is on, so the host sets the tempo. Turn off Host sync to use this tempo.");
+    showActivity(bypass_, routing.displayValue(params::kAutoEnabled) >= 0.5f,
+                 "Mute the sequencer while keeping incoming MIDI playable.", "Turn on Run pattern to use Bypass pattern.");
+}
 
 void AutoPianoRollPanel::bindSlotControls() {
     if (sceneLock_ != nullptr) {
@@ -754,12 +780,13 @@ void PeakMeter::paint(juce::Graphics& g) {
 }
 
 EffectsPanel::EffectsPanel(OpenEdmKickProcessor& processor)
-    : reverseEnabled_(processor.parameters, params::kReverseEnabled, "Reverse MIDI", theme::kCoral),
+    : processor_(processor),
+      reverseEnabled_(processor.parameters, params::kReverseEnabled, "Reverse MIDI", theme::kCoral),
       crushEnabled_(processor.parameters, params::kCrushEnabled, "Crush MIDI", theme::kMint),
       stutterEnabled_(processor.parameters, params::kStutterEnabled, "Stutter MIDI", theme::kViolet),
       gateEnabled_(processor.parameters, params::kGateEnabled, "Gate MIDI", theme::kViolet),
-      highPassMidi_(processor.parameters, params::kHighPassMidi, "High-pass MIDI", theme::kCoral),
-      lowPassMidi_(processor.parameters, params::kLowPassMidi, "Low-pass MIDI", theme::kViolet),
+      highPassMidi_(processor.parameters, params::kHighPassMidi, "High-pass sweep", theme::kCoral, params::kHighPassSyncEnabled),
+      lowPassMidi_(processor.parameters, params::kLowPassMidi, "Low-pass sweep", theme::kViolet, params::kLowPassSyncEnabled),
       midiVolume_(processor.parameters, params::kMidiVolume, "MIDI volume", theme::kMint),
       midiExpression_(processor.parameters, params::kMidiExpression, "Expression", theme::kMint),
       midiBrightness_(processor.parameters, params::kMidiBrightness, "Brightness", theme::kMint),
@@ -780,11 +807,14 @@ EffectsPanel::EffectsPanel(OpenEdmKickProcessor& processor)
       highPassSyncRate_(processor.parameters, params::kHighPassSyncRate, "High-pass rate", theme::kCoral),
       lowPassSync_(processor.parameters, params::kLowPassSyncEnabled, "Low-pass sync", theme::kViolet),
       lowPassSyncRate_(processor.parameters, params::kLowPassSyncRate, "Low-pass rate", theme::kViolet) {
-    std::ranges::for_each(std::array<juce::Component*, 17>{
+    std::ranges::for_each(std::array<juce::Component*, 15>{
         &reverseMode_, &reverseMix_, &crushRate_, &crushBits_, &crushMix_,
         &stutterRate_, &stutterMix_, &gateRate_, &gateMix_, &pumpRate_, &pumpMix_,
-        &highPass_, &lowPass_, &highPassSync_, &highPassSyncRate_, &lowPassSync_, &lowPassSyncRate_},
+        &highPass_, &lowPass_, &highPassSyncRate_, &lowPassSyncRate_},
         [this](juce::Component* component) { addAndMakeVisible(component); });
+    // The sweep buttons also show and clear the sync switches, so these stay hidden.
+    addChildComponent(highPassSync_);
+    addChildComponent(lowPassSync_);
     std::ranges::for_each(std::array<juce::Component*, 9>{
         &highPassMidi_, &lowPassMidi_, &reverseEnabled_, &crushEnabled_, &stutterEnabled_, &gateEnabled_, &midiVolume_, &midiExpression_, &midiBrightness_},
         [this](juce::Component* component) { addAndMakeVisible(component); });
@@ -798,19 +828,63 @@ EffectsPanel::EffectsPanel(OpenEdmKickProcessor& processor)
         sectionLocks_.push_back(std::make_unique<SectionLock>(processor.parameters, "fx_" + juce::String(i), groups[i]));
         addAndMakeVisible(*sectionLocks_.back());
     });
-    reverseMode_.setTooltip("Reverse on defaults to CC20 and ends at the next quarter-note boundary. Right-click to reassign.");
-    highPassMidi_.setTooltip("High-pass MIDI activation. CC21 enables the high-pass filter for incoming hits.");
-    highPassSync_.setTooltip("High-pass sync starts an automated host-tempo sweep. The separate MIDI activation defaults to CC21.");
-    lowPassMidi_.setTooltip("Low-pass MIDI activation. CC22 enables the low-pass filter for incoming hits.");
-    lowPassSync_.setTooltip("Low-pass sync starts an automated host-tempo sweep. The separate MIDI activation defaults to CC22.");
+    highPassMidi_.setTooltip("Sweep the high-pass filter in time with the host. CC21 also turns the sweep on and off.");
+    lowPassMidi_.setTooltip("Sweep the low-pass filter in time with the host. CC22 also turns the sweep on and off.");
     setAdvancedMode(false);
+    refreshActivity();
+    startTimerHz(10);
+}
+
+void EffectsPanel::refreshActivity() {
+    auto& routing = processor_.routing();
+    const auto value = [&routing](const char* id) { return routing.displayValue(id); };
+    const bool reverseMidi = value(params::kReverseEnabled) >= 0.5f;
+    showActivity(reverseMode_, !reverseMidi,
+                 "Reverse on defaults to CC20 and ends at the next quarter-note boundary. Right-click to reassign.",
+                 "Reverse MIDI is on, so each hit reverses to the end of its beat. Turn off Reverse MIDI to pick a mode.");
+    showActivity(reverseMix_, reverseMidi || value(params::kReverseMode) >= 0.5f, {},
+                 "Pick a Reverse mode or turn on Reverse MIDI to use this mix.");
+
+    // A MIDI switch plays its effect at full mix while the mix is 0%. Above 0% the switch has no effect.
+    const auto showSwitched = [&value](Knob& mix, Toggle& midi, const char* mixId, const char* midiId, const juce::String& mixName) {
+        const bool switchedOn = value(midiId) >= 0.5f;
+        const bool mixed = value(mixId) > 0.0f;
+        mix.showEffectiveText(switchedOn && !mixed ? "100% (on)" : "");
+        showActivity(midi, !mixed, {}, mixName + " is above 0%, so the effect plays already. Set " + mixName
+                                           + " to 0% to let this switch play it at full mix.");
+        return switchedOn || mixed;
+    };
+    const bool patternCrush = value(params::kAutoEnabled) >= 0.5f && value(params::kAutoBypass) < 0.5f
+        && processor_.currentAutoSlotSettings().crushSweep > 0.0f;
+    const bool crushing = showSwitched(crushMix_, crushEnabled_, params::kCrushMix, params::kCrushEnabled, "Crush mix") || patternCrush;
+    showActivity(crushRate_, crushing, {}, "Raise Crush mix or turn on Crush MIDI to hear the crusher.");
+    showActivity(crushBits_, crushing, {}, "Raise Crush mix or turn on Crush MIDI to hear the crusher.");
+    const bool stuttering = showSwitched(stutterMix_, stutterEnabled_, params::kStutterMix, params::kStutterEnabled, "Stutter mix");
+    showActivity(stutterRate_, stuttering, {}, "Raise Stutter mix or turn on Stutter MIDI to hear the stutter.");
+    const bool gating = showSwitched(gateMix_, gateEnabled_, params::kGateMix, params::kGateEnabled, "Gate depth");
+    showActivity(gateRate_, gating, {}, "Raise Gate depth or turn on Gate MIDI to hear the gate.");
+    showActivity(pumpRate_, value(params::kPumpMix) > 0.0f, {}, "Raise Pump depth to hear the pump.");
+
+    // A sweep runs from the bypass end to the cutoff, or to the sweep limit while the cutoff is Off.
+    const bool highSweep = value(params::kHighPassMidi) >= 0.5f || value(params::kHighPassSyncEnabled) >= 0.5f;
+    const float highCutoff = value(params::kHighPass);
+    const float highTop = highCutoff > core::ToneFilter::kHighPassBypassHz + 0.5f ? highCutoff : core::ToneFilter::kHighPassSweepTopHz;
+    const auto highSweepText = "Sweep " + params::formatHz(highTop);
+    highPass_.showEffectiveText(highSweep ? highSweepText : juce::String());
+    showActivity(highPassSyncRate_, highSweep, {}, "Turn on High-pass sweep to use this rate.");
+    const bool lowSweep = value(params::kLowPassMidi) >= 0.5f || value(params::kLowPassSyncEnabled) >= 0.5f;
+    const float lowCutoff = value(params::kLowPass);
+    const float lowFloor = lowCutoff < core::ToneFilter::kLowPassBypassHz - 1.0f ? lowCutoff : core::ToneFilter::kLowPassSweepFloorHz;
+    const auto lowSweepText = "Sweep " + params::formatHz(lowFloor);
+    lowPass_.showEffectiveText(lowSweep ? lowSweepText : juce::String());
+    showActivity(lowPassSyncRate_, lowSweep, {}, "Turn on Low-pass sweep to use this rate.");
 }
 
 void EffectsPanel::setAdvancedMode(bool advanced) {
     advancedMode_ = advanced;
     setControlsVisible({ &crushRate_, &crushBits_, &stutterRate_, &gateRate_, &pumpRate_, &pumpMix_,
-                         &highPass_, &lowPass_, &highPassSync_, &highPassSyncRate_, &lowPassSync_,
-                         &lowPassSyncRate_, &midiVolume_, &midiExpression_, &midiBrightness_ }, advanced);
+                         &highPass_, &lowPass_, &highPassSyncRate_, &lowPassSyncRate_,
+                         &midiVolume_, &midiExpression_, &midiBrightness_ }, advanced);
     resized();
     repaint();
 }
@@ -856,8 +930,8 @@ void EffectsPanel::resized() {
     layoutRow(cards[2].removeFromTop(rhythmRow), { &gateEnabled_, &gateRate_, &gateMix_ });
     layoutRow(cards[2], { &pumpRate_, &pumpMix_ });
     const int third = cards[3].getHeight() / 3;
-    layoutRow(cards[3].removeFromTop(third), { &highPassMidi_, &highPass_, &highPassSync_, &highPassSyncRate_ });
-    layoutRow(cards[3].removeFromTop(third), { &lowPassMidi_, &lowPass_, &lowPassSync_, &lowPassSyncRate_ });
+    layoutRow(cards[3].removeFromTop(third), { &highPassMidi_, &highPass_, &highPassSyncRate_ });
+    layoutRow(cards[3].removeFromTop(third), { &lowPassMidi_, &lowPass_, &lowPassSyncRate_ });
     layoutRow(cards[3], { &midiVolume_, &midiExpression_, &midiBrightness_ });
 }
 

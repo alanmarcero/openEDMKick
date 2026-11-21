@@ -469,8 +469,8 @@ void KickEngine::process(
         };
         const float hpBase = settings.effects.highPassHz;
         const float lpBase = settings.effects.lowPassHz;
-        const float hpCeiling = hpBase > ToneFilter::kHighPassBypassHz + 0.5f ? hpBase : 8000.0f;
-        const float lpFloor = lpBase < ToneFilter::kLowPassBypassHz - 1.0f ? lpBase : 200.0f;
+        const float hpCeiling = hpBase > ToneFilter::kHighPassBypassHz + 0.5f ? hpBase : ToneFilter::kHighPassSweepTopHz;
+        const float lpFloor = lpBase < ToneFilter::kLowPassBypassHz - 1.0f ? lpBase : ToneFilter::kLowPassSweepFloorHz;
         float highPassTarget = hpBase;
         float lowPassTarget = lpBase;
         if (highPassSync)

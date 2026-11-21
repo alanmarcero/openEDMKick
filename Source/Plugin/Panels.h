@@ -36,7 +36,7 @@ private:
     bool clipped_ = false;
 };
 
-class KickSynthPanel final : public juce::Component, private juce::Value::Listener {
+class KickSynthPanel final : public juce::Component, private juce::Value::Listener, private juce::Timer {
 public:
     explicit KickSynthPanel(OpenEdmKickProcessor& processor);
     ~KickSynthPanel() override;
@@ -44,9 +44,11 @@ public:
     void resized() override;
     void setAdvancedMode(bool advanced);
     [[nodiscard]] bool isAdvancedMode() const noexcept { return advancedMode_; }
+    void refreshActivity();
 
 private:
     void valueChanged(juce::Value&) override { setAdvancedMode(advancedMode_); }
+    void timerCallback() override { refreshActivity(); }
     [[nodiscard]] std::array<juce::Rectangle<int>, 7> sections() const;
     bool heldNotes_ = false;
     bool advancedMode_ = false;
@@ -151,6 +153,7 @@ public:
     void selectSlot(int slot);
     void setAdvancedMode(bool advanced);
     [[nodiscard]] bool isAdvancedMode() const noexcept { return advancedMode_; }
+    void refreshActivity();
 
 private:
     void timerCallback() override;
@@ -175,16 +178,19 @@ private:
     juce::ParameterAttachment slotWatcher_;
 };
 
-class EffectsPanel final : public juce::Component {
+class EffectsPanel final : public juce::Component, private juce::Timer {
 public:
     explicit EffectsPanel(OpenEdmKickProcessor& processor);
     void paint(juce::Graphics& g) override;
     void resized() override;
     void setAdvancedMode(bool advanced);
     [[nodiscard]] bool isAdvancedMode() const noexcept { return advancedMode_; }
+    void refreshActivity();
 
 private:
+    void timerCallback() override { refreshActivity(); }
     [[nodiscard]] std::array<juce::Rectangle<int>, 4> sections() const;
+    OpenEdmKickProcessor& processor_;
     bool advancedMode_ = false;
     Toggle reverseEnabled_, crushEnabled_, stutterEnabled_, gateEnabled_, highPassMidi_, lowPassMidi_;
     Knob midiVolume_, midiExpression_, midiBrightness_;

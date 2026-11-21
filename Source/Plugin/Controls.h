@@ -18,10 +18,13 @@ public:
     void paint(juce::Graphics&) override;
     void mouseDown(const juce::MouseEvent&) override;
     void refresh();
+    // A merged switch shows on while either parameter is on.
+    void mirrorPartner(juce::String id) { partnerId_ = std::move(id); }
 private:
     void timerCallback() override { refresh(); }
     Apvts& state_;
     juce::String id_;
+    juce::String partnerId_;
     juce::Component& owner_;
     juce::Component& input_;
     bool attachChildren_ = true;
@@ -59,11 +62,13 @@ public:
     void resized() override;
     void bind(Apvts& state, const juce::String& parameterId);
     void setTooltip(const juce::String& text);
+    void showEffectiveText(const juce::String& text);
     void refreshMidiMirror() { routing_->refresh(); }
     [[nodiscard]] juce::Slider& slider() noexcept { return slider_; }
 
 private:
     RoutedSlider slider_;
+    juce::String effectiveText_;
     std::unique_ptr<ParameterControl> routing_;
     juce::Label title_;
     Apvts* state_ = nullptr;
@@ -142,7 +147,8 @@ private:
 
 class Toggle : public juce::Component {
 public:
-    Toggle(Apvts& state, const juce::String& parameterId, const juce::String& text, juce::Colour accent);
+    Toggle(Apvts& state, const juce::String& parameterId, const juce::String& text, juce::Colour accent,
+           const juce::String& partnerId = {});
     void resized() override;
     void setTooltip(const juce::String& text);
     [[nodiscard]] juce::TextButton& button() noexcept { return button_; }

@@ -87,7 +87,8 @@ void ParameterControl::mouseDown(const juce::MouseEvent& event) {
 void ParameterControl::refresh() {
     auto& routing = static_cast<OpenEdmKickProcessor&>(state_.processor).routing();
     {
-        const float value = routing.displayValue(id_);
+        float value = routing.displayValue(id_);
+        if (partnerId_.isNotEmpty()) value = std::max(value, routing.displayValue(partnerId_));
         if (auto* slider = dynamic_cast<juce::Slider*>(&input_)) slider->setValue(value, juce::dontSendNotification);
         if (auto* choice = dynamic_cast<juce::ComboBox*>(&input_)) choice->setSelectedItemIndex(static_cast<int>(value), juce::dontSendNotification);
         if (auto* button = dynamic_cast<juce::Button*>(&input_)) button->setToggleState(value >= 0.5f, juce::dontSendNotification);
@@ -140,7 +141,10 @@ void Knob::bind(Apvts& state, const juce::String& parameterId) {
     slider_.setRange(range.start, range.end, range.interval);
     slider_.setSkewFactor(range.skew, range.symmetricSkew);
     slider_.setDoubleClickReturnValue(true, parameter->convertFrom0to1(parameter->getDefaultValue()));
-    slider_.textFromValueFunction = [parameter](double value) { return parameter->getText(parameter->convertTo0to1(static_cast<float>(value)), 64); };
+    slider_.textFromValueFunction = [this, parameter](double value) {
+        if (effectiveText_.isNotEmpty()) return effectiveText_;
+        return parameter->getText(parameter->convertTo0to1(static_cast<float>(value)), 64);
+    };
     slider_.valueFromTextFunction = [parameter](const juce::String& text) { return parameter->convertFrom0to1(parameter->getValueForText(text)); };
     attachment_ = std::make_unique<juce::ParameterAttachment>(*parameter,
         [this](float value) { slider_.setValue(value, juce::dontSendNotification); });
@@ -159,6 +163,13 @@ void Knob::bind(Apvts& state, const juce::String& parameterId) {
 }
 
 void Knob::setTooltip(const juce::String& text) { slider_.setTooltip(text); title_.setTooltip(text); }
+
+// Shows what plays when a switch overrides the knob, such as "100% (on)". Empty text shows the value.
+void Knob::showEffectiveText(const juce::String& text) {
+    if (text == effectiveText_) return;
+    effectiveText_ = text;
+    slider_.updateText();
+}
 
 void Knob::resized() {
     auto area = getLocalBounds();
@@ -475,20 +486,35 @@ void Choice::resized() {
     box_.setBounds(area.withHeight(std::min(40, area.getHeight())).withY(area.getY() + (area.getHeight() - std::min(40, area.getHeight())) / 2));
 }
 
-Toggle::Toggle(Apvts& state, const juce::String& parameterId, const juce::String& text, juce::Colour accent)
+Toggle::Toggle(Apvts& state, const juce::String& parameterId, const juce::String& text, juce::Colour accent,
+               const juce::String& partnerId)
     : button_(text) {
     button_.setComponentID(parameterId);
     button_.setClickingTogglesState(true);
     button_.setColour(juce::TextButton::buttonOnColourId, accent);
     addAndMakeVisible(button_);
     routing_ = std::make_unique<ParameterControl>(state, parameterId, *this, button_);
+    routing_->mirrorPartner(partnerId);
     addAndMakeVisible(*routing_);
     attachment_ = std::make_unique<juce::ParameterAttachment>(*state.getParameter(parameterId),
         [this](float value) { button_.setToggleState(value >= 0.5f, juce::dontSendNotification); });
-    button_.onClick = [this, &state, parameterId] {
+    button_.onClick = [this, &state, parameterId, partnerId] {
         const float value = button_.getToggleState() ? 1.0f : 0.0f;
-        static_cast<OpenEdmKickProcessor&>(state.processor).routing().manualValue(parameterId, value);
-        attachment_->setValueAsCompleteGesture(value);
+        auto& routing = static_cast<OpenEdmKickProcessor&>(state.processor).routing();
+        routing.manualValue(parameterId, value);
+        auto* partner = state.getParameter(partnerId);
+        if (partner == nullptr || value > 0.5f) {
+            attachment_->setValueAsCompleteGesture(value);
+            return;
+        }
+        // Switching a merged switch off turns off both parameters in one undo step.
+        attachment_->beginGesture();
+        attachment_->setValueAsPartOfGesture(value);
+        routing.manualValue(partnerId, 0.0f);
+        partner->beginChangeGesture();
+        partner->setValueNotifyingHost(0.0f);
+        partner->endChangeGesture();
+        attachment_->endGesture();
     };
     attachment_->sendInitialUpdate();
 }

@@ -56,6 +56,13 @@ void setParam(OpenEdmKickProcessor& processor, const juce::String& id, float val
     parameter->setValueNotifyingHost(parameter->convertTo0to1(value));
 }
 
+juce::Component* findId(juce::Component& root, const juce::String& id) {
+    if (root.getComponentID() == id) return &root;
+    for (auto* child : root.getChildren())
+        if (auto* found = findId(*child, id)) return found;
+    return nullptr;
+}
+
 void checkInteractiveTargets(juce::Component& component) {
     for (auto* child : component.getChildren()) {
         if (!child->isVisible()) continue;
@@ -320,6 +327,71 @@ TEST_CASE("Every visible control shows the name its host parameter uses", "[plug
         visit(visit, *native);
     });
     CHECK(named > 80);
+}
+
+TEST_CASE("Effect switches show what plays, and overridden settings dim", "[plugin][ui][effects]") {
+    juce::ScopedJuceInitialiser_GUI gui;
+    OpenEdmKickProcessor processor;
+    openedmkick::ui::EffectsPanel effects(processor);
+    effects.setAdvancedMode(true);
+    effects.setSize(1040, 920);
+    auto* crushMix = dynamic_cast<juce::Slider*>(findId(effects, "crush_mix"));
+    auto* crushMidi = findId(effects, "crush_on");
+    auto* crushRate = findId(effects, "crush_rate");
+    auto* reverseMode = findId(effects, "reverse_mode");
+    REQUIRE(crushMix != nullptr);
+    REQUIRE(crushMidi != nullptr);
+    REQUIRE(crushRate != nullptr);
+    REQUIRE(reverseMode != nullptr);
+    CHECK(crushRate->getParentComponent()->getAlpha() < 0.5f);
+    setParam(processor, "crush_on", 1.0f);
+    effects.refreshActivity();
+    CHECK(crushMix->getTextFromValue(crushMix->getValue()) == "100% (on)");
+    CHECK(crushRate->getParentComponent()->getAlpha() == 1.0f);
+    CHECK(crushMidi->getParentComponent()->getAlpha() == 1.0f);
+    setParam(processor, "crush_mix", 0.4f);
+    effects.refreshActivity();
+    CHECK(crushMix->getTextFromValue(crushMix->getValue()) == "40%");
+    CHECK(crushMidi->getParentComponent()->getAlpha() < 0.5f);
+    CHECK(reverseMode->getParentComponent()->getAlpha() == 1.0f);
+    setParam(processor, "reverse_on", 1.0f);
+    effects.refreshActivity();
+    CHECK(reverseMode->getParentComponent()->getAlpha() < 0.5f);
+
+    auto* sweep = dynamic_cast<juce::Button*>(findId(effects, "hp_midi_on"));
+    auto* highPass = dynamic_cast<juce::Slider*>(findId(effects, "hp_cutoff"));
+    auto* sweepRouting = dynamic_cast<openedmkick::ui::ParameterControl*>(findId(effects, "routing_hp_midi_on"));
+    REQUIRE(sweep != nullptr);
+    REQUIRE(highPass != nullptr);
+    REQUIRE(sweepRouting != nullptr);
+    setParam(processor, "hp_sync_on", 1.0f);
+    sweepRouting->refresh();
+    effects.refreshActivity();
+    CHECK(sweep->getToggleState());
+    CHECK(highPass->getTextFromValue(highPass->getValue()) == "Sweep 8.00 kHz");
+    sweep->setToggleState(false, juce::dontSendNotification);
+    sweep->onClick();
+    CHECK(processor.parameters.getRawParameterValue("hp_sync_on")->load() < 0.5f);
+    CHECK(processor.parameters.getRawParameterValue("hp_midi_on")->load() < 0.5f);
+}
+
+TEST_CASE("Kick settings that have no effect draw dim and say what turns them on", "[plugin][ui]") {
+    juce::ScopedJuceInitialiser_GUI gui;
+    OpenEdmKickProcessor processor;
+    openedmkick::ui::KickSynthPanel kick(processor);
+    kick.setSize(1040, 576);
+    auto* ceiling = dynamic_cast<juce::Slider*>(findId(kick, "ceiling"));
+    auto* sampleLevel = findId(kick, "click_sample_level");
+    REQUIRE(ceiling != nullptr);
+    REQUIRE(sampleLevel != nullptr);
+    CHECK(ceiling->getParentComponent()->getAlpha() == 1.0f);
+    CHECK(sampleLevel->getParentComponent()->getAlpha() < 0.5f);
+    setParam(processor, "limiter", 0.0f);
+    setParam(processor, "click_sample_on", 1.0f);
+    kick.refreshActivity();
+    CHECK(ceiling->getParentComponent()->getAlpha() < 0.5f);
+    CHECK(ceiling->getTooltip() == "Turn on Limiter to use Ceiling.");
+    CHECK(sampleLevel->getParentComponent()->getAlpha() == 1.0f);
 }
 
 TEST_CASE("Double-click returns every visible dial to its default", "[plugin][ui]") {
