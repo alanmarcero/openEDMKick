@@ -14,7 +14,7 @@ namespace theme = openedmkick::theme;
 namespace presets = openedmkick::presets;
 
 constexpr int kEditorWidth = 1080;
-constexpr int kEditorHeight = 716;
+constexpr int kEditorHeight = 764;
 
 std::vector<juce::String> factoryPresetNames() {
     std::vector<juce::String> names;

@@ -1,6 +1,6 @@
 # openKicker v3.7.0 native editor screenshots
 
-The images come from the compiled JUCE editor. Kick, held-note mode, Layers, and Pattern use the 1080 × 716 default window. Effects uses a taller window to show all advanced controls.
+The images come from the compiled JUCE editor. Kick, held-note mode, Layers, and Pattern use the 1080 × 764 default window. Effects uses a taller window to show all advanced controls.
 
 - [Kick](../assets/openKicker-kick.png) shows the first Uplifting preset, C2 waveform, locked Dive time, and Harmonics assigned to CC35.
 - [Hold MIDI notes](../assets/openKicker-held.png) shows the MIDI envelope in the compact editor.

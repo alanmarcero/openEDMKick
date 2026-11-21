@@ -41,7 +41,7 @@ void ParameterControl::paint(juce::Graphics& g) {
     const bool locked = routing.isLocked(id_);
     const int cc = routing.assignment(id_);
     juce::Graphics::ScopedSaveState state(g);
-    if (cc < 0) g.setOrigin((getWidth() - 40) / 2, 0);
+    g.setOrigin((getWidth() - 40) / 2, cc < 0 ? 0 : -6);
     const auto ink = locked ? theme::kMint : theme::kTextDim;
     g.setColour(ink.withAlpha(locked || isMouseOver() ? 1.0f : 0.65f));
     juce::Path shackle;
@@ -53,14 +53,13 @@ void ParameterControl::paint(juce::Graphics& g) {
     g.drawRoundedRectangle(13, 19, 13, 10, 2, 1.6f);
     if (cc >= 0) {
         g.setColour(theme::kViolet);
-        g.setFont(juce::FontOptions(11.0f));
-        g.drawFittedText("CC " + juce::String(cc),
-                         getLocalBounds().withTrimmedLeft(40), juce::Justification::centredLeft, 1);
+        g.setFont(juce::FontOptions(10.5f));
+        g.drawText("CC " + juce::String(cc), 0, 30, 40, 12, juce::Justification::centred);
     }
 }
 void ParameterControl::mouseDown(const juce::MouseEvent& event) {
     auto& routing = static_cast<OpenEdmKickProcessor&>(state_.processor).routing();
-    if (!event.mods.isPopupMenu() && !(event.eventComponent == this && routing.assignment(id_) >= 0 && event.position.x >= 40)) {
+    if (!event.mods.isPopupMenu() && !(event.eventComponent == this && routing.assignment(id_) >= 0 && event.position.y >= 24)) {
         if (event.eventComponent == this) routing.setLocked(id_, !routing.isLocked(id_));
         repaint();
         return;
@@ -163,7 +162,7 @@ void Knob::setTooltip(const juce::String& text) { slider_.setTooltip(text); titl
 
 void Knob::resized() {
     auto area = getLocalBounds();
-    routing_->setBounds(area.removeFromBottom(kRoutingHeight).withSizeKeepingCentre(std::min(area.getWidth(), 82), kRoutingHeight));
+    routing_->setBounds(area.removeFromRight(kRoutingHeight).removeFromBottom(kRoutingHeight));
     title_.setBounds(area.removeFromTop(kLabelHeight));
     const int boxHeight = std::min(kKnobValueHeight, std::max(0, area.getHeight() / 4));
     slider_.setTextBoxStyle(juce::Slider::TextBoxBelow, false, std::min(78, area.getWidth()), boxHeight);

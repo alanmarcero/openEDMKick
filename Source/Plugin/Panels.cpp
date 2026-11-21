@@ -267,7 +267,8 @@ std::array<juce::Rectangle<int>, 7> KickSynthPanel::sections() const {
     area.removeFromTop(gap);
     const int half = (area.getWidth() - kCardGap) / 2;
     const auto dive = top.removeFromLeft(half);
-    const auto transient = area.removeFromLeft(half);
+    // The transient row holds six controls, so it gets 60% of the width.
+    const auto transient = area.removeFromLeft((area.getWidth() - kCardGap) * 3 / 5);
     const auto tail = area.withTrimmedLeft(kCardGap);
     if (!advancedMode_ && heldNotes_) adsr = tail;
     return { dive, top.withTrimmedLeft(kCardGap), transient, tail, adsr, output, scope };

@@ -194,7 +194,7 @@ TEST_CASE("Editor shows the new sound pages and current MIDI note", "[plugin][ui
     std::unique_ptr<juce::AudioProcessorEditor> editor(processor.createEditor());
     REQUIRE(editor != nullptr);
     REQUIRE(editor->getWidth() == 1080);
-    REQUIRE(editor->getHeight() == 716);
+    REQUIRE(editor->getHeight() == 764);
     auto* kickEditor = dynamic_cast<OpenEdmKickEditor*>(editor.get());
     REQUIRE(kickEditor != nullptr);
     REQUIRE(processor.currentMidiNote() == 69);
@@ -229,6 +229,43 @@ TEST_CASE("Editor shows the new sound pages and current MIDI note", "[plugin][ui
         tab->onClick();
         checkInteractiveTargets(*kickEditor);
     }
+}
+
+TEST_CASE("Dials stay at least 40 px and controls do not overlap at the default size", "[plugin][ui][layout]") {
+    juce::ScopedJuceInitialiser_GUI gui;
+    OpenEdmKickProcessor processor;
+    std::unique_ptr<juce::AudioProcessorEditor> editor(processor.createEditor());
+    auto* native = dynamic_cast<OpenEdmKickEditor*>(editor.get());
+    REQUIRE(native != nullptr);
+    int dials = 0;
+    const auto visit = [&](auto&& self, juce::Component& parent) -> void {
+        std::vector<juce::Component*> shown;
+        std::ranges::copy_if(parent.getChildren(), std::back_inserter(shown), [](auto* child) { return child->isVisible(); });
+        std::ranges::for_each(shown, [&](juce::Component* child) {
+            CAPTURE(parent.getComponentID(), child->getComponentID(), child->getName());
+            CHECK(std::ranges::none_of(shown, [child](juce::Component* other) {
+                return other != child && other->getBounds().intersects(child->getBounds());
+            }));
+            if (auto* slider = dynamic_cast<juce::Slider*>(child); slider != nullptr && slider->isRotary()) {
+                const auto dial = slider->getLookAndFeel().getSliderLayout(*slider).sliderBounds;
+                CHECK(std::min(dial.getWidth(), dial.getHeight()) >= 40);
+                ++dials;
+            }
+            self(self, *child);
+        });
+    };
+    const std::array<std::pair<bool, float>, 3> views{ { { false, 0.0f }, { false, 1.0f }, { true, 0.0f } } };
+    std::ranges::for_each(views, [&](const auto& view) {
+        setParam(processor, "amp_enabled", view.second);
+        native->setAdvancedView(view.first);
+        std::ranges::for_each(std::array{ "kick", "layers", "pattern", "fx" }, [&](const char* page) {
+            dynamic_cast<juce::TextButton*>(native->findChildWithID(juce::String("page_") + page))->onClick();
+            visit(visit, *native);
+            checkInteractiveTargets(*native);
+        });
+    });
+    CHECK(native->getHeight() == 764);
+    CHECK(dials > 100);
 }
 
 TEST_CASE("Double-click returns every visible dial to its default", "[plugin][ui]") {
@@ -944,7 +981,7 @@ TEST_CASE("Capture the compiled native editor workspaces", "[capture]") {
     auto* native = dynamic_cast<OpenEdmKickEditor*>(editor.get());
     REQUIRE(native != nullptr);
     CHECK(native->getWidth() == 1080);
-    CHECK(native->getHeight() == 716);
+    CHECK(native->getHeight() == 764);
     const juce::File destination(directory);
     REQUIRE(destination.createDirectory().wasOk());
     const std::array<juce::String, 5> pages{"kick", "held", "layers", "pattern", "fx"};
@@ -955,7 +992,7 @@ TEST_CASE("Capture the compiled native editor workspaces", "[capture]") {
         REQUIRE(tab != nullptr);
         tab->onClick();
         native->setAdvancedView(page == "fx");
-        native->setSize(1080, page == "fx" ? 1160 : 716);
+        native->setSize(1080, page == "fx" ? 1160 : 764);
         checkInteractiveTargets(*native);
         const auto image = native->createComponentSnapshot(native->getLocalBounds());
         REQUIRE(image.getWidth() == 1080);
@@ -976,10 +1013,10 @@ TEST_CASE("Capture the factory default editor at its default size", "[preview]")
     std::unique_ptr<juce::AudioProcessorEditor> editor(processor.createEditor());
     REQUIRE(editor != nullptr);
     CHECK(editor->getWidth() == 1080);
-    CHECK(editor->getHeight() == 716);
+    CHECK(editor->getHeight() == 764);
     const auto image = editor->createComponentSnapshot(editor->getLocalBounds());
     REQUIRE(image.getWidth() == 1080);
-    REQUIRE(image.getHeight() == 716);
+    REQUIRE(image.getHeight() == 764);
     const juce::File destination(path);
     REQUIRE(destination.getParentDirectory().createDirectory().wasOk());
     auto output = destination.createOutputStream();
