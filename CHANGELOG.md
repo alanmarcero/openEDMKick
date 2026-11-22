@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.10.2
+
+- **Parameter Locking:** Add per-parameter locking across every plugin parameter, persisted in session state and preserved across preset loads and randomization.
+
 ## v3.10.1
 
 - **UI & Suite Fixes:** UI polish, full-size kick knobs, truncated preset saves, double-click resets, unit formatting and typed-value entry, per-slot A/B undo, dBFS post-limiter meter, and screen-reader titles.
