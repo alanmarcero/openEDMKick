@@ -97,6 +97,35 @@ juce::NormalisableRange<float> skewedRange(float min, float max, float centre) {
     return range;
 }
 
+juce::NormalisableRange<float> noteSnappedRange(int minMidi, int maxMidi) {
+    const float minHz = eqNoteToHz(minMidi);
+    const float maxHz = eqNoteToHz(maxMidi);
+    return {
+        minHz,
+        maxHz,
+        [minMidi, maxMidi](float, float, float proportion) {
+            const float clamped = std::clamp(proportion, 0.0f, 1.0f);
+            const int midi = juce::roundToInt(static_cast<float>(minMidi)
+                + clamped * static_cast<float>(maxMidi - minMidi));
+            return eqNoteToHz(std::clamp(midi, minMidi, maxMidi));
+        },
+        [minMidi, maxMidi](float, float, float value) {
+            const int midi = eqHzToNearestMidi(value, minMidi, maxMidi);
+            return static_cast<float>(midi - minMidi) / static_cast<float>(maxMidi - minMidi);
+        },
+        [minMidi, maxMidi](float, float, float value) {
+            return eqNoteToHz(eqHzToNearestMidi(value, minMidi, maxMidi));
+        }
+    };
+}
+
+Format noteFormat(int minMidi, int maxMidi) {
+    return {
+        [minMidi, maxMidi](float hz, int) { return formatEqNote(hz, minMidi, maxMidi); },
+        [minMidi, maxMidi](const juce::String& text) { return parseEqNoteOrHz(text, minMidi, maxMidi); }
+    };
+}
+
 void addFloat(Layout& layout, const juce::String& id, const juce::String& name,
               juce::NormalisableRange<float> range, float defaultValue, const Format& format,
               int version = kVersion) {
@@ -140,6 +169,43 @@ juce::String formatHz(float hz) {
     if (!std::isfinite(hz)) return "0 Hz";
     if (std::round(hz) >= 1000.0f) return juce::String(hz / 1000.0f, 2) + " kHz";
     return juce::String(juce::roundToInt(hz)) + " Hz";
+}
+
+float eqNoteToHz(int midiNote) noexcept {
+    const int clamped = std::clamp(midiNote, 0, 144);
+    return 440.0f * std::exp2((static_cast<float>(clamped) - 69.0f) / 12.0f);
+}
+
+int eqHzToNearestMidi(float hz, int minMidi, int maxMidi) noexcept {
+    if (!std::isfinite(hz) || hz <= 0.0f) return minMidi;
+    const int midi = juce::roundToInt(69.0f + 12.0f * std::log2(hz / 440.0f));
+    return std::clamp(midi, minMidi, maxMidi);
+}
+
+juce::String formatEqNote(float hz, int minMidi, int maxMidi) {
+    static constexpr std::array<const char*, 12> kNames{
+        "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"
+    };
+    const int midi = eqHzToNearestMidi(hz, minMidi, maxMidi);
+    const int octave = midi / 12 - 1;
+    return juce::String(kNames[static_cast<size_t>(midi % 12)]) + juce::String(octave);
+}
+
+float parseEqNoteOrHz(const juce::String& text, int minMidi, int maxMidi) {
+    const auto trimmed = text.trim();
+    if (trimmed.isEmpty()) return eqNoteToHz(minMidi);
+    const int semitone = juce::String("C D EF G A B").indexOfIgnoreCase(trimmed.substring(0, 1));
+    if (semitone >= 0) {
+        const auto afterLetter = trimmed.substring(1);
+        const int sharp = afterLetter.startsWithChar('#') ? 1 : 0;
+        const int flat = afterLetter.startsWithChar('b') ? 1 : 0;
+        const auto octaveText = afterLetter.substring(sharp + flat).trim();
+        if (octaveText.isNotEmpty() && (octaveText.containsOnly("-0123456789"))) {
+            const int midi = (octaveText.getIntValue() + 1) * 12 + semitone + sharp - flat;
+            return eqNoteToHz(std::clamp(midi, minMidi, maxMidi));
+        }
+    }
+    return eqNoteToHz(eqHzToNearestMidi(kParseHz(trimmed), minMidi, maxMidi));
 }
 
 juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout() {
@@ -267,11 +333,11 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout() {
     addFloat(layout, kSubOctave, "Sub Octave", { 0.0f, 1.0f }, 0.0f, kFormatPercent, 5);
     addFloat(layout, kClickPunch, "Transient Punch", { 0.0f, 1.0f }, 0.0f, kFormatPercent, 5);
     addFloat(layout, kStereoWidth, "Top Width", { 0.0f, 1.0f }, 0.0f, kFormatPercent, 5);
-    addFloat(layout, kEqLowFreq, "Low EQ Freq", skewedRange(25.0f, 400.0f, 90.0f), 80.0f, kFormatHz, 6);
+    addFloat(layout, kEqLowFreq, "Low EQ Freq", noteSnappedRange(kEqLowMinMidi, kEqLowMaxMidi), eqNoteToHz(40), noteFormat(kEqLowMinMidi, kEqLowMaxMidi), 6);
     addFloat(layout, kEqLowDb, "Low EQ Gain", { -12.0f, 12.0f, 0.1f }, 0.0f, kFormatDb, 6);
-    addFloat(layout, kEqMidFreq, "Mid EQ Freq", skewedRange(200.0f, 6000.0f, 1000.0f), 1000.0f, kFormatHz, 6);
+    addFloat(layout, kEqMidFreq, "Mid EQ Freq", noteSnappedRange(kEqMidMinMidi, kEqMidMaxMidi), eqNoteToHz(83), noteFormat(kEqMidMinMidi, kEqMidMaxMidi), 6);
     addFloat(layout, kEqMidDb, "Mid EQ Gain", { -12.0f, 12.0f, 0.1f }, 0.0f, kFormatDb, 6);
-    addFloat(layout, kEqHighFreq, "High EQ Freq", skewedRange(2000.0f, 18000.0f, 6000.0f), 7500.0f, kFormatHz, 6);
+    addFloat(layout, kEqHighFreq, "High EQ Freq", noteSnappedRange(kEqHighMinMidi, kEqHighMaxMidi), eqNoteToHz(118), noteFormat(kEqHighMinMidi, kEqHighMaxMidi), 6);
     addFloat(layout, kEqHighDb, "High EQ Gain", { -12.0f, 12.0f, 0.1f }, 0.0f, kFormatDb, 6);
     // Appended so older hosts keep the existing parameter order.
     addBool(layout, kClickSampleOn, "Sample Click", false, 7);

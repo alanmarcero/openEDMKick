@@ -235,9 +235,9 @@ KickSynthPanel::KickSynthPanel(OpenEdmKickProcessor& processor)
     subLevel_.setTooltip("Blend a clean fundamental under the kick body.");
     clickLevel_.setTooltip("Add a short beater transient ahead of the body.");
     clickSampleOn_.setTooltip("Mix a sample click with the transient. Off leaves existing sounds unchanged.");
-    eqLow_.setTooltip("Inner cap sets Low EQ gain (-12 to +12 dB); outer collar glides Low frequency smoothly.");
-    eqMid_.setTooltip("Inner cap sets Mid EQ gain (-12 to +12 dB); outer collar glides Mid frequency smoothly.");
-    eqHigh_.setTooltip("Inner cap sets High EQ gain (-12 to +12 dB); outer collar glides High frequency smoothly.");
+    eqLow_.setTooltip("Inner cap sets Low EQ gain (-12 to +12 dB); outer collar snaps Low EQ to notes (E1 to E3).");
+    eqMid_.setTooltip("Inner cap sets Mid EQ gain (-12 to +12 dB); outer collar snaps Mid EQ to notes (B4 to B6).");
+    eqHigh_.setTooltip("Inner cap sets High EQ gain (-12 to +12 dB); outer collar snaps High EQ to notes (A#7 to A#9).");
     ampEnabled_.setTooltip("Hold incoming MIDI notes until note-off and shape them with attack, decay, sustain and release.");
     ampEnabled_.button().getToggleStateValue().addListener(this);
     setAdvancedMode(false);

@@ -350,6 +350,16 @@ void DualEqKnob::paint(juce::Graphics& g) {
     g.setColour(ringColour);
     g.strokePath(value, juce::PathStrokeType(3.2f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 
+    // Mark root, +1 octave, and +2 octave positions on the outer note ring.
+    g.setColour(theme::kTextDim.withAlpha(0.55f));
+    for (const float markNorm : { 0.0f, 0.5f, 1.0f }) {
+        const float markAngle = startAngle + markNorm * (endAngle - startAngle);
+        const float innerTick = outerR - 3.0f;
+        const float outerTick = outerR + 3.0f;
+        g.drawLine(centre.x + innerTick * std::sin(markAngle), centre.y - innerTick * std::cos(markAngle),
+                   centre.x + outerTick * std::sin(markAngle), centre.y - outerTick * std::cos(markAngle), 1.1f);
+    }
+
     const float dotX = centre.x + outerR * std::sin(angle);
     const float dotY = centre.y - outerR * std::cos(angle);
     g.setColour(theme::kText);
@@ -362,12 +372,13 @@ void DualEqKnob::paint(juce::Graphics& g) {
     g.drawRoundedRectangle(freqPill.reduced(0.5f), 4.0f, 1.0f);
     g.setColour(theme::kText);
     g.setFont(juce::FontOptions(11.5f, juce::Font::bold));
-    g.drawFittedText(params::formatHz(freqHz_), freqPill.toNearestInt(), juce::Justification::centred, 1);
+    const auto freqText = freqParam != nullptr ? freqParam->getText(norm, 16) : params::formatHz(freqHz_);
+    g.drawFittedText(freqText, freqPill.toNearestInt(), juce::Justification::centred, 1);
 
     g.setColour(theme::kTextDim);
     g.setFont(juce::FontOptions(9.5f, juce::Font::bold));
     g.drawText("dB", dbRouting_->getBounds().getX(), dbRouting_->getY() - 2, dbRouting_->getWidth(), 11, juce::Justification::centred);
-    g.drawText("Hz", freqRouting_->getBounds().getX(), freqRouting_->getY() - 2, freqRouting_->getWidth(), 11, juce::Justification::centred);
+    g.drawText("Note", freqRouting_->getBounds().getX(), freqRouting_->getY() - 2, freqRouting_->getWidth(), 11, juce::Justification::centred);
 }
 
 void DualEqKnob::resized() {
@@ -441,8 +452,10 @@ void DualEqKnob::mouseDoubleClick(const juce::MouseEvent& event) {
 void DualEqKnob::mouseWheelMove(const juce::MouseEvent& event, const juce::MouseWheelDetails& wheel) {
     if (!hitsOuterRing(event.position)) return;
     auto* param = state_.getParameter(freqId_);
-    if (param == nullptr) return;
-    const float nextNorm = std::clamp(param->convertTo0to1(freqHz_) + wheel.deltaY * 0.08f, 0.0f, 1.0f);
+    if (param == nullptr || wheel.deltaY == 0.0f) return;
+    constexpr float kSemitoneStep = 1.0f / 24.0f;
+    const float direction = wheel.deltaY > 0.0f ? 1.0f : -1.0f;
+    const float nextNorm = std::clamp(param->convertTo0to1(freqHz_) + direction * kSemitoneStep, 0.0f, 1.0f);
     const float nextHz = param->convertFrom0to1(nextNorm);
     freqHz_ = nextHz;
     static_cast<OpenEdmKickProcessor&>(state_.processor).routing().manualValue(freqId_, nextHz);

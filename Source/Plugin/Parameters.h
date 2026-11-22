@@ -120,10 +120,21 @@ inline constexpr std::array<std::pair<int, int>, 9> kTimeSignatures = { {
     { 4, 4 }, { 3, 4 }, { 2, 4 }, { 5, 4 }, { 6, 4 }, { 6, 8 }, { 7, 8 }, { 9, 8 }, { 12, 8 }
 } };
 
+inline constexpr int kEqLowMinMidi = 28;   // E1 (41.20 Hz)
+inline constexpr int kEqLowMaxMidi = 52;   // E3 (164.81 Hz)
+inline constexpr int kEqMidMinMidi = 71;   // B4 (493.88 Hz)
+inline constexpr int kEqMidMaxMidi = 95;   // B6 (1975.53 Hz)
+inline constexpr int kEqHighMinMidi = 106; // A#7 (3729.31 Hz)
+inline constexpr int kEqHighMaxMidi = 130; // A#9 (14917.24 Hz)
+
 [[nodiscard]] juce::String autoSlotId(int slot, const juce::String& baseId);
 [[nodiscard]] juce::String layerId(int layer, const juce::String& baseId);
 [[nodiscard]] double beatsPerBarForSignature(int index) noexcept;
 [[nodiscard]] juce::String formatHz(float hz);
+[[nodiscard]] float eqNoteToHz(int midiNote) noexcept;
+[[nodiscard]] int eqHzToNearestMidi(float hz, int minMidi, int maxMidi) noexcept;
+[[nodiscard]] juce::String formatEqNote(float hz, int minMidi, int maxMidi);
+[[nodiscard]] float parseEqNoteOrHz(const juce::String& text, int minMidi, int maxMidi);
 [[nodiscard]] juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 
 } // namespace openedmkick::params

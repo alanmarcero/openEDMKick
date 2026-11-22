@@ -536,8 +536,8 @@ TEST_CASE("Typed units land on the typed value and displays use the suite format
     CHECK(shown("output", 3.0f) == "+3.0 dB");
     CHECK(shown("output", -0.04f) == "0.0 dB");
     CHECK(shown("knock_hz", 650.0f) == "650 Hz");
-    CHECK(shown("eq_low_freq", 80.0f) == "80 Hz");
-    CHECK_THAT(typed("eq_low_freq", shown("eq_low_freq", 80.0f).toRawUTF8()), WithinAbs(80.0f, 0.5f));
+    CHECK(shown("eq_low_freq", 82.41f) == "E2");
+    CHECK_THAT(typed("eq_low_freq", shown("eq_low_freq", 82.41f).toRawUTF8()), WithinAbs(82.41f, 0.1f));
     CHECK(shown("low_cut_hz", 25.0f) == "25 Hz");
     CHECK_THAT(typed("low_cut_hz", shown("low_cut_hz", 25.0f).toRawUTF8()), WithinAbs(25.0f, 0.5f));
     CHECK(shown("tone_hz", 6800.0f) == "6.80 kHz");
@@ -1634,4 +1634,28 @@ TEST_CASE("Every RangedAudioParameter can be locked, persists through state, and
         auto* restoredParam = dynamic_cast<juce::RangedAudioParameter*>(restored.parameters.getParameter(id));
         REQUIRE_THAT(restoredParam->getValue(), WithinAbs(expectedNormalized[i], 0.001f));
     }
+}
+
+TEST_CASE("EQ bands snap to chromatic notes across two octaves", "[plugin][eq][notes]") {
+    namespace params = openedmkick::params;
+    OpenEdmKickProcessor processor;
+
+    auto checkBand = [&](const char* id, int minMidi, int maxMidi, const char* lowName, const char* midName, const char* highName, const char* parsedName) {
+        auto* param = processor.parameters.getParameter(id);
+        REQUIRE(param != nullptr);
+        REQUIRE(maxMidi - minMidi == 24);
+        REQUIRE(param->getText(0.0f, 16) == lowName);
+        REQUIRE(param->getText(0.5f, 16) == midName);
+        REQUIRE(param->getText(1.0f, 16) == highName);
+
+        const float parsedNorm = param->getValueForText(parsedName);
+        REQUIRE(param->getText(parsedNorm, 16) == parsedName);
+        const float hz = param->convertFrom0to1(parsedNorm);
+        const float snapped = param->getNormalisableRange().snapToLegalValue(hz * 1.01f);
+        REQUIRE_THAT(snapped, WithinAbs(hz, 0.01f));
+    };
+
+    checkBand(params::kEqLowFreq, params::kEqLowMinMidi, params::kEqLowMaxMidi, "E1", "E2", "E3", "F#2");
+    checkBand(params::kEqMidFreq, params::kEqMidMinMidi, params::kEqMidMaxMidi, "B4", "B5", "B6", "F#5");
+    checkBand(params::kEqHighFreq, params::kEqHighMinMidi, params::kEqHighMaxMidi, "A#7", "A#8", "A#9", "C9");
 }
