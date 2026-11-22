@@ -710,8 +710,14 @@ void OpenEdmKickProcessor::copyAbSlot(bool aToB) {
 
 bool OpenEdmKickProcessor::applySoundState(const juce::MemoryBlock& state, const juce::String& userPresetName) {
     return changeSound("Sound", [&] {
-        if (!recallSound(state.getData(), static_cast<int>(state.getSize()), false, userPresetName.isNotEmpty())) return false;
-        if (userPresetName.isNotEmpty()) setUserPreset(userPresetName);
+        const bool isUserPreset = userPresetName.isNotEmpty();
+        const auto locked = isUserPreset ? routing_.lockedValues() : std::vector<ParameterRouting::LockedValue>{};
+        if (!recallSound(state.getData(), static_cast<int>(state.getSize()), false, isUserPreset)) return false;
+        if (isUserPreset) {
+            routing_.restoreLocked(locked);
+            for (const auto& entry : locked) routing_.setLocked(entry.entry->parameter->paramID, true);
+            setUserPreset(userPresetName);
+        }
         return true;
     });
 }

@@ -1571,3 +1571,67 @@ TEST_CASE("Look and feel dims disabled buttons, sliders, and combo boxes", "[plu
     CHECK(boxEnabledAlpha > 0.5f);
     CHECK(boxDisabledAlpha < boxEnabledAlpha * 0.6f);
 }
+
+TEST_CASE("Every RangedAudioParameter can be locked, persists through state, and survives preset loads", "[routing][plugin]") {
+    OpenEdmKickProcessor processor;
+
+    std::vector<juce::RangedAudioParameter*> rangedParams;
+    for (auto* param : processor.getParameters()) {
+        if (auto* ranged = dynamic_cast<juce::RangedAudioParameter*>(param))
+            rangedParams.push_back(ranged);
+    }
+    REQUIRE(rangedParams.size() > 100);
+
+    // Capture an unlocked user preset state before locking and modifying parameters.
+    OpenEdmKickProcessor otherPresetSource;
+    otherPresetSource.setCurrentProgram(3);
+    const juce::MemoryBlock userPresetState = otherPresetSource.captureSoundState();
+
+    // Set every parameter to a distinct non-preset normalized value and lock it.
+    std::vector<float> expectedNormalized(rangedParams.size());
+    for (size_t i = 0; i < rangedParams.size(); ++i) {
+        auto* ranged = rangedParams[i];
+        const float current = ranged->getValue();
+        const float target = ranged->isDiscrete()
+            ? (current < 0.5f ? 1.0f : 0.0f)
+            : (current < 0.5f ? 0.8f : 0.2f);
+        ranged->setValueNotifyingHost(target);
+        expectedNormalized[i] = ranged->getValue();
+        processor.routing().setLocked(ranged->paramID, true);
+        REQUIRE(processor.routing().isLocked(ranged->paramID));
+    }
+
+    // Verify all locks and values survive getStateInformation / setStateInformation.
+    juce::MemoryBlock saved;
+    processor.getStateInformation(saved);
+    OpenEdmKickProcessor restored;
+    restored.setStateInformation(saved.getData(), static_cast<int>(saved.getSize()));
+    for (size_t i = 0; i < rangedParams.size(); ++i) {
+        const auto& id = rangedParams[i]->paramID;
+        INFO("State restore failed for " << id);
+        REQUIRE(restored.routing().isLocked(id));
+        auto* restoredParam = dynamic_cast<juce::RangedAudioParameter*>(restored.parameters.getParameter(id));
+        REQUIRE(restoredParam != nullptr);
+        REQUIRE_THAT(restoredParam->getValue(), WithinAbs(expectedNormalized[i], 0.001f));
+    }
+
+    // Verify all locks and values survive factory preset load.
+    restored.setCurrentProgram(1);
+    for (size_t i = 0; i < rangedParams.size(); ++i) {
+        const auto& id = rangedParams[i]->paramID;
+        INFO("Factory preset load overwrote locked " << id);
+        REQUIRE(restored.routing().isLocked(id));
+        auto* restoredParam = dynamic_cast<juce::RangedAudioParameter*>(restored.parameters.getParameter(id));
+        REQUIRE_THAT(restoredParam->getValue(), WithinAbs(expectedNormalized[i], 0.001f));
+    }
+
+    // Verify all locks and values survive user preset load.
+    REQUIRE(restored.applySoundState(userPresetState, "Locked User Preset"));
+    for (size_t i = 0; i < rangedParams.size(); ++i) {
+        const auto& id = rangedParams[i]->paramID;
+        INFO("User preset load overwrote locked " << id);
+        REQUIRE(restored.routing().isLocked(id));
+        auto* restoredParam = dynamic_cast<juce::RangedAudioParameter*>(restored.parameters.getParameter(id));
+        REQUIRE_THAT(restoredParam->getValue(), WithinAbs(expectedNormalized[i], 0.001f));
+    }
+}
