@@ -95,8 +95,8 @@ void KickWaveformView::paint(juce::Graphics& g) {
     auto readout = area.removeFromLeft(136);
     const int note = processor_.currentMidiNote();
     g.setColour(theme::kText);
-    g.setFont(juce::FontOptions(compact ? 12.0f : 14.0f));
-    g.drawText("MIDI note", readout.removeFromTop(compact ? 16 : 21), juce::Justification::centredLeft);
+    g.setFont(juce::FontOptions(compact ? 13.0f : 14.5f));
+    g.drawText("MIDI note", readout.removeFromTop(compact ? 17 : 21), juce::Justification::centredLeft);
     g.setFont(juce::FontOptions(compact ? 32.0f : 40.0f, juce::Font::bold));
     g.drawText(noteLabel(note), readout.removeFromTop(compact ? 34 : 46), juce::Justification::centredLeft);
     g.setFont(juce::FontOptions(compact ? 14.0f : 17.0f));
@@ -104,10 +104,10 @@ void KickWaveformView::paint(juce::Graphics& g) {
 
     g.setFont(juce::FontOptions(14.0f, juce::Font::bold));
     g.drawText("One-shot waveform", area.removeFromTop(20), juce::Justification::centredLeft);
-    const auto scale = area.removeFromBottom(19);
+    const auto scale = area.removeFromBottom(20);
     const auto length = static_cast<size_t>(hit_.getNumSamples());
     const int durationMs = juce::roundToInt(1000.0 * static_cast<double>(length) / OpenEdmKickProcessor::hitSampleRate);
-    g.setFont(juce::FontOptions(12.0f));
+    g.setFont(juce::FontOptions(13.0f));
     g.drawText("0 ms", scale, juce::Justification::bottomLeft);
     g.drawText(juce::String(durationMs) + " ms", scale, juce::Justification::bottomRight);
     const auto plot = area.toFloat().reduced(1.0f, 2.0f);
@@ -120,7 +120,7 @@ void KickWaveformView::paint(juce::Graphics& g) {
         g.drawVerticalLine(juce::roundToInt(x), plot.getY(), plot.getBottom());
         if (x + 54 < plot.getRight()) {
             g.setColour(theme::kText);
-            g.drawText(juce::String(ms), juce::roundToInt(x) - 18, scale.getY(), 36, scale.getHeight(),
+            g.drawText(juce::String(ms), juce::roundToInt(x) - 20, scale.getY(), 40, scale.getHeight(),
                        juce::Justification::centredBottom);
         }
     }
@@ -336,7 +336,7 @@ void KickSynthPanel::paint(juce::Graphics& g) {
     auto mode = cards[6].withLeft(cards[6].getRight() - kMidiModeWidth);
     g.setColour(theme::kSteel);
     g.fillRoundedRectangle(mode.toFloat(), 9);
-    drawSmallLabel(g, mode.reduced(12, 4).removeFromTop(16), "MIDI playback", theme::kTextDim);
+    drawSmallLabel(g, mode.reduced(12, 4).removeFromTop(18), "MIDI playback", theme::kText.withAlpha(0.85f));
 }
 
 void KickSynthPanel::resized() {
@@ -364,7 +364,10 @@ void KickSynthPanel::resized() {
     if (advancedMode_)
         placeRow(cards[2], 1, 2, { &clickSampleSource_, &clickSampleLevel_, &clickSampleStart_,
                                    &clickSamplePitch_, &clickSampleHp_, &loadClick_ });
-    placeRow(cards[3], 0, rows, { &hold_, &decay_, &decayShape_ });
+    auto tailCard = cards[3];
+    if (!advancedMode_)
+        tailCard = tailCard.withSizeKeepingCentre(std::min(tailCard.getWidth(), 280), tailCard.getHeight());
+    placeRow(tailCard, 0, rows, { &hold_, &decay_, &decayShape_ });
     if (advancedMode_ || heldNotes_)
         placeRow(cards[4], 0, 1, { &ampAttack_, &ampDecay_, &ampSustain_, &ampRelease_ });
     auto outputRow = cards[5].withTrimmedTop(kCardHeader).reduced(8, 2);
@@ -612,10 +615,10 @@ void PianoRollView::paint(juce::Graphics& g) {
         g.setColour(barLine ? theme::kTextDim : theme::kEdge.withAlpha(beatLine ? 1.0f : 0.48f));
         g.drawVerticalLine(juce::roundToInt(x), grid.getY() + 3.0f, grid.getBottom() - 3.0f);
         if (barLine && step < totalSteps && (step % (core::kStepsPerBar64 * std::max(1, bars / 16)) == 0)) {
-            g.setColour(theme::kTextDim.withAlpha(0.8f));
-            g.setFont(juce::FontOptions(11.0f));
+            g.setColour(theme::kText.withAlpha(0.75f));
+            g.setFont(juce::FontOptions(12.0f));
             const int bar = step / core::kStepsPerBar64 + 1;
-            g.drawText("Bar " + juce::String(bar), static_cast<int>(x) + 4, static_cast<int>(grid.getY()) - 16, 46, 13,
+            g.drawText("Bar " + juce::String(bar), static_cast<int>(x) + 4, static_cast<int>(grid.getY()) - 17, 50, 15,
                        juce::Justification::centredLeft);
         }
     }
@@ -853,12 +856,12 @@ void PeakMeter::paint(juce::Graphics& g) {
     g.setColour(theme::kEdge);
     g.drawRoundedRectangle(clip.reduced(0.5f), 3.0f, 1.0f);
 
-    g.setColour(theme::kTextDim);
-    g.setFont(juce::FontOptions(11.0f));
-    const auto ticks = area.removeFromTop(18).toFloat();
+    g.setColour(theme::kText.withAlpha(0.75f));
+    g.setFont(juce::FontOptions(12.0f));
+    const auto ticks = area.removeFromTop(20).toFloat();
     std::ranges::for_each(std::array{ -24.0f, -12.0f, 0.0f }, [&](float db) {
         g.fillRect(xFor(db) - 0.5f, ticks.getY(), 1.0f, 3.0f);
-        g.drawText(juce::String(juce::roundToInt(db)), juce::Rectangle<float>(xFor(db) - 14.0f, ticks.getY() + 3.0f, 28.0f, 14.0f),
+        g.drawText(juce::String(juce::roundToInt(db)), juce::Rectangle<float>(xFor(db) - 15.0f, ticks.getY() + 4.0f, 30.0f, 15.0f),
                    juce::Justification::centred);
     });
 }

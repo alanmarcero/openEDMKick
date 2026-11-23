@@ -52,7 +52,7 @@ void ParameterControl::paint(juce::Graphics& g) {
     const bool locked = routing.isLocked(id_);
     const int cc = routing.assignment(id_);
     juce::Graphics::ScopedSaveState state(g);
-    g.setOrigin((getWidth() - 40) / 2, cc < 0 ? 2 : -2);
+    g.setOrigin((getWidth() - 40) / 2, cc < 0 ? 2 : -5);
     const auto ink = locked ? theme::kMint : theme::kTextDim;
     const float alpha = locked ? 1.0f : (isMouseOver() ? 0.85f : 0.28f);
     const float stroke = locked ? 1.8f : 1.35f;
@@ -66,8 +66,8 @@ void ParameterControl::paint(juce::Graphics& g) {
     g.drawRoundedRectangle(13, 19, 13, 10, 2, stroke);
     if (cc >= 0) {
         g.setColour(theme::kViolet);
-        g.setFont(juce::FontOptions(11.0f));
-        g.drawText("CC " + juce::String(cc), 0, 29, 40, 13, juce::Justification::centred);
+        g.setFont(juce::FontOptions(11.5f));
+        g.drawText("CC " + juce::String(cc), 0, 28, 40, 13, juce::Justification::centred);
     }
 }
 void ParameterControl::mouseDown(const juce::MouseEvent& event) {
@@ -198,11 +198,12 @@ void Knob::showEffectiveText(const juce::String& text) {
 
 void Knob::resized() {
     auto area = getLocalBounds();
-    routing_->setBounds(area.removeFromRight(kRoutingHeight).removeFromBottom(kRoutingHeight));
-    title_.setBounds(area.removeFromTop(kLabelHeight));
-    const int boxHeight = std::min(kKnobValueHeight, std::max(0, area.getHeight() / 4));
-    slider_.setTextBoxStyle(juce::Slider::TextBoxBelow, false, std::min(78, area.getWidth()), boxHeight);
-    slider_.setBounds(area.withSizeKeepingCentre(std::min(124, area.getWidth()), std::min(104, area.getHeight())));
+    auto group = area.withSizeKeepingCentre(std::min(area.getWidth(), 156), area.getHeight());
+    routing_->setBounds(group.removeFromRight(kRoutingHeight).removeFromBottom(kRoutingHeight));
+    title_.setBounds(group.removeFromTop(kLabelHeight));
+    const int boxHeight = std::min(kKnobValueHeight, std::max(0, group.getHeight() / 4));
+    slider_.setTextBoxStyle(juce::Slider::TextBoxBelow, false, std::min(78, group.getWidth()), boxHeight);
+    slider_.setBounds(group.withSizeKeepingCentre(std::min(124, group.getWidth()), std::min(104, group.getHeight())));
 }
 
 bool DualEqKnob::GainSlider::hitTest(int x, int y) {
@@ -657,7 +658,7 @@ void drawCard(juce::Graphics& g, juce::Rectangle<int> area, const juce::String& 
 
 void drawSmallLabel(juce::Graphics& g, juce::Rectangle<int> area, const juce::String& text, juce::Colour colour) {
     g.setColour(colour);
-    g.setFont(juce::FontOptions(13.0f));
+    g.setFont(juce::FontOptions(13.5f));
     g.drawText(text, area, juce::Justification::centredLeft);
 }
 

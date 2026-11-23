@@ -222,12 +222,15 @@ void OpenEdmKickEditor::paint(juce::Graphics& g) {
     g.setColour(theme::kText);
     g.setFont(juce::FontOptions(26.0f, juce::Font::bold));
     g.drawText("openKicker", 72, 12, 146, 30, juce::Justification::centredLeft);
+    g.setColour(theme::kText.withAlpha(0.75f));
+    g.setFont(juce::FontOptions(14.0f, juce::Font::bold));
+    g.drawText("v" JucePlugin_VersionString, 214, 17, 58, 24, juce::Justification::centredLeft);
     g.setColour(theme::kTextDim);
-    g.setFont(juce::FontOptions(13.0f, juce::Font::bold));
-    g.drawText("v" JucePlugin_VersionString, 214, 18, 48, 22, juce::Justification::centredLeft);
     g.setFont(juce::FontOptions(13.0f));
     g.drawText("Tuned drum synthesizer", 73, 40, 175, 18, juce::Justification::centredLeft);
-    auto presetLabel = presetBox_.getBounds().translated(3, -17).withHeight(16);
+    g.setColour(theme::kText.withAlpha(0.85f));
+    g.setFont(juce::FontOptions(13.5f, juce::Font::bold));
+    auto presetLabel = presetBox_.getBounds().translated(3, -19).withHeight(18);
     g.drawText("Preset", presetLabel, juce::Justification::centredLeft);
 }
 
