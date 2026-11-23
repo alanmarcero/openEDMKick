@@ -115,11 +115,20 @@ PresetBrowser::PresetBrowser(std::vector<juce::String> factoryNames)
     search_.setColour(juce::TextEditor::backgroundColourId, kInk);
     search_.setColour(juce::TextEditor::textColourId, kText);
     search_.onTextChange = [this] { refresh(); };
+    search_.onReturnKey = [this] {
+        if (rowCount() > 0) {
+            list_.selectRow(0);
+            loadRow(0);
+        }
+    };
+    search_.onEscapeKey = [this] { setVisible(false); };
     name_.setComponentID("presetName");
     name_.setTextToShowWhenEmpty("Preset name", kTextDim);
     name_.setColour(juce::TextEditor::backgroundColourId, kInk);
     name_.setColour(juce::TextEditor::textColourId, kText);
-    name_.onTextChange = [this] { disarm(); };
+    name_.onTextChange = [this] { disarm(); updateButtons(); };
+    name_.onReturnKey = [this] { save_.triggerClick(); };
+    name_.onEscapeKey = [this] { setVisible(false); };
     list_.setComponentID("presetList");
     list_.setRowHeight(28);
     list_.setColour(juce::ListBox::backgroundColourId, kInk);
@@ -262,6 +271,7 @@ void PresetBrowser::listBoxItemClicked(int row, const juce::MouseEvent& event) {
     if (row < 0 || row >= rowCount()) return;
     selected_ = row;
     name_.setText(entries_[static_cast<size_t>(row)].name, juce::dontSendNotification);
+    updateButtons();
     const int rowWidth = event.eventComponent != nullptr ? event.eventComponent->getWidth() : list_.getWidth();
     if (event.x >= rowWidth - 36) {
         const auto& entry = entries_[static_cast<size_t>(row)];
@@ -276,6 +286,28 @@ void PresetBrowser::listBoxItemClicked(int row, const juce::MouseEvent& event) {
 void PresetBrowser::selectedRowsChanged(int row) {
     selected_ = row;
     disarm();
+    updateButtons();
+}
+
+void PresetBrowser::visibilityChanged() {
+    disarm();
+}
+
+bool PresetBrowser::keyPressed(const juce::KeyPress& key) {
+    if (key == juce::KeyPress::escapeKey) {
+        setVisible(false);
+        return true;
+    }
+    return false;
+}
+
+void PresetBrowser::updateButtons() {
+    const bool hasName = name_.getText().trim().isNotEmpty();
+    const bool userSelected = selected_ >= 0 && selected_ < rowCount()
+        && !entries_[static_cast<size_t>(selected_)].factory;
+    save_.setEnabled(hasName);
+    rename_.setEnabled(hasName && userSelected);
+    remove_.setEnabled(userSelected);
 }
 
 void PresetBrowser::disarm() {
@@ -288,6 +320,7 @@ void PresetBrowser::disarm() {
 }
 
 void PresetBrowser::loadRow(int row) {
+    disarm();
     const auto& entry = entries_[static_cast<size_t>(row)];
     if (entry.factory) {
         if (loadFactory) loadFactory(entry.factoryIndex);
@@ -304,6 +337,7 @@ void PresetBrowser::loadRow(int row) {
 }
 
 void PresetBrowser::step(const juce::String& current, int direction) {
+    disarm();
     const int count = rowCount();
     if (count == 0) return;
     const auto found = std::find_if(entries_.begin(), entries_.end(), [&](const PresetEntry& entry) { return entry.name == current; });
@@ -315,10 +349,12 @@ void PresetBrowser::step(const juce::String& current, int direction) {
 }
 
 void PresetBrowser::refresh() {
+    disarm();
     const int keep = selected_;
     entries_ = library_.list(search_.getText().trim());
     list_.updateContent();
     if (keep >= 0 && keep < rowCount()) list_.selectRow(keep);
+    updateButtons();
     repaint();
 }
 

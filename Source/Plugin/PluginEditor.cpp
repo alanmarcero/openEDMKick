@@ -168,6 +168,11 @@ void OpenEdmKickEditor::syncPresetBox() {
 }
 
 bool OpenEdmKickEditor::keyPressed(const juce::KeyPress& key) {
+    if (key == juce::KeyPress::escapeKey && presetBrowser_.isVisible()) {
+        presetBrowser_.setVisible(false);
+        resized();
+        return true;
+    }
     const int code = key.getKeyCode();
     if (key.getModifiers().isCommandDown() && (code == 'z' || code == 'Z')) {
         if (key.getModifiers().isShiftDown()) processor_.redo();
@@ -190,6 +195,7 @@ void OpenEdmKickEditor::setAdvancedView(bool advanced) {
 }
 
 void OpenEdmKickEditor::setPage(Page page) {
+    if (presetBrowser_.isVisible()) presetBrowser_.setVisible(false);
     page_ = page;
     juce::Component* panels[]{ &synthPanel_, &layerPanel_, &autoPanel_, &effectsPanel_ };
     workspace_.setViewedComponent(panels[static_cast<int>(page)], false);
@@ -230,9 +236,9 @@ void OpenEdmKickEditor::resized() {
     auto header = bounds.removeFromTop(72).reduced(0, 9);
     auditionBtn_.setBounds(header.removeFromRight(122).withSizeKeepingCentre(122, 40));
     header.removeFromRight(20);
-    nextPresetBtn_.setBounds(header.removeFromRight(66).removeFromBottom(40));
+    nextPresetBtn_.setBounds(header.removeFromRight(40).removeFromBottom(40));
     header.removeFromRight(5);
-    prevPresetBtn_.setBounds(header.removeFromRight(84).removeFromBottom(40));
+    prevPresetBtn_.setBounds(header.removeFromRight(40).removeFromBottom(40));
     header.removeFromRight(6);
     presetBox_.setBounds(header.removeFromRight(std::min(310, header.getWidth() - 242)).removeFromBottom(40));
 

@@ -60,6 +60,8 @@ public:
     void setDirectory(juce::File directory);
     void resized() override;
     void paint(juce::Graphics& g) override;
+    void visibilityChanged() override;
+    bool keyPressed(const juce::KeyPress& key) override;
 
     std::function<juce::MemoryBlock()> captureState;
     std::function<void(int factoryIndex)> loadFactory;
@@ -77,6 +79,7 @@ private:
     void selectedRowsChanged(int lastRowSelected) override;
     void timerCallback() override { disarm(); }
     void disarm();
+    void updateButtons();
     void refresh();
     void loadRow(int row);
     void setStatus(const juce::String& text);

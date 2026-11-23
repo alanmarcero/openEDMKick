@@ -224,8 +224,9 @@ KickSynthPanel::KickSynthPanel(OpenEdmKickProcessor& processor)
          params::kStereoWidth, params::kOutput, params::kCeiling, params::kLimiter, params::kMasterBypass}
     }};
     const std::array<juce::String, 6> names{"dive", "body", "transient", "tail", "adsr", "output"};
+    const std::array<juce::String, 6> titles{"Pitch dive", "Body & sub", "Transient", "One-shot tail", "MIDI envelope", "Output"};
     std::ranges::for_each(std::views::iota(size_t{0}, groups.size()), [&](size_t i) {
-        sectionLocks_.push_back(std::make_unique<SectionLock>(processor.parameters, names[i], groups[i]));
+        sectionLocks_.push_back(std::make_unique<SectionLock>(processor.parameters, names[i], groups[i], titles[i]));
         addAndMakeVisible(*sectionLocks_.back());
     });
     sweepOctaves_.setTooltip("How far above the played MIDI note the opening of the kick starts.");
@@ -247,8 +248,23 @@ KickSynthPanel::KickSynthPanel(OpenEdmKickProcessor& processor)
 
 void KickSynthPanel::refreshActivity() {
     auto& routing = processor_.routing();
-    const auto on = [&routing](const char* id) { return routing.displayValue(id) >= 0.5f; };
-    showActivity(ceiling_, on(params::kLimiter), {}, "Turn on Limiter to use Ceiling.");
+    const auto val = [&routing](const char* id) { return routing.displayValue(id); };
+    const auto on = [&val](const char* id) { return val(id) >= 0.5f; };
+    const bool hasSweep = val(params::kSweepOctaves) > 0.001f;
+    const juce::String sweepOff = "Raise Dive range above 0 oct to use this.";
+    showActivity(sweepMs_, hasSweep, "Time for the pitch dive to reach the incoming MIDI note.", sweepOff);
+    showActivity(sweepShape_, hasSweep, "Curve of the pitch dive.", sweepOff);
+    showActivity(snapMs_, val(params::kSnapOctaves) > 0.001f, "Duration of the initial pitch snap.",
+                 "Raise Snap range above 0 oct to use this.");
+    showActivity(knockHz_, std::abs(val(params::kKnockDb)) > 0.01f, "Resonant mid-bass knock frequency.",
+                 "Raise Knock above 0.0 dB to hear the knock frequency.");
+    const bool hasClick = val(params::kClickLevel) > 0.001f;
+    const juce::String clickOff = "Raise Level above 0% to hear the synthesized click.";
+    showActivity(clickType_, hasClick, "Choose the synthesized transient character.", clickOff);
+    showActivity(clickHz_, hasClick, "Center frequency of the synthesized transient.", clickOff);
+    showActivity(clickMs_, hasClick, "Length of the synthesized transient.", clickOff);
+
+    showActivity(ceiling_, on(params::kLimiter), "Maximum peak level before the limiter clamps.", "Turn on Limiter to use Ceiling.");
     const bool sample = on(params::kClickSampleOn);
     const juce::String sampleOff = "Turn on Sample to hear the sample click.";
     showActivity(clickSampleSource_, sample, "Play a built-in click or the WAV you loaded.", sampleOff);
@@ -258,8 +274,11 @@ void KickSynthPanel::refreshActivity() {
     showActivity(clickSampleHp_, sample, "High-pass the sample click.", sampleOff);
     showActivity(loadClick_, sample, "Load a short WAV for the sample click. The audio is stored in the session.", sampleOff);
     const bool held = on(params::kAmpEnabled);
+    std::ranges::for_each(std::array<Knob*, 5>{ &attack_, &hold_, &decay_, &decayShape_, &lowCut_ }, [held](Knob* knob) {
+        showActivity(*knob, !held, "Shape the one-shot kick envelope and low cut.", "Turn off Hold MIDI notes to use the one-shot tail.");
+    });
     std::ranges::for_each(std::array<Knob*, 4>{ &ampAttack_, &ampDecay_, &ampSustain_, &ampRelease_ }, [held](Knob* knob) {
-        showActivity(*knob, held, {}, "Turn on Hold MIDI notes to use the MIDI envelope.");
+        showActivity(*knob, held, "Shape the held MIDI note envelope.", "Turn on Hold MIDI notes to use the MIDI envelope.");
     });
 }
 
@@ -401,40 +420,59 @@ LayerPage::LayerPage(OpenEdmKickProcessor& processor, int layer)
         params::kLayerVelocityLow, params::kLayerVelocityHigh, params::kLayerToneScale,
         params::kLayerSweepScale, params::kLayerSolo, params::kLayerPan, params::kLayerPolarity},
         [&](const char* key) { ids.add(params::layerId(layer_, key)); });
-    sectionLock_ = std::make_unique<SectionLock>(processor.parameters, "layer_" + juce::String(layer_), ids);
+    const auto letter = juce::String::charToString(static_cast<juce::juce_wchar>('A' + layer_));
+    sectionLock_ = std::make_unique<SectionLock>(processor.parameters, "layer_" + juce::String(layer_), ids, "Layer " + letter);
     addAndMakeVisible(*sectionLock_);
     enabled_.setTooltip("Include this sound layer in every kick hit.");
 }
 
-void LayerPage::showEnabled(bool enabled) {
-    const juce::String off = "This layer is off. Turn on Layer on to hear it.";
-    showActivity(sound_, enabled, "Choose a synthesized kick, snare, clap, or hi-hat voice.", off);
-    showActivity(level_, enabled, "Set this layer's mix level.", off);
-    showActivity(pitch_, enabled, "Transpose the layer in semitones. Hats use this to tune their metal partials.", off);
-    showActivity(decay_, enabled, "Set this layer's one-shot length. Kick layers scale their main kick decay by this value.", off);
-    showActivity(highPass_, enabled, "Filter this layer before it is mixed with the other layers.", off);
-    showActivity(lowPass_, enabled, "Filter this layer before it is mixed with the other layers.", off);
-    showActivity(*layerToggles_[0], enabled, "Hear only enabled layers with Solo switched on.", off);
-    showActivity(*layerToggles_[1], enabled, "Reverse this layer's polarity before mixing it with the other layers.", off);
-    std::ranges::for_each(layerKnobs_, [&](const std::unique_ptr<Knob>& knob) { showActivity(*knob, enabled, {}, off); });
+void LayerPage::showEnabled(bool enabled, bool isKick, bool mutedBySolo) {
+    const juce::String off = !enabled
+        ? "This layer is off. Turn on Layer on to hear it."
+        : "Another layer is soloed. Turn on Solo here or turn off Solo elsewhere to hear this layer.";
+    const bool active = enabled && !mutedBySolo;
+    showActivity(sound_, active, "Choose a synthesized kick, snare, clap, or hi-hat voice.", off);
+    showActivity(level_, active, "Set this layer's mix level.", off);
+    showActivity(pitch_, active, "Transpose the layer in semitones. Hats use this to tune their metal partials.", off);
+    showActivity(decay_, active, "Set this layer's one-shot length. Kick layers scale their main kick decay by this value.", off);
+    showActivity(highPass_, active, "Filter this layer before it is mixed with the other layers.", off);
+    showActivity(lowPass_, active, "Filter this layer before it is mixed with the other layers.", off);
+    showActivity(*layerToggles_[0], enabled, "Hear only enabled layers with Solo switched on.", "This layer is off. Turn on Layer on to hear it.");
+    showActivity(*layerToggles_[1], active, "Reverse this layer's polarity before mixing it with the other layers.", off);
+    static constexpr std::array<const char*, 9> kKnobTips{
+        "Shape how MIDI velocity scales this layer's level.",
+        "Scale timbre or brightness with MIDI velocity.",
+        "Lowest MIDI note that triggers this layer.",
+        "Highest MIDI note that triggers this layer.",
+        "Lowest MIDI velocity that triggers this layer.",
+        "Highest MIDI velocity that triggers this layer.",
+        "Scale the layer's tone or harmonic character.",
+        "Scale the kick pitch dive depth for this layer.",
+        "Stereo pan position for this layer."
+    };
+    for (size_t i = 0; i < layerKnobs_.size(); ++i) {
+        const bool knobActive = active && (i != 7 || isKick);
+        const juce::String inactiveTip = (i == 7 && active && !isKick)
+            ? "Dive scale only applies when Sound is set to Kick."
+            : off;
+        showActivity(*layerKnobs_[i], knobActive, kKnobTips[i], inactiveTip);
+    }
 }
 
 void LayerPage::paint(juce::Graphics& g) {
     auto area = getLocalBounds();
     const int height = area.getHeight() / 4;
-    for (const auto* title : { "Layer mixer", "Pitch & filters", "Response", "MIDI zone" }) {
+    const std::array<const char*, 4> titles{ "Layer mixer", "Pitch & filters", "Response", "MIDI zone" };
+    const std::array<juce::Colour, 4> accents{ theme::kViolet, theme::kCoral, theme::kMint, theme::kMint };
+    for (size_t i = 0; i < titles.size(); ++i) {
         auto strip = area.removeFromTop(height).withTrimmedBottom(5);
-        g.setColour(theme::kSteel);
-        g.fillRoundedRectangle(strip.toFloat(), 8);
-        g.setColour(theme::kText);
-        g.setFont(juce::FontOptions(17.0f, juce::Font::bold));
-        g.drawText(title, strip.reduced(14).removeFromLeft(118).removeFromTop(28), juce::Justification::centredLeft);
+        drawCard(g, strip, titles[i], accents[i]);
     }
 }
 
 void LayerPage::resized() {
-    sectionLock_->setBounds(12, 50, kSectionLockWidth, kSectionLockHeight);
-    auto area = getLocalBounds().withTrimmedLeft(140).withTrimmedRight(10);
+    sectionLock_->setBounds(14, 48, kSectionLockWidth, kSectionLockHeight);
+    auto area = getLocalBounds().withTrimmedLeft(154).withTrimmedRight(10);
     const int rowHeight = area.getHeight() / 4;
     layoutRow(area.removeFromTop(rowHeight).reduced(0, 4), { &enabled_, &sound_, &level_, layerToggles_[0].get(), layerToggles_[1].get() }, 8);
     layoutRow(area.removeFromTop(rowHeight).reduced(0, 4), { &pitch_, &decay_, &highPass_, &lowPass_, layerKnobs_[8].get() }, 8);
@@ -462,17 +500,32 @@ LayerPanel::LayerPanel(OpenEdmKickProcessor& processor) : processor_(processor) 
 
 void LayerPanel::refreshActivity() {
     auto& routing = processor_.routing();
+    bool anySoloed = false;
+    for (int layer = 0; layer < core::kNumSoundLayers; ++layer) {
+        const bool enabled = routing.displayValue(params::layerId(layer, params::kLayerEnabled)) >= 0.5f;
+        const bool solo = routing.displayValue(params::layerId(layer, params::kLayerSolo)) >= 0.5f;
+        if (enabled && solo) {
+            anySoloed = true;
+            break;
+        }
+    }
     std::ranges::for_each(std::views::iota(0, core::kNumSoundLayers), [&](int layer) {
         const auto index = static_cast<size_t>(layer);
         const auto letter = juce::String::charToString(static_cast<juce::juce_wchar>('A' + layer));
         const auto soundId = params::layerId(layer, params::kLayerSound);
         const auto& sounds = dynamic_cast<juce::AudioParameterChoice*>(processor_.parameters.getParameter(soundId))->choices;
         const bool enabled = routing.displayValue(params::layerId(layer, params::kLayerEnabled)) >= 0.5f;
-        const auto label = letter + " " + sounds[juce::roundToInt(routing.displayValue(soundId))];
+        const bool solo = routing.displayValue(params::layerId(layer, params::kLayerSolo)) >= 0.5f;
+        const bool mutedBySolo = enabled && anySoloed && !solo;
+        const int soundIndex = juce::roundToInt(routing.displayValue(soundId));
+        const auto label = letter + " " + sounds[soundIndex];
         tabs_[index].setButtonText(label);
         tabs_[index].setTitle(label);
-        showActivity(tabs_[index], enabled, {}, "Layer " + letter + " is off. Turn on Layer on in its tab to hear it.");
-        pages_[index]->showEnabled(enabled);
+        const juce::String inactiveTip = !enabled
+            ? "Layer " + letter + " is off. Turn on Layer on in its tab to hear it."
+            : "Layer " + letter + " is muted because another layer is soloed.";
+        showActivity(tabs_[index], enabled && !mutedBySolo, "Select layer " + letter + " to edit its sound, mix, and zone.", inactiveTip);
+        pages_[index]->showEnabled(enabled, soundIndex == 0, mutedBySolo);
     });
 }
 
@@ -503,6 +556,27 @@ PianoRollView::PianoRollView(OpenEdmKickProcessor& processor) : processor_(proce
     setTooltip("Click to add or remove a hit. Shift-click a hit to change its ratchets. "
                "Lanes of layers that are off are dim. Click a dim layer name to turn that layer on.");
     startTimerHz(12);
+}
+
+void PianoRollView::timerCallback() {
+    const float phase = processor_.displayAutoPhase.load(std::memory_order_relaxed);
+    const auto settings = processor_.currentAutoSlotSettings();
+    const auto notes = processor_.currentPianoRollNotes();
+    auto& routing = processor_.routing();
+    std::array<std::pair<bool, int>, core::kNumSoundLayers> layers{};
+    for (int i = 0; i < core::kNumSoundLayers; ++i) {
+        layers[static_cast<size_t>(i)] = {
+            routing.displayValue(params::layerId(i, params::kLayerEnabled)) >= 0.5f,
+            juce::roundToInt(routing.displayValue(params::layerId(i, params::kLayerSound)))
+        };
+    }
+    if (std::abs(phase - lastPhase_) <= 0.0001f && settings == lastSettings_ && notes == lastNotes_ && layers == lastLayers_)
+        return;
+    lastPhase_ = phase;
+    lastSettings_ = settings;
+    lastNotes_ = notes;
+    lastLayers_ = layers;
+    repaint();
 }
 
 juce::Rectangle<float> PianoRollView::gridArea() const {
@@ -562,7 +636,7 @@ void PianoRollView::paint(juce::Graphics& g) {
             g.fillRect(juce::Rectangle<float>(grid.getX(), y, grid.getWidth(), rowHeight));
         }
         g.setColour(theme::kTextDim.withMultipliedAlpha(playing(lane - 1) ? 1.0f : 0.4f));
-        g.drawText(label, juce::Rectangle<float>(grid.getX() - 64, y + 4, 62, 12), juce::Justification::centredLeft);
+        g.drawText(label, juce::Rectangle<float>(grid.getX() - 64.0f, y, 62.0f, rowHeight), juce::Justification::centredLeft);
     }
     const auto notes = processor_.currentPianoRollNotes();
     for (const auto& note : notes) {
@@ -634,8 +708,8 @@ AutoPianoRollPanel::AutoPianoRollPanel(OpenEdmKickProcessor& processor)
              &bypass_, &enabled_, &clockSync_, &timeSig_, &bars_, &grid_, &fillPreset_,
              &tempo_, &tailShorten_, &crushSweep_, &pianoRoll_}) addAndMakeVisible(component);
     addAndMakeVisible(scene_);
-    clockLock_ = std::make_unique<SectionLock>(processor.parameters, "clock", juce::StringArray{params::kAutoEnabled, params::kAutoBypass, params::kClockSync, params::kTimeSignature, params::kTempoBpm});
-    sceneLock_ = std::make_unique<SectionLock>(processor.parameters, "scene", juce::StringArray{});
+    clockLock_ = std::make_unique<SectionLock>(processor.parameters, "clock", juce::StringArray{params::kAutoEnabled, params::kAutoBypass, params::kClockSync, params::kTimeSignature, params::kTempoBpm}, "Playback clock");
+    sceneLock_ = std::make_unique<SectionLock>(processor.parameters, "scene", juce::StringArray{}, "Pattern scene");
     addAndMakeVisible(*clockLock_);
     addAndMakeVisible(*sceneLock_);
     enabled_.setTooltip("Play this scene using the host transport or internal clock.");
@@ -656,7 +730,7 @@ void AutoPianoRollPanel::refreshActivity() {
     auto& routing = processor_.routing();
     const bool hostClock = routing.displayValue(params::kClockSync) >= 0.5f
         && processor_.wrapperType != juce::AudioProcessor::wrapperType_Standalone;
-    showActivity(tempo_, !hostClock, {}, "Host sync is on, so the host sets the tempo. Turn off Host sync to use this tempo.");
+    showActivity(tempo_, !hostClock, "Internal playback tempo in BPM.", "Host sync is on, so the host sets the tempo. Turn off Host sync to use this tempo.");
     showActivity(bypass_, routing.displayValue(params::kAutoEnabled) >= 0.5f,
                  "Mute the sequencer while keeping incoming MIDI playable.", "Turn on Run pattern to use Bypass pattern.");
 }
@@ -740,7 +814,7 @@ void PeakMeter::mouseDown(const juce::MouseEvent&) {
 }
 
 void PeakMeter::paint(juce::Graphics& g) {
-    auto area = getLocalBounds().reduced(4, 0);
+    auto area = getLocalBounds().reduced(4, 6);
     g.setColour(theme::kText);
     g.setFont(juce::FontOptions(13.0f, juce::Font::bold));
     g.drawText("Output peak", area.removeFromTop(18), juce::Justification::centred);
@@ -828,8 +902,9 @@ EffectsPanel::EffectsPanel(OpenEdmKickProcessor& processor)
         {params::kStutterEnabled, params::kStutterRate, params::kStutterMix, params::kGateEnabled, params::kGateRate, params::kGateMix, params::kPumpRate, params::kPumpMix},
         {params::kHighPassMidi, params::kLowPassMidi, params::kHighPass, params::kLowPass, params::kHighPassSyncEnabled, params::kHighPassSyncRate, params::kLowPassSyncEnabled, params::kLowPassSyncRate, params::kMidiVolume, params::kMidiExpression, params::kMidiBrightness}
     }};
+    const std::array<juce::String, 4> titles{"Reverse", "Bitcrusher", "Rhythm", "Filters & MIDI"};
     std::ranges::for_each(std::views::iota(size_t{0}, groups.size()), [&](size_t i) {
-        sectionLocks_.push_back(std::make_unique<SectionLock>(processor.parameters, "fx_" + juce::String(i), groups[i]));
+        sectionLocks_.push_back(std::make_unique<SectionLock>(processor.parameters, "fx_" + juce::String(i), groups[i], titles[i]));
         addAndMakeVisible(*sectionLocks_.back());
     });
     highPassMidi_.setTooltip("Sweep the high-pass filter in time with the host. CC21 also turns the sweep on and off.");
@@ -846,7 +921,8 @@ void EffectsPanel::refreshActivity() {
     showActivity(reverseMode_, !reverseMidi,
                  "Reverse on defaults to CC20 and ends at the next quarter-note boundary. Right-click to reassign.",
                  "Reverse MIDI is on, so each hit reverses to the end of its beat. Turn off Reverse MIDI to pick a mode.");
-    showActivity(reverseMix_, reverseMidi || value(params::kReverseMode) >= 0.5f, {},
+    showActivity(reverseMix_, reverseMidi || value(params::kReverseMode) >= 0.5f,
+                 "Wet/dry mix of the reverse effect.",
                  "Pick a Reverse mode or turn on Reverse MIDI to use this mix.");
 
     // A MIDI switch plays its effect at full mix while the mix is 0%. Above 0% the switch has no effect.
@@ -854,20 +930,22 @@ void EffectsPanel::refreshActivity() {
         const bool switchedOn = value(midiId) >= 0.5f;
         const bool mixed = value(mixId) > 0.0f;
         mix.showEffectiveText(switchedOn && !mixed ? "100% (on)" : "");
-        showActivity(midi, !mixed, {}, mixName + " is above 0%, so the effect plays already. Set " + mixName
-                                           + " to 0% to let this switch play it at full mix.");
+        showActivity(midi, !mixed,
+                     "Play this effect at full mix while " + mixName + " is 0%.",
+                     mixName + " is above 0%, so the effect plays already. Set " + mixName
+                         + " to 0% to let this switch play it at full mix.");
         return switchedOn || mixed;
     };
     const bool patternCrush = value(params::kAutoEnabled) >= 0.5f && value(params::kAutoBypass) < 0.5f
         && processor_.currentAutoSlotSettings().crushSweep > 0.0f;
     const bool crushing = showSwitched(crushMix_, crushEnabled_, params::kCrushMix, params::kCrushEnabled, "Crush mix") || patternCrush;
-    showActivity(crushRate_, crushing, {}, "Raise Crush mix or turn on Crush MIDI to hear the crusher.");
-    showActivity(crushBits_, crushing, {}, "Raise Crush mix or turn on Crush MIDI to hear the crusher.");
+    showActivity(crushRate_, crushing, "Downsample rate reduction for the bitcrusher.", "Raise Crush mix or turn on Crush MIDI to hear the crusher.");
+    showActivity(crushBits_, crushing, "Bit depth quantization for the bitcrusher.", "Raise Crush mix or turn on Crush MIDI to hear the crusher.");
     const bool stuttering = showSwitched(stutterMix_, stutterEnabled_, params::kStutterMix, params::kStutterEnabled, "Stutter mix");
-    showActivity(stutterRate_, stuttering, {}, "Raise Stutter mix or turn on Stutter MIDI to hear the stutter.");
+    showActivity(stutterRate_, stuttering, "Host-synced repeat rate for the stutter effect.", "Raise Stutter mix or turn on Stutter MIDI to hear the stutter.");
     const bool gating = showSwitched(gateMix_, gateEnabled_, params::kGateMix, params::kGateEnabled, "Gate depth");
-    showActivity(gateRate_, gating, {}, "Raise Gate depth or turn on Gate MIDI to hear the gate.");
-    showActivity(pumpRate_, value(params::kPumpMix) > 0.0f, {}, "Raise Pump depth to hear the pump.");
+    showActivity(gateRate_, gating, "Host-synced rhythmic gate rate.", "Raise Gate depth or turn on Gate MIDI to hear the gate.");
+    showActivity(pumpRate_, value(params::kPumpMix) > 0.0f, "Host-synced sidechain-style ducking rate.", "Raise Pump depth to hear the pump.");
 
     // A sweep runs from the bypass end to the cutoff, or to the sweep limit while the cutoff is Off.
     const bool highSweep = value(params::kHighPassMidi) >= 0.5f || value(params::kHighPassSyncEnabled) >= 0.5f;
@@ -875,13 +953,13 @@ void EffectsPanel::refreshActivity() {
     const float highTop = highCutoff > core::ToneFilter::kHighPassBypassHz + 0.5f ? highCutoff : core::ToneFilter::kHighPassSweepTopHz;
     const auto highSweepText = "Sweep " + params::formatHz(highTop);
     highPass_.showEffectiveText(highSweep ? highSweepText : juce::String());
-    showActivity(highPassSyncRate_, highSweep, {}, "Turn on High-pass sweep to use this rate.");
+    showActivity(highPassSyncRate_, highSweep, "Host-synced duration of the high-pass sweep.", "Turn on High-pass sweep to use this rate.");
     const bool lowSweep = value(params::kLowPassMidi) >= 0.5f || value(params::kLowPassSyncEnabled) >= 0.5f;
     const float lowCutoff = value(params::kLowPass);
     const float lowFloor = lowCutoff < core::ToneFilter::kLowPassBypassHz - 1.0f ? lowCutoff : core::ToneFilter::kLowPassSweepFloorHz;
     const auto lowSweepText = "Sweep " + params::formatHz(lowFloor);
     lowPass_.showEffectiveText(lowSweep ? lowSweepText : juce::String());
-    showActivity(lowPassSyncRate_, lowSweep, {}, "Turn on Low-pass sweep to use this rate.");
+    showActivity(lowPassSyncRate_, lowSweep, "Host-synced duration of the low-pass sweep.", "Turn on Low-pass sweep to use this rate.");
 }
 
 void EffectsPanel::setAdvancedMode(bool advanced) {
@@ -907,12 +985,9 @@ std::array<juce::Rectangle<int>, 4> EffectsPanel::sections() const {
 void EffectsPanel::paint(juce::Graphics& g) {
     const auto cards = sections();
     const std::array<juce::String, 4> titles{"Reverse", "Bitcrusher", "Rhythm", "Filters & MIDI"};
+    const std::array<juce::Colour, 4> accents{theme::kViolet, theme::kCoral, theme::kMint, theme::kViolet};
     std::ranges::for_each(std::views::iota(size_t{0}, cards.size()), [&](size_t i) {
-        g.setColour(theme::kSteel);
-        g.fillRoundedRectangle(cards[i].toFloat(), 9);
-        g.setColour(theme::kText);
-        g.setFont(juce::FontOptions(18.0f, juce::Font::bold));
-        g.drawText(titles[i], cards[i].reduced(14).removeFromTop(26), juce::Justification::centredLeft);
+        drawCard(g, cards[i], titles[i], accents[i]);
     });
 }
 

@@ -30,8 +30,8 @@ private:
     juce::Viewport workspace_;
     juce::ComboBox presetBox_;
     juce::TextButton auditionBtn_{"Audition C2"};
-    juce::TextButton prevPresetBtn_{"Previous"};
-    juce::TextButton nextPresetBtn_{"Next"};
+    juce::TextButton prevPresetBtn_{"<"};
+    juce::TextButton nextPresetBtn_{">"};
     juce::TextButton viewToggleBtn_{"Advanced controls"};
     juce::TextButton kickTab_{"Kick"};
     juce::TextButton layersTab_{"Layers"};

@@ -17,6 +17,9 @@ public:
     void bind(juce::String id);
     void paint(juce::Graphics&) override;
     void mouseDown(const juce::MouseEvent&) override;
+    bool keyPressed(const juce::KeyPress&) override;
+    void focusGained(FocusChangeType) override { repaint(); }
+    void focusLost(FocusChangeType) override { repaint(); }
     void refresh();
     // A merged switch shows on while either parameter is on.
     void mirrorPartner(juce::String id) { partnerId_ = std::move(id); }
@@ -33,13 +36,14 @@ private:
 
 class SectionLock final : public juce::TextButton, private juce::Timer {
 public:
-    SectionLock(Apvts&, juce::String name, juce::StringArray ids);
+    SectionLock(Apvts&, juce::String name, juce::StringArray ids, juce::String sectionTitle = {});
     const juce::StringArray& parameterIds() const noexcept { return ids_; }
     void bind(juce::StringArray ids);
 private:
     void timerCallback() override;
     Apvts& state_;
     juce::StringArray ids_;
+    juce::String sectionTitle_;
 };
 
 class RoutedSlider : public juce::Slider {
@@ -101,12 +105,30 @@ private:
         bool hitTest(int x, int y) override;
     };
 
+    class FreqReadout final : public juce::Label {
+    public:
+        explicit FreqReadout(DualEqKnob& owner) : owner_(owner) {}
+        bool keyPressed(const juce::KeyPress& key) override;
+        void focusGained(FocusChangeType) override { owner_.repaint(); }
+        void focusLost(FocusChangeType) override { owner_.repaint(); }
+        void mouseMove(const juce::MouseEvent& event) override;
+        void mouseExit(const juce::MouseEvent& event) override;
+        void mouseDown(const juce::MouseEvent& event) override;
+        void mouseDrag(const juce::MouseEvent& event) override;
+        void mouseUp(const juce::MouseEvent& event) override;
+        void mouseWheelMove(const juce::MouseEvent& event, const juce::MouseWheelDetails& wheel) override;
+    private:
+        DualEqKnob& owner_;
+    };
+
     void timerCallback() override;
     [[nodiscard]] juce::Rectangle<float> dialBounds() const;
     [[nodiscard]] juce::Rectangle<int> dbPillBounds() const;
     [[nodiscard]] juce::Rectangle<int> freqPillBounds() const;
     [[nodiscard]] bool hitsOuterRing(juce::Point<float> pos) const;
+    void stepFreqSemitones(int semitones);
     void updateReadoutText();
+    void updateFreqReadoutText();
 
     Apvts& state_;
     juce::String freqId_;
@@ -115,6 +137,7 @@ private:
     juce::Colour freqAccent_;
     juce::Label title_;
     juce::Label dbReadout_;
+    FreqReadout freqReadout_;
     GainSlider dbSlider_;
     juce::Slider freqMirror_;
     std::unique_ptr<ParameterControl> dbRouting_;

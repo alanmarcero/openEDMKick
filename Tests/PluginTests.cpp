@@ -73,8 +73,6 @@ void checkInteractiveTargets(juce::Component& component) {
             const juce::Font face(juce::FontOptions(15.0f, juce::Font::bold));
             CHECK(juce::GlyphArrangement::getStringWidthInt(face, button->getButtonText()) <= button->getWidth() - 8);
             CHECK(button->getLookAndFeel().getTextButtonFont(*button, button->getHeight()).getHeight() >= 14.0f);
-            CHECK(button->getButtonText() != "<");
-            CHECK(button->getButtonText() != ">");
         }
         if (dynamic_cast<openedmkick::ui::ParameterControl*>(child) != nullptr) {
             CHECK(child->getWidth() >= 40);

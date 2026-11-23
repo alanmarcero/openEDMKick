@@ -102,7 +102,7 @@ public:
     LayerPage(OpenEdmKickProcessor& processor, int layer);
     void paint(juce::Graphics& g) override;
     void resized() override;
-    void showEnabled(bool enabled);
+    void showEnabled(bool enabled, bool isKick = true, bool mutedBySolo = false);
 
 private:
     std::unique_ptr<SectionLock> sectionLock_;
@@ -140,9 +140,13 @@ public:
     void mouseDown(const juce::MouseEvent& event) override;
 
 private:
-    void timerCallback() override { repaint(); }
+    void timerCallback() override;
     [[nodiscard]] juce::Rectangle<float> gridArea() const;
     OpenEdmKickProcessor& processor_;
+    float lastPhase_ = -1.0f;
+    openedmkick::core::AutoSlotSettings lastSettings_{};
+    std::vector<openedmkick::core::PianoRollNote> lastNotes_;
+    std::array<std::pair<bool, int>, openedmkick::core::kNumSoundLayers> lastLayers_{};
 };
 
 class AutoPianoRollPanel final : public juce::Component, private juce::Timer {
