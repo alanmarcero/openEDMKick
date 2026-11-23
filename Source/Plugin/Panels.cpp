@@ -475,7 +475,7 @@ void LayerPage::resized() {
     auto area = getLocalBounds().withTrimmedLeft(154).withTrimmedRight(10);
     const int rowHeight = area.getHeight() / 4;
     layoutRow(area.removeFromTop(rowHeight).reduced(0, 4), { &enabled_, &sound_, &level_, layerToggles_[0].get(), layerToggles_[1].get() }, 8);
-    layoutRow(area.removeFromTop(rowHeight).reduced(0, 4), { &pitch_, &decay_, &highPass_, &lowPass_, layerKnobs_[8].get() }, 8);
+    layoutRow(area.removeFromTop(rowHeight).reduced(14, 4), { &pitch_, &decay_, &highPass_, &lowPass_, layerKnobs_[8].get() }, 4);
     layoutRow(area.removeFromTop(rowHeight).reduced(0, 4), { layerKnobs_[0].get(), layerKnobs_[1].get(), layerKnobs_[6].get(), layerKnobs_[7].get() }, 8);
     layoutRow(area.reduced(0, 4), { layerKnobs_[2].get(), layerKnobs_[3].get(), layerKnobs_[4].get(), layerKnobs_[5].get() }, 8);
 }
@@ -524,7 +524,10 @@ void LayerPanel::refreshActivity() {
         const juce::String inactiveTip = !enabled
             ? "Layer " + letter + " is off. Turn on Layer on in its tab to hear it."
             : "Layer " + letter + " is muted because another layer is soloed.";
-        showActivity(tabs_[index], enabled && !mutedBySolo, "Select layer " + letter + " to edit its sound, mix, and zone.", inactiveTip);
+        const bool activeTab = enabled && !mutedBySolo;
+        tabs_[index].setAlpha(activeTab ? 1.0f : 0.48f);
+        tabs_[index].setColour(juce::TextButton::textColourOffId, activeTab ? theme::kText : juce::Colours::white);
+        tabs_[index].setTooltip(activeTab ? "Select layer " + letter + " to edit its sound, mix, and zone." : inactiveTip);
         pages_[index]->showEnabled(enabled, soundIndex == 0, mutedBySolo);
     });
 }
@@ -543,9 +546,11 @@ void LayerPanel::selectLayer(int layer) {
 void LayerPanel::resized() {
     auto area = getLocalBounds();
     auto tabs = area.removeFromTop(44);
+    constexpr int gap = 8;
+    const int tabWidth = std::clamp((tabs.getWidth() - gap * (core::kNumSoundLayers - 1)) / core::kNumSoundLayers, 136, 190);
     std::ranges::for_each(tabs_, [&](juce::TextButton& tab) {
-        tab.setBounds(tabs.removeFromLeft(118).withHeight(40));
-        tabs.removeFromLeft(8);
+        tab.setBounds(tabs.removeFromLeft(tabWidth).withHeight(40));
+        tabs.removeFromLeft(gap);
     });
     area.removeFromTop(8);
     pages_[static_cast<size_t>(selectedLayer_)]->setBounds(area);
@@ -580,7 +585,7 @@ void PianoRollView::timerCallback() {
 }
 
 juce::Rectangle<float> PianoRollView::gridArea() const {
-    return getLocalBounds().toFloat().reduced(13.0f, 10.0f).withTrimmedTop(40.0f).withTrimmedLeft(66.0f).withTrimmedBottom(4.0f);
+    return getLocalBounds().toFloat().reduced(13.0f, 10.0f).withTrimmedTop(40.0f).withTrimmedLeft(76.0f).withTrimmedBottom(4.0f);
 }
 
 void PianoRollView::paint(juce::Graphics& g) {
@@ -593,9 +598,9 @@ void PianoRollView::paint(juce::Graphics& g) {
     const int totalSteps = bars * core::kStepsPerBar64;
     const int gridStep = core::kGridStepSizes64[static_cast<size_t>(std::clamp(settings.gridResolution, 0, 4))];
 
-    g.setColour(theme::kTextDim);
-    g.setFont(juce::FontOptions(13.0f));
-    g.drawText("Click to add or remove a hit. Shift-click a hit to change its ratchets.", getLocalBounds().reduced(14, 5).removeFromTop(17),
+    g.setColour(theme::kText.withAlpha(0.84f));
+    g.setFont(juce::FontOptions(14.0f));
+    g.drawText("Click to add or remove a hit. Shift-click a hit to change its ratchets.", getLocalBounds().reduced(14, 5).removeFromTop(20),
                juce::Justification::centredLeft);
 
     g.setColour(theme::kSteel);
@@ -635,8 +640,9 @@ void PianoRollView::paint(juce::Graphics& g) {
             g.setColour(theme::kInk.withAlpha(0.5f));
             g.fillRect(juce::Rectangle<float>(grid.getX(), y, grid.getWidth(), rowHeight));
         }
-        g.setColour(theme::kTextDim.withMultipliedAlpha(playing(lane - 1) ? 1.0f : 0.4f));
-        g.drawText(label, juce::Rectangle<float>(grid.getX() - 64.0f, y, 62.0f, rowHeight), juce::Justification::centredLeft);
+        g.setColour(theme::kText.withAlpha(playing(lane - 1) ? 0.95f : 0.60f));
+        g.setFont(juce::FontOptions(13.0f, juce::Font::bold));
+        g.drawText(label, juce::Rectangle<float>(grid.getX() - 72.0f, y, 68.0f, rowHeight), juce::Justification::centredLeft);
     }
     const auto notes = processor_.currentPianoRollNotes();
     for (const auto& note : notes) {
@@ -814,15 +820,15 @@ void PeakMeter::mouseDown(const juce::MouseEvent&) {
 }
 
 void PeakMeter::paint(juce::Graphics& g) {
-    auto area = getLocalBounds().reduced(4, 6);
+    auto area = getLocalBounds().reduced(4, 6).withTrimmedBottom(6);
     g.setColour(theme::kText);
     g.setFont(juce::FontOptions(13.0f, juce::Font::bold));
-    g.drawText("Output peak", area.removeFromTop(18), juce::Justification::centred);
+    g.drawText("Output peak", area.removeFromTop(16), juce::Justification::centred);
     g.setFont(juce::FontOptions(14.0f, juce::Font::bold));
     auto readout = juce::String("-inf dB");
     if (heldDb_ > -99.0f) readout = juce::String(heldDb_, 1) + " dB";
-    g.drawText(readout, area.removeFromTop(22), juce::Justification::centred);
-    area.removeFromTop(4);
+    g.drawText(readout, area.removeFromTop(20), juce::Justification::centred);
+    area.removeFromTop(3);
 
     auto bar = area.removeFromTop(14);
     const auto clip = bar.removeFromRight(14).toFloat();
@@ -848,11 +854,11 @@ void PeakMeter::paint(juce::Graphics& g) {
     g.drawRoundedRectangle(clip.reduced(0.5f), 3.0f, 1.0f);
 
     g.setColour(theme::kTextDim);
-    g.setFont(juce::FontOptions(10.0f));
-    const auto ticks = area.removeFromTop(16).toFloat();
+    g.setFont(juce::FontOptions(11.0f));
+    const auto ticks = area.removeFromTop(18).toFloat();
     std::ranges::for_each(std::array{ -24.0f, -12.0f, 0.0f }, [&](float db) {
         g.fillRect(xFor(db) - 0.5f, ticks.getY(), 1.0f, 3.0f);
-        g.drawText(juce::String(juce::roundToInt(db)), juce::Rectangle<float>(xFor(db) - 12.0f, ticks.getY() + 3.0f, 24.0f, 12.0f),
+        g.drawText(juce::String(juce::roundToInt(db)), juce::Rectangle<float>(xFor(db) - 14.0f, ticks.getY() + 3.0f, 28.0f, 14.0f),
                    juce::Justification::centred);
     });
 }
@@ -1007,7 +1013,12 @@ void EffectsPanel::resized() {
     const int rhythmRow = cards[2].getHeight() / 3;
     layoutRow(cards[2].removeFromTop(rhythmRow), { &stutterEnabled_, &stutterRate_, &stutterMix_ });
     layoutRow(cards[2].removeFromTop(rhythmRow), { &gateEnabled_, &gateRate_, &gateMix_ });
-    layoutRow(cards[2], { &pumpRate_, &pumpMix_ });
+    auto pumpRow = cards[2];
+    const int colWidth = std::max(0, (pumpRow.getWidth() - 10) / 3);
+    pumpRow.removeFromLeft(colWidth + 5);
+    pumpRate_.setBounds(pumpRow.removeFromLeft(colWidth));
+    pumpRow.removeFromLeft(5);
+    pumpMix_.setBounds(pumpRow.removeFromLeft(colWidth));
     const int third = cards[3].getHeight() / 3;
     layoutRow(cards[3].removeFromTop(third), { &highPassMidi_, &highPass_, &highPassSyncRate_ });
     layoutRow(cards[3].removeFromTop(third), { &lowPassMidi_, &lowPass_, &lowPassSyncRate_ });
