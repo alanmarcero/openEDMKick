@@ -3,6 +3,7 @@
 #include "BinaryData.h"
 #include "Presets.h"
 #include "Theme.h"
+#include "suite/FamilyLayout.h"
 
 #include <cmath>
 #include <ranges>
@@ -13,7 +14,7 @@ namespace {
 namespace theme = openedmkick::theme;
 namespace presets = openedmkick::presets;
 
-constexpr int kEditorWidth = 1080;
+constexpr int kEditorWidth = suite::kFamilyDesignWidth;
 constexpr int kEditorHeight = 764;
 
 std::vector<juce::String> factoryPresetNames() {

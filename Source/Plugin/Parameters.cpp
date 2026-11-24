@@ -1,9 +1,11 @@
 #include "Parameters.h"
+#include "suite/EqNotes.h"
 #include "Effects.h"
 #include "KickSynth.h"
 
 #include <algorithm>
 #include <cmath>
+#include <optional>
 #include <ranges>
 
 namespace openedmkick::params {
@@ -171,41 +173,24 @@ juce::String formatHz(float hz) {
     return juce::String(juce::roundToInt(hz)) + " Hz";
 }
 
-float eqNoteToHz(int midiNote) noexcept {
-    const int clamped = std::clamp(midiNote, 0, 144);
-    return 440.0f * std::exp2((static_cast<float>(clamped) - 69.0f) / 12.0f);
-}
+float eqNoteToHz(int midiNote) noexcept { return ::suite::eq::noteToHz(midiNote); }
 
 int eqHzToNearestMidi(float hz, int minMidi, int maxMidi) noexcept {
-    if (!std::isfinite(hz) || hz <= 0.0f) return minMidi;
-    const int midi = juce::roundToInt(69.0f + 12.0f * std::log2(hz / 440.0f));
-    return std::clamp(midi, minMidi, maxMidi);
+    return ::suite::eq::nearestMidi(hz, minMidi, maxMidi);
 }
 
 juce::String formatEqNote(float hz, int minMidi, int maxMidi) {
-    static constexpr std::array<const char*, 12> kNames{
-        "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"
-    };
-    const int midi = eqHzToNearestMidi(hz, minMidi, maxMidi);
-    const int octave = midi / 12 - 1;
-    return juce::String(kNames[static_cast<size_t>(midi % 12)]) + juce::String(octave);
+    return ::suite::eq::formatNote(hz, minMidi, maxMidi);
+}
+
+std::pair<int, int> eqBandMidiLimits(const juce::String& freqParamId) noexcept {
+    return ::suite::eq::bandLimits(freqParamId);
 }
 
 float parseEqNoteOrHz(const juce::String& text, int minMidi, int maxMidi) {
-    const auto trimmed = text.trim();
-    if (trimmed.isEmpty()) return eqNoteToHz(minMidi);
-    const int semitone = juce::String("C D EF G A B").indexOfIgnoreCase(trimmed.substring(0, 1));
-    if (semitone >= 0) {
-        const auto afterLetter = trimmed.substring(1);
-        const int sharp = afterLetter.startsWithChar('#') ? 1 : 0;
-        const int flat = afterLetter.startsWithChar('b') ? 1 : 0;
-        const auto octaveText = afterLetter.substring(sharp + flat).trim();
-        if (octaveText.isNotEmpty() && (octaveText.containsOnly("-0123456789"))) {
-            const int midi = (octaveText.getIntValue() + 1) * 12 + semitone + sharp - flat;
-            return eqNoteToHz(std::clamp(midi, minMidi, maxMidi));
-        }
-    }
-    return eqNoteToHz(eqHzToNearestMidi(kParseHz(trimmed), minMidi, maxMidi));
+    return ::suite::eq::parseNoteOrHz(text, minMidi, maxMidi, [](const juce::String& trimmed) {
+        return kParseHz(trimmed);
+    });
 }
 
 juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout() {
@@ -222,6 +207,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout() {
     addFloat(layout, kSweepOctaves, "Dive Range", { 0.0f, 6.0f }, 2.4f, kFormatOctaves);
     addFloat(layout, kSweepMs, "Dive Time", skewedRange(5.0f, 400.0f, 70.0f), 70.0f, kFormatMs);
     addFloat(layout, kSweepShape, "Dive Curve", { -1.0f, 1.0f }, 0.55f, kFormatBipolar);
+    addFloat(layout, kKeyTracking, "Key Tracking", { 0.0f, 1.0f, 0.01f }, 1.0f, kFormatPercent);
     addFloat(layout, kSnapOctaves, "Snap Range", { 0.0f, 5.0f }, 2.0f, kFormatOctaves);
     addFloat(layout, kSnapMs, "Snap Time", skewedRange(0.2f, 12.0f, 2.0f), 2.0f, kFormatMs);
     addFloat(layout, kBodyTone, "Harmonics", { 0.0f, 1.0f }, 0.65f, kFormatPercent);
@@ -298,7 +284,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout() {
     addBool(layout, kLowPassSyncEnabled, "Low Pass Sync", false);
     addChoice(layout, kLowPassSyncRate, "Low-pass Rate", syncDivisions, 2);
     addFloat(layout, kOutput, "Output", { -24.0f, 12.0f }, 0.0f, kFormatDb);
-    addBool(layout, kLimiter, "Limiter", true);
+    addBool(layout, kLimiterEnabled, "Limiter", true);
     addFloat(layout, kCeiling, "Ceiling", { -18.0f, 0.0f }, -0.3f, kFormatDb);
     addBool(layout, kMasterBypass, "Master Bypass", false);
     // Append controls to preserve the host's existing parameter order.

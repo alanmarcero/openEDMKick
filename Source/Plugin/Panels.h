@@ -55,6 +55,7 @@ private:
     Knob sweepOctaves_;
     Knob sweepMs_;
     Knob sweepShape_;
+    Knob keyTracking_;
     Knob snapOctaves_;
     Knob snapMs_;
     Knob bodyTone_;

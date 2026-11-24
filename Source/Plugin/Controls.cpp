@@ -1,4 +1,5 @@
 #include "Controls.h"
+#include "Parameters.h"
 #include "Theme.h"
 #include "PluginProcessor.h"
 
@@ -398,14 +399,18 @@ void DualEqKnob::paint(juce::Graphics& g) {
     g.setColour(ringColour);
     g.strokePath(value, juce::PathStrokeType(3.2f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 
-    // Mark root, +1 octave, and +2 octave positions on the outer note ring.
+    const auto [minMidi, maxMidi] = openedmkick::params::eqBandMidiLimits(freqId_);
+    const int semitoneSpan = std::max(1, maxMidi - minMidi);
     g.setColour(theme::kTextDim.withAlpha(0.55f));
-    for (const float markNorm : { 0.0f, 0.5f, 1.0f }) {
+    for (int step = 0; step <= semitoneSpan; ++step) {
+        const float markNorm = static_cast<float>(step) / static_cast<float>(semitoneSpan);
         const float markAngle = startAngle + markNorm * (endAngle - startAngle);
-        const float innerTick = outerR - 3.0f;
-        const float outerTick = outerR + 3.0f;
+        const bool octaveRoot = ((minMidi + step) % 12) == 9;
+        const float innerTick = outerR - (octaveRoot ? 4.0f : 2.0f);
+        const float outerTick = outerR + (octaveRoot ? 4.0f : 2.0f);
         g.drawLine(centre.x + innerTick * std::sin(markAngle), centre.y - innerTick * std::cos(markAngle),
-                   centre.x + outerTick * std::sin(markAngle), centre.y - outerTick * std::cos(markAngle), 1.1f);
+                   centre.x + outerTick * std::sin(markAngle), centre.y - outerTick * std::cos(markAngle),
+                   octaveRoot ? 1.2f : 0.75f);
     }
 
     const float dotX = centre.x + outerR * std::sin(angle);
@@ -500,8 +505,9 @@ void DualEqKnob::mouseDoubleClick(const juce::MouseEvent& event) {
 void DualEqKnob::stepFreqSemitones(int semitones) {
     auto* param = state_.getParameter(freqId_);
     if (param == nullptr || semitones == 0) return;
-    constexpr float kSemitoneStep = 1.0f / 24.0f;
-    const float nextNorm = std::clamp(param->convertTo0to1(freqHz_) + static_cast<float>(semitones) * kSemitoneStep, 0.0f, 1.0f);
+    const auto [minMidi, maxMidi] = openedmkick::params::eqBandMidiLimits(freqId_);
+    const float semitoneStep = 1.0f / static_cast<float>(std::max(1, maxMidi - minMidi));
+    const float nextNorm = std::clamp(param->convertTo0to1(freqHz_) + static_cast<float>(semitones) * semitoneStep, 0.0f, 1.0f);
     const float nextHz = param->convertFrom0to1(nextNorm);
     freqHz_ = nextHz;
     static_cast<OpenEdmKickProcessor&>(state_.processor).routing().manualValue(freqId_, nextHz);

@@ -61,13 +61,14 @@ OpenEdmKickProcessor::OpenEdmKickProcessor()
               raw(params::kHighPass), raw(params::kLowPass), raw(params::kHighPassSyncEnabled),
               raw(params::kHighPassSyncRate), raw(params::kLowPassSyncEnabled), raw(params::kLowPassSyncRate),
               raw(params::kOutput),
-              raw(params::kLimiter), raw(params::kCeiling), raw(params::kMasterBypass),
+              raw(params::kLimiterEnabled), raw(params::kCeiling), raw(params::kMasterBypass),
               raw(params::kAmpEnabled), raw(params::kAmpAttack), raw(params::kAmpDecay), raw(params::kAmpSustain), raw(params::kAmpRelease), raw(params::kReverseEnabled), raw(params::kCrushEnabled), raw(params::kStutterEnabled), raw(params::kGateEnabled), raw(params::kMidiVolume), raw(params::kMidiExpression), raw(params::kMidiBrightness), raw(params::kHighPassMidi), raw(params::kLowPassMidi),
               raw(params::kSubOctave), raw(params::kClickPunch), raw(params::kStereoWidth),
               raw(params::kEqLowFreq), raw(params::kEqLowDb), raw(params::kEqMidFreq),
               raw(params::kEqMidDb), raw(params::kEqHighFreq), raw(params::kEqHighDb),
               raw(params::kClickSampleOn), raw(params::kClickSampleSource), raw(params::kClickSampleLevel),
-              raw(params::kClickSampleStart), raw(params::kClickSamplePitch), raw(params::kClickSampleHp)
+              raw(params::kClickSampleStart), raw(params::kClickSamplePitch), raw(params::kClickSampleHp),
+              raw(params::kKeyTracking)
           };
       }()) {
     for (int slot = 0; slot < core::kNumAutoSlots; ++slot) {
@@ -126,7 +127,7 @@ core::KickSettings OpenEdmKickProcessor::currentSynthSettings() const noexcept {
         values_.holdMs->load(), values_.decayMs->load(), values_.decayShape->load(),
         values_.lowCutHz->load(),
         values_.ampEnabled->load() > 0.5f, values_.ampAttackMs->load(), values_.ampDecayMs->load(), values_.ampSustain->load(), values_.ampReleaseMs->load(),
-        values_.subOctave->load(), values_.clickPunch->load()
+        values_.subOctave->load(), values_.clickPunch->load(), values_.keyTracking->load()
     };
 }
 
@@ -569,6 +570,9 @@ bool OpenEdmKickProcessor::recallSound(const void* data, int sizeInBytes, bool l
     const auto xml = getXmlFromBinary(data, sizeInBytes);
     if (xml == nullptr || !xml->hasTagName(parameters.state.getType())) return false;
     auto state = juce::ValueTree::fromXml(*xml);
+    if (auto legacy = state.getChildWithProperty("id", "limiter"); legacy.isValid()
+        && !state.getChildWithProperty("id", params::kLimiterEnabled).isValid())
+        legacy.setProperty("id", params::kLimiterEnabled, nullptr);
     std::ranges::for_each(getParameters(), [&](juce::AudioProcessorParameter* parameter) {
         auto* ranged = dynamic_cast<juce::RangedAudioParameter*>(parameter);
         if (ranged != nullptr && !state.getChildWithProperty("id", ranged->paramID).isValid()) {

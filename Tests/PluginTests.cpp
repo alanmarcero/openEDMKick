@@ -384,7 +384,7 @@ TEST_CASE("Kick settings that have no effect draw dim and say what turns them on
     REQUIRE(sampleLevel != nullptr);
     CHECK(ceiling->getParentComponent()->getAlpha() == 1.0f);
     CHECK(sampleLevel->getParentComponent()->getAlpha() < 0.5f);
-    setParam(processor, "limiter", 0.0f);
+    setParam(processor, "limiter_enabled", 0.0f);
     setParam(processor, "click_sample_on", 1.0f);
     kick.refreshActivity();
     CHECK(ceiling->getParentComponent()->getAlpha() < 0.5f);
@@ -427,7 +427,7 @@ TEST_CASE("Double-click returns every visible dial to its default", "[plugin][ui
 TEST_CASE("MIDI input tracks pitch and octave, including notes from other channels", "[plugin][midi]") {
     OpenEdmKickProcessor processor;
     processor.prepareToPlay(48000.0, 512);
-    setParam(processor, "limiter", 0.0f);
+    setParam(processor, "limiter_enabled", 0.0f);
 
     juce::AudioBuffer<float> buffer(2, 512);
     juce::MidiBuffer midi;
@@ -560,7 +560,7 @@ TEST_CASE("Output peak reads after the limiter and holds until the editor takes 
     CHECK(limited <= juce::Decibels::decibelsToGain(-0.3f) + 1.0e-3f);
     CHECK(processor.displayPeak.exchange(0.0f) == 0.0f);
 
-    setParam(processor, "limiter", 0.0f);
+    setParam(processor, "limiter_enabled", 0.0f);
     processor.processBlock(buffer, midi);
     CHECK(processor.displayPeak.exchange(0.0f) > 1.0f);
 }
@@ -569,7 +569,7 @@ TEST_CASE("MIDI CC21 activates the host-synced high-pass in the plug-in", "[plug
     const auto render = [](bool sendCc) {
         OpenEdmKickProcessor processor;
         processor.prepareToPlay(48000.0, 8192);
-        setParam(processor, "limiter", 0.0f);
+        setParam(processor, "limiter_enabled", 0.0f);
         juce::AudioBuffer<float> buffer(2, 8192);
         juce::MidiBuffer midi;
         midi.addEvent(juce::MidiMessage::noteOn(1, 48, 1.0f), 0);
@@ -765,7 +765,7 @@ TEST_CASE("Previous and Next step the browser list and the header marks edits", 
 TEST_CASE("All 56 trance kick presets load and report valid program names", "[plugin][presets]") {
     OpenEdmKickProcessor processor;
     const auto& presets = openedmkick::presets::factoryPresets();
-    REQUIRE(processor.getNumPrograms() == 56);
+    REQUIRE(processor.getNumPrograms() == openedmkick::presets::kFactoryProgramCount);
 
     std::vector<std::string> names;
     for (int index = 0; index < processor.getNumPrograms(); ++index) {
@@ -1045,7 +1045,7 @@ TEST_CASE("Layer tabs and lanes name each sound, dim layers that are off, and gr
 TEST_CASE("Audition remains at sample zero before later MIDI controller events", "[layer-improvements][midi]") {
     OpenEdmKickProcessor processor;
     processor.prepareToPlay(48000, 256);
-    setParam(processor, "limiter", 0);
+    setParam(processor, "limiter_enabled", 0);
     processor.triggerAudition();
     juce::AudioBuffer<float> buffer(2, 256);
     juce::MidiBuffer midi;
@@ -1112,20 +1112,20 @@ TEST_CASE("Routing metadata survives state restore without overriding project va
 TEST_CASE("Assigned CC endpoints and discrete values reach runtime without APVTS writes", "[routing]") {
     OpenEdmKickProcessor processor;
     processor.prepareToPlay(48000, 64);
-    processor.routing().assignCc("limiter", 35);
+    processor.routing().assignCc("limiter_enabled", 35);
     processor.routing().assignCc("click_type", 35);
-    const float hostLimiter = processor.parameters.getRawParameterValue("limiter")->load();
+    const float hostLimiter = processor.parameters.getRawParameterValue("limiter_enabled")->load();
     juce::AudioBuffer<float> audio(2, 64);
     juce::MidiBuffer midi;
     midi.addEvent(juce::MidiMessage::controllerEvent(1, 35, 0), 16);
     processor.processBlock(audio, midi);
-    REQUIRE_THAT(processor.routing().displayValue("limiter"), WithinAbs(0.0f, 0.0001f));
+    REQUIRE_THAT(processor.routing().displayValue("limiter_enabled"), WithinAbs(0.0f, 0.0001f));
     REQUIRE_THAT(processor.routing().displayValue("click_type"), WithinAbs(0.0f, 0.0001f));
-    REQUIRE_THAT(processor.parameters.getRawParameterValue("limiter")->load(), WithinAbs(hostLimiter, 0.0001f));
+    REQUIRE_THAT(processor.parameters.getRawParameterValue("limiter_enabled")->load(), WithinAbs(hostLimiter, 0.0001f));
     midi.clear();
     midi.addEvent(juce::MidiMessage::controllerEvent(1, 35, 127), 0);
     processor.processBlock(audio, midi);
-    REQUIRE_THAT(processor.routing().displayValue("limiter"), WithinAbs(1.0f, 0.0001f));
+    REQUIRE_THAT(processor.routing().displayValue("limiter_enabled"), WithinAbs(1.0f, 0.0001f));
     REQUIRE_THAT(processor.routing().displayValue("click_type"), WithinAbs(3.0f, 0.0001f));
 }
 
@@ -1151,7 +1151,7 @@ TEST_CASE("Processor ADSR note-offs retain their offsets and host tails finish",
     setParam(processor, "amp_decay_ms", 0);
     setParam(processor, "amp_sustain", 1);
     setParam(processor, "amp_release_ms", 100);
-    setParam(processor, "limiter", 0);
+    setParam(processor, "limiter_enabled", 0);
     juce::AudioBuffer<float> audio(2, 128);
     juce::MidiBuffer midi;
     midi.addEvent(juce::MidiMessage::noteOn(2, 36, 1.0f), 8);
@@ -1189,7 +1189,7 @@ TEST_CASE("Factory filter CC off preserves a host-enabled sync switch", "[routin
         OpenEdmKickProcessor processor;
         processor.prepareToPlay(48000, 1024);
         setParam(processor, "hp_sync_on", 1);
-        setParam(processor, "limiter", 0);
+        setParam(processor, "limiter_enabled", 0);
         juce::AudioBuffer<float> audio(2, 1024);
         juce::MidiBuffer midi;
         if (ccOff) midi.addEvent(juce::MidiMessage::controllerEvent(1, 21, 0), 0);
@@ -1227,14 +1227,14 @@ TEST_CASE("Routing restores legacy defaults and maps boolean/shared controllers"
     processor.routing().applyCc(35, 0);
     REQUIRE_THAT(processor.routing().displayValue("amp_enabled"), WithinAbs(0.0f, 0.0001f));
     REQUIRE_THAT(processor.routing().displayValue("click_type"), WithinAbs(0.0f, 0.0001f));
-    processor.routing().setLocked("limiter", true);
+    processor.routing().setLocked("limiter_enabled", true);
     processor.routing().assignCc("reverse_on", 90);
     auto state = processor.parameters.copyState();
     state.removeChild(state.getChildWithName("ParameterRouting"), nullptr);
     juce::MemoryBlock saved;
     juce::AudioProcessor::copyXmlToBinary(*state.createXml(), saved);
     processor.setStateInformation(saved.getData(), static_cast<int>(saved.getSize()));
-    REQUIRE_FALSE(processor.routing().isLocked("limiter"));
+    REQUIRE_FALSE(processor.routing().isLocked("limiter_enabled"));
     REQUIRE(processor.routing().assignment("reverse_on") == 20);
     REQUIRE(processor.routing().assignment("amp_enabled") == -1);
 }
@@ -1491,7 +1491,7 @@ TEST_CASE("Main page shows Output controls + 3-band EQ while drive/distortion pa
     std::ranges::for_each(std::array<const char*, 11>{
         "routing_eq_low_db", "routing_eq_low_freq", "routing_eq_mid_db", "routing_eq_mid_freq",
         "routing_eq_high_db", "routing_eq_high_freq", "routing_output", "routing_stereo_width",
-        "routing_ceiling", "routing_limiter", "routing_master_bypass"},
+        "routing_ceiling", "routing_limiter_enabled", "routing_master_bypass"},
         [&](const char* id) {
             auto* control = findById(findById, *editor, id);
             REQUIRE(control != nullptr);
@@ -1653,7 +1653,7 @@ TEST_CASE("EQ bands snap to chromatic notes across two octaves", "[plugin][eq][n
         REQUIRE_THAT(snapped, WithinAbs(hz, 0.01f));
     };
 
-    checkBand(params::kEqLowFreq, params::kEqLowMinMidi, params::kEqLowMaxMidi, "E1", "E2", "E3", "F#2");
-    checkBand(params::kEqMidFreq, params::kEqMidMinMidi, params::kEqMidMaxMidi, "B4", "B5", "B6", "F#5");
-    checkBand(params::kEqHighFreq, params::kEqHighMinMidi, params::kEqHighMaxMidi, "A#7", "A#8", "A#9", "C9");
+    checkBand(params::kEqLowFreq, params::kEqLowMinMidi, params::kEqLowMaxMidi, "A0", "A1", "A2", "G#1");
+    checkBand(params::kEqMidFreq, params::kEqMidMinMidi, params::kEqMidMaxMidi, "A3", "A4", "A5", "G#4");
+    checkBand(params::kEqHighFreq, params::kEqHighMinMidi, params::kEqHighMaxMidi, "A6", "A7", "A8", "G#7");
 }

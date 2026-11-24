@@ -106,7 +106,8 @@ inline constexpr const char* kHighPassSyncRate = "hp_sync_rate";
 inline constexpr const char* kLowPassSyncEnabled = "lp_sync_on";
 inline constexpr const char* kLowPassSyncRate = "lp_sync_rate";
 inline constexpr const char* kOutput = "output";
-inline constexpr const char* kLimiter = "limiter";
+inline constexpr const char* kLimiterEnabled = "limiter_enabled";
+inline constexpr const char* kKeyTracking = "key_tracking";
 inline constexpr const char* kCeiling = "ceiling";
 inline constexpr const char* kMasterBypass = "master_bypass";
 inline constexpr const char* kEqLowFreq = "eq_low_freq";
@@ -120,12 +121,14 @@ inline constexpr std::array<std::pair<int, int>, 9> kTimeSignatures = { {
     { 4, 4 }, { 3, 4 }, { 2, 4 }, { 5, 4 }, { 6, 4 }, { 6, 8 }, { 7, 8 }, { 9, 8 }, { 12, 8 }
 } };
 
-inline constexpr int kEqLowMinMidi = 28;   // E1 (41.20 Hz)
-inline constexpr int kEqLowMaxMidi = 52;   // E3 (164.81 Hz)
-inline constexpr int kEqMidMinMidi = 71;   // B4 (493.88 Hz)
-inline constexpr int kEqMidMaxMidi = 95;   // B6 (1975.53 Hz)
-inline constexpr int kEqHighMinMidi = 106; // A#7 (3729.31 Hz)
-inline constexpr int kEqHighMaxMidi = 130; // A#9 (14917.24 Hz)
+inline constexpr int kEqLowMinMidi = 21;   // A0
+inline constexpr int kEqLowMaxMidi = 45;   // A2
+inline constexpr int kEqMidMinMidi = 57;   // A3
+inline constexpr int kEqMidMaxMidi = 81;   // A5
+inline constexpr int kEqHighMinMidi = 93;  // A6
+inline constexpr int kEqHighMaxMidi = 117; // A8
+
+[[nodiscard]] std::pair<int, int> eqBandMidiLimits(const juce::String& freqParamId) noexcept;
 
 [[nodiscard]] juce::String autoSlotId(int slot, const juce::String& baseId);
 [[nodiscard]] juce::String layerId(int layer, const juce::String& baseId);

@@ -1,4 +1,5 @@
 #include "Panels.h"
+#include "suite/EqNotes.h"
 
 #include "Presets.h"
 #include "Theme.h"
@@ -145,6 +146,7 @@ KickSynthPanel::KickSynthPanel(OpenEdmKickProcessor& processor)
     : sweepOctaves_(processor.parameters, params::kSweepOctaves, "Dive range", theme::kViolet),
       sweepMs_(processor.parameters, params::kSweepMs, "Dive time", theme::kViolet),
       sweepShape_(processor.parameters, params::kSweepShape, "Dive curve", theme::kViolet),
+      keyTracking_(processor.parameters, params::kKeyTracking, "Key tracking", theme::kViolet),
       snapOctaves_(processor.parameters, params::kSnapOctaves, "Snap range", theme::kViolet),
       snapMs_(processor.parameters, params::kSnapMs, "Snap time", theme::kViolet),
       bodyTone_(processor.parameters, params::kBodyTone, "Harmonics", theme::kMint),
@@ -175,7 +177,7 @@ KickSynthPanel::KickSynthPanel(OpenEdmKickProcessor& processor)
       stereoWidth_(processor.parameters, params::kStereoWidth, "Top width", theme::kMint),
       output_(processor.parameters, params::kOutput, "Output", theme::kMint),
       ceiling_(processor.parameters, params::kCeiling, "Ceiling", theme::kMint),
-      limiter_(processor.parameters, params::kLimiter, "Limiter", theme::kMint),
+      limiter_(processor.parameters, params::kLimiterEnabled, "Limiter", theme::kMint),
       masterBypass_(processor.parameters, params::kMasterBypass, "Bypass", theme::kCoral),
       meter_(processor),
       waveform_(processor),
@@ -187,8 +189,8 @@ KickSynthPanel::KickSynthPanel(OpenEdmKickProcessor& processor)
       clickSamplePitch_(processor.parameters, params::kClickSamplePitch, "Pitch", theme::kCoral),
       clickSampleHp_(processor.parameters, params::kClickSampleHp, "High pass", theme::kCoral),
       loadClick_("Load") {
-    std::ranges::for_each(std::array<juce::Component*, 32>{
-             &sweepOctaves_, &sweepMs_, &sweepShape_, &snapOctaves_, &snapMs_,
+    std::ranges::for_each(std::array<juce::Component*, 33>{
+             &sweepOctaves_, &sweepMs_, &sweepShape_, &keyTracking_, &snapOctaves_, &snapMs_,
              &bodyTone_, &knockHz_, &knockDb_, &toneHz_, &subLevel_, &subOctave_, &startPhase_,
              &clickType_, &clickLevel_, &clickHz_, &clickMs_, &clickPunch_, &attack_, &hold_, &decay_, &decayShape_, &lowCut_,
              &eqLow_, &eqMid_, &eqHigh_, &stereoWidth_, &output_, &ceiling_, &limiter_, &masterBypass_, &meter_, &waveform_},
@@ -221,7 +223,7 @@ KickSynthPanel::KickSynthPanel(OpenEdmKickProcessor& processor)
         {params::kAttackMs, params::kHoldMs, params::kDecayMs, params::kDecayShape, params::kLowCutHz},
         {params::kAmpEnabled, params::kAmpAttack, params::kAmpDecay, params::kAmpSustain, params::kAmpRelease},
         {params::kEqLowFreq, params::kEqLowDb, params::kEqMidFreq, params::kEqMidDb, params::kEqHighFreq, params::kEqHighDb,
-         params::kStereoWidth, params::kOutput, params::kCeiling, params::kLimiter, params::kMasterBypass}
+         params::kStereoWidth, params::kOutput, params::kCeiling, params::kLimiterEnabled, params::kMasterBypass}
     }};
     const std::array<juce::String, 6> names{"dive", "body", "transient", "tail", "adsr", "output"};
     const std::array<juce::String, 6> titles{"Pitch dive", "Body & sub", "Transient", "One-shot tail", "MIDI envelope", "Output"};
@@ -230,15 +232,16 @@ KickSynthPanel::KickSynthPanel(OpenEdmKickProcessor& processor)
         addAndMakeVisible(*sectionLocks_.back());
     });
     sweepOctaves_.setTooltip("How far above the played MIDI note the opening of the kick starts.");
+    keyTracking_.setTooltip(::suite::eq::kKeyTrackingTip);
     sweepMs_.setTooltip("Time for the pitch dive to reach the incoming MIDI note.");
     bodyTone_.setTooltip("Add harmonics to give the kick a more forceful, audible body.");
     knockDb_.setTooltip("A resonant mid-bass knock for more impact on smaller speakers.");
     subLevel_.setTooltip("Blend a clean fundamental under the kick body.");
     clickLevel_.setTooltip("Add a short beater transient ahead of the body.");
     clickSampleOn_.setTooltip("Mix a sample click with the transient. Off leaves existing sounds unchanged.");
-    eqLow_.setTooltip("Inner cap sets Low EQ gain (-12 to +12 dB); outer collar snaps Low EQ to notes (E1 to E3).");
-    eqMid_.setTooltip("Inner cap sets Mid EQ gain (-12 to +12 dB); outer collar snaps Mid EQ to notes (B4 to B6).");
-    eqHigh_.setTooltip("Inner cap sets High EQ gain (-12 to +12 dB); outer collar snaps High EQ to notes (A#7 to A#9).");
+    eqLow_.setTooltip(::suite::eq::kLowTip);
+    eqMid_.setTooltip(::suite::eq::kMidTip);
+    eqHigh_.setTooltip(::suite::eq::kHighTip);
     ampEnabled_.setTooltip("Hold incoming MIDI notes until note-off and shape them with attack, decay, sustain and release.");
     ampEnabled_.button().getToggleStateValue().addListener(this);
     setAdvancedMode(false);
@@ -264,7 +267,7 @@ void KickSynthPanel::refreshActivity() {
     showActivity(clickHz_, hasClick, "Center frequency of the synthesized transient.", clickOff);
     showActivity(clickMs_, hasClick, "Length of the synthesized transient.", clickOff);
 
-    showActivity(ceiling_, on(params::kLimiter), "Maximum peak level before the limiter clamps.", "Turn on Limiter to use Ceiling.");
+    showActivity(ceiling_, on(params::kLimiterEnabled), "Maximum peak level before the limiter clamps.", "Turn on Limiter to use Ceiling.");
     const bool sample = on(params::kClickSampleOn);
     const juce::String sampleOff = "Turn on Sample to hear the sample click.";
     showActivity(clickSampleSource_, sample, "Play a built-in click or the WAV you loaded.", sampleOff);
@@ -350,7 +353,7 @@ void KickSynthPanel::resized() {
     auto mode = scope.removeFromRight(kMidiModeWidth);
     ampEnabled_.setBounds(mode.withTrimmedTop(18).reduced(8, 0));
     waveform_.setBounds(scope.withTrimmedRight(kCardGap));
-    placeRow(cards[0], 0, rows, { &sweepOctaves_, &sweepMs_, &sweepShape_ });
+    placeRow(cards[0], 0, rows, { &sweepOctaves_, &sweepMs_, &sweepShape_, &keyTracking_ });
     placeRow(cards[1], 0, rows, { &subLevel_, &knockDb_, &bodyTone_ });
     {
         const int innerTop = cards[2].getY() + kCardHeader;
@@ -846,7 +849,7 @@ void PeakMeter::paint(juce::Graphics& g) {
     g.fillRoundedRectangle(track.withRight(xFor(levelDb_)), 4.0f);
     g.setColour(theme::kText);
     if (heldDb_ > kMeterFloorDb) g.fillRect(juce::Rectangle<float>(xFor(heldDb_) - 1.0f, track.getY(), 2.0f, track.getHeight()));
-    if (processor_.routing().displayValue(params::kLimiter) >= 0.5f) {
+    if (processor_.routing().displayValue(params::kLimiterEnabled) >= 0.5f) {
         g.setColour(theme::kViolet);
         g.fillRect(juce::Rectangle<float>(xFor(processor_.routing().displayValue(params::kCeiling)) - 1.0f,
                                           track.getY() - 3.0f, 2.0f, track.getHeight() + 6.0f));

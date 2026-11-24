@@ -76,6 +76,7 @@ struct KickSettings {
     float ampReleaseMs = 300.0f;
     float subOctave = 0.0f;       // 0..1, phase-locked sub-octave reinforcement
     float clickPunch = 0.0f;      // 0..1, fast attack transient punch boost
+    float keyTracking = 1.0f;     // 0 = root pitch, 1 = follow the MIDI note
 
 };
 

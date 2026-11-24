@@ -137,7 +137,9 @@ void ParameterRouting::writeState(juce::ValueTree& state) const {
 void ParameterRouting::restoreState(const juce::ValueTree& state) {
     const auto metadata = state.getChildWithName("ParameterRouting");
     for (const auto& entry : entries_) {
-        const auto parameter = metadata.getChildWithProperty("id", entry->parameter->paramID);
+        auto parameter = metadata.getChildWithProperty("id", entry->parameter->paramID);
+        if (!parameter.isValid() && entry->parameter->paramID == "limiter_enabled")
+            parameter = metadata.getChildWithProperty("id", "limiter");
         entry->locked.store(parameter.getProperty("locked", false));
         assignCc(entry->parameter->paramID, parameter.getProperty("cc", defaultAssignment(entry->parameter->paramID)));
     }

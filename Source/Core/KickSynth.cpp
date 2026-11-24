@@ -124,7 +124,9 @@ void KickVoice::startState(const KickSettings& settings, int midiNote, float vel
     const bool resume = active_;
     settings_ = settings;
     const float transpose = finiteClamp(layer.transposeSemitones, 0, -24, 24);
-    const float pitchRatio = noteFrequencyHz(midiNote) / noteFrequencyHz(kDefaultMidiNote) * std::exp2(transpose / 12.0f);
+    const float tracking = finiteClamp(settings.keyTracking, 1.0f, 0.0f, 1.0f);
+    const float midiRatio = noteFrequencyHz(midiNote) / noteFrequencyHz(kDefaultMidiNote);
+    const float pitchRatio = std::pow(std::max(midiRatio, 1.0e-4f), tracking) * std::exp2(transpose / 12.0f);
     const auto track = [&](float hz) { return std::clamp(hz * pitchRatio, 5.0f, static_cast<float>(hostRate_ * 0.45)); };
     layer_ = layer;
     if (layer_.highPassHz > ToneFilter::kHighPassBypassHz + 0.5f) layer_.highPassHz = track(layer_.highPassHz);
@@ -149,7 +151,7 @@ void KickVoice::startState(const KickSettings& settings, int midiNote, float vel
     velocity_ = 1.0f - finiteClamp(layer.velocityTimbre, 1, 0, 1) * (1.0f - hitVelocity);
     const float layerGain = finiteClamp(layer_.gain, 1.0f, 0.0f, 1.0f);
     gain_ = std::pow(hitVelocity, finiteClamp(layer.velocityCurve, 1.45f, 0.1f, 4)) * layerGain * finiteClamp(gainScale, 1.0f, 0.0f, 1.0f);
-    noteHz_ = noteFrequencyHz(midiNote) * std::exp2(transpose / 12.0f);
+    noteHz_ = noteFrequencyHz(kDefaultMidiNote) * pitchRatio;
     if (layer_.sound == DrumSoundType::snare) noteHz_ = 195.0f * std::exp2(transpose / 12.0f);
     if (layer_.sound == DrumSoundType::hat) noteHz_ = 6500.0f * pitchRatio;
     noteHz_ = std::clamp(noteHz_, 1.0f, static_cast<float>(std::max(1000.0, osRate_ * 0.12)));

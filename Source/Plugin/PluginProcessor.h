@@ -218,6 +218,7 @@ private:
         std::atomic<float>* clickSampleStart;
         std::atomic<float>* clickSamplePitch;
         std::atomic<float>* clickSampleHp;
+        std::atomic<float>* keyTracking;
     };
 
     static constexpr size_t kMaxMidiEvents = 65536;

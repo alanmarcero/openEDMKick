@@ -6,6 +6,9 @@
 
 namespace openedmkick::presets {
 
+// Clap, hat, and kick banks are 56 programs. The snare bank is 84.
+inline constexpr int kFactoryProgramCount = 56;
+
 inline constexpr int kCatalogVersion = 7;
 
 struct FactoryPreset {
