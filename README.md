@@ -60,4 +60,4 @@ Use the Effects page for reverse, high-pass and low-pass sweeps, bitcrushing, st
 
 VST3, AU, LV2, and Standalone formats are available on macOS. Windows and Linux versions include VST3, LV2, and Standalone. Older openEDMKick sessions recall their saved sound and appear as **Custom sound**. Any missing controls take their default values.
 
-MIT License. See [LICENSE](LICENSE).
+AGPL-3.0. See [LICENSE](LICENSE).
