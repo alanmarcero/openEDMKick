@@ -1,5 +1,10 @@
 # Changelog
 
+## v3.10.4
+
+- Completes the openKicker rename and aligns the suite controls and tests.
+- Aligns the JUCE 8 license and hardens CI.
+
 ## v3.10.3
 
 - **Note-Snapped EQ:** Snap all three EQ bands to chromatic notes (A-G with sharps) across two-octave ranges (`E1` to `E3`, `B4` to `B6`, `A#7` to `A#9`), with octave markers on the outer ring and note names in the EQ readouts.
