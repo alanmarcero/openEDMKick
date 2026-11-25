@@ -38,8 +38,6 @@ OpenEdmKickEditor::OpenEdmKickEditor(OpenEdmKickProcessor& processorToEdit)
       processor_(processorToEdit),
       presetBrowser_(factoryPresetNames()),
       synthPanel_(processorToEdit),
-      layerPanel_(processorToEdit),
-      autoPanel_(processorToEdit),
       effectsPanel_(processorToEdit),
       tooltipWindow_(this, 650) {
     kickArtwork_ = juce::Drawable::createFromImageData(BinaryData::kickdrum_svg, BinaryData::kickdrum_svgSize);
@@ -53,7 +51,7 @@ OpenEdmKickEditor::OpenEdmKickEditor(OpenEdmKickProcessor& processorToEdit)
     addAndMakeVisible(workspace_);
     auditionBtn_.setComponentID("audition");
     auditionBtn_.setTitle("Audition C2");
-    auditionBtn_.setTooltip("Play a one-shot at C2 with the current layers and effects.");
+    auditionBtn_.setTooltip("Play a one-shot at C2 with the current kick and effects.");
     auditionBtn_.setColour(juce::TextButton::buttonColourId, theme::kMint);
     auditionBtn_.setColour(juce::TextButton::textColourOffId, theme::kInk);
     auditionBtn_.onClick = [this] { processor_.triggerAudition(); };
@@ -99,17 +97,12 @@ OpenEdmKickEditor::OpenEdmKickEditor(OpenEdmKickProcessor& processorToEdit)
     viewToggleBtn_.setTooltip("Show the essential controls or every sound design control.");
     viewToggleBtn_.onClick = [this] { setAdvancedView(!isAdvancedView()); };
     styleTab(kickTab_, "page_kick");
-    styleTab(layersTab_, "page_layers");
-    styleTab(patternTab_, "page_pattern");
     styleTab(effectsTab_, "page_fx");
     kickTab_.onClick = [this] { setPage(Page::kick); };
-    layersTab_.onClick = [this] { setPage(Page::layers); };
-    patternTab_.onClick = [this] { setPage(Page::pattern); };
     effectsTab_.onClick = [this] { setPage(Page::effects); };
 
-    std::ranges::for_each(std::array<juce::Component*, 8>{
-        &presetBox_, &prevPresetBtn_, &nextPresetBtn_, &viewToggleBtn_, &kickTab_, &layersTab_,
-        &patternTab_, &effectsTab_},
+    std::ranges::for_each(std::array<juce::Component*, 6>{
+        &presetBox_, &prevPresetBtn_, &nextPresetBtn_, &viewToggleBtn_, &kickTab_, &effectsTab_},
         [this](juce::Component* component) { addAndMakeVisible(component); });
 
     viewToggleBtn_.setColour(juce::TextButton::buttonOnColourId, theme::kViolet);
@@ -187,7 +180,6 @@ bool OpenEdmKickEditor::keyPressed(const juce::KeyPress& key) {
 
 void OpenEdmKickEditor::setAdvancedView(bool advanced) {
     synthPanel_.setAdvancedMode(advanced);
-    autoPanel_.setAdvancedMode(advanced);
     effectsPanel_.setAdvancedMode(advanced);
     viewToggleBtn_.setToggleState(advanced, juce::dontSendNotification);
     workspace_.setViewPosition(0, 0);
@@ -198,13 +190,11 @@ void OpenEdmKickEditor::setAdvancedView(bool advanced) {
 void OpenEdmKickEditor::setPage(Page page) {
     if (presetBrowser_.isVisible()) presetBrowser_.setVisible(false);
     page_ = page;
-    juce::Component* panels[]{ &synthPanel_, &layerPanel_, &autoPanel_, &effectsPanel_ };
+    juce::Component* panels[]{ &synthPanel_, &effectsPanel_ };
     workspace_.setViewedComponent(panels[static_cast<int>(page)], false);
     workspace_.setViewPosition(0, 0);
-    viewToggleBtn_.setVisible(page != Page::layers);
+    viewToggleBtn_.setVisible(true);
     kickTab_.setToggleState(page == Page::kick, juce::dontSendNotification);
-    layersTab_.setToggleState(page == Page::layers, juce::dontSendNotification);
-    patternTab_.setToggleState(page == Page::pattern, juce::dontSendNotification);
     effectsTab_.setToggleState(page == Page::effects, juce::dontSendNotification);
     resized(); repaint();
 }
@@ -222,7 +212,7 @@ void OpenEdmKickEditor::paint(juce::Graphics& g) {
     }
     g.setColour(theme::kText);
     g.setFont(juce::FontOptions(26.0f, juce::Font::bold));
-    g.drawText("openKicker", 72, 12, 146, 30, juce::Justification::centredLeft);
+    g.drawText("openEDMKick", 72, 12, 190, 30, juce::Justification::centredLeft);
     g.setColour(theme::kText.withAlpha(0.75f));
     g.setFont(juce::FontOptions(14.0f, juce::Font::bold));
     g.drawText("v" JucePlugin_VersionString, 214, 17, 58, 24, juce::Justification::centredLeft);
@@ -247,7 +237,7 @@ void OpenEdmKickEditor::resized() {
     presetBox_.setBounds(header.removeFromRight(std::min(310, header.getWidth() - 242)).removeFromBottom(40));
 
     auto nav = bounds.removeFromTop(60).reduced(0, 10);
-    for (auto* tab : { &kickTab_, &layersTab_, &patternTab_, &effectsTab_ }) {
+    for (auto* tab : { &kickTab_, &effectsTab_ }) {
         tab->setBounds(nav.removeFromLeft(90));
         nav.removeFromLeft(4);
     }

@@ -28,7 +28,8 @@ void KickEngine::prepare(double sampleRate) {
     sampleRate_ = std::max(8000.0, sampleRate);
     std::ranges::for_each(forwardVoices_, [this](KickVoice& voice) { voice.prepare(sampleRate_, false); });
     std::ranges::for_each(reverseVoices_, [this](KickVoice& voice) { voice.prepare(sampleRate_, true); });
-    std::ranges::for_each(stutter_, [this](BeatStutter& effect) { effect.prepare(sampleRate_); });
+    compressor_.prepare(sampleRate_);
+    reverb_.prepare(sampleRate_);
     eq_.prepare(sampleRate_);
     limiter_.prepare(sampleRate_);
 
@@ -53,7 +54,6 @@ void KickEngine::prepare(double sampleRate) {
     });
 
     toneSmooth_ = static_cast<float>(1.0 - std::exp(-1.0 / (0.012 * sampleRate_)));
-    clickPlayer_.prepare(sampleRate_);
     reset();
 }
 
@@ -65,9 +65,9 @@ void KickEngine::reset() noexcept {
     std::ranges::for_each(forwardVoices_, [](KickVoice& voice) { voice.reset(); });
     std::ranges::for_each(reverseVoices_, [](KickVoice& voice) { voice.reset(); });
     sequencer_.reset();
-    std::ranges::for_each(crusher_, [](BitCrusher& effect) { effect.reset(); });
-    std::ranges::for_each(stutter_, [](BeatStutter& effect) { effect.reset(); });
-    std::ranges::for_each(filterPump_, [](SyncFilterPump& effect) { effect.reset(); });
+    std::ranges::for_each(drive_, [](DistortionShaper& effect) { effect.reset(); });
+    compressor_.reset();
+    reverb_.reset();
     std::ranges::for_each(toneFilter_, [](ToneFilter& effect) { effect.reset(); });
     eq_.reset();
     limiter_.reset();
@@ -81,22 +81,9 @@ void KickEngine::reset() noexcept {
     toneSnap_ = true;
     midiVolume_ = midiExpression_ = midiBrightness_ = 1.0f;
     reverseCcEnabled_ = highPassCcEnabled_ = lowPassCcEnabled_ = false;
-    reverseArmed_ = stutterArmed_ = false;
-    crushCcEnabled_ = stutterCcEnabled_ = gateCcEnabled_ = false;
+    reverseArmed_ = false;
     lastPpqStep_ = 0.0;
     hasLastPpq_ = false;
-    clickPlayer_.stop();
-}
-
-void KickEngine::setClickSampleSource(const float* samples, int length, double sampleRate) noexcept {
-    clickPlayer_.setSource(samples, length, sampleRate);
-}
-
-void KickEngine::startClickSample(const EngineSettings& settings, float velocity) noexcept {
-    if (!settings.clickSample.enabled) return;
-    const float gain = std::clamp(settings.clickSample.level, 0.0f, 1.0f) * unit(velocity);
-    clickPlayer_.trigger(settings.clickSample.start, settings.clickSample.pitchSemitones, gain,
-                         settings.clickSample.highPassHz);
 }
 
 int KickEngine::activeNoteCount() const noexcept {
@@ -115,12 +102,7 @@ double KickEngine::remainingTailSeconds() const noexcept {
     bool active = false;
     for (const auto& voice : forwardVoices_) { remaining = std::max(remaining, voice.remainingSeconds()); active = active || voice.isActive(); }
     for (const auto& voice : reverseVoices_) { remaining = std::max(remaining, voice.remainingSeconds()); active = active || voice.isActive(); }
-    if (stutterArmed_) {
-        remaining = std::max(remaining, std::max(0.0, stutterEndPpq_ - lastSamplePpq_) * 60.0 / currentBpm_);
-        active = true;
-    }
-    if (clickPlayer_.isActive()) remaining = std::max(remaining, clickPlayer_.remainingSeconds());
-    if (active || clickPlayer_.isActive()) remaining += effectTailAllowance_;
+    if (active) remaining += effectTailAllowance_;
     return std::max(remaining, static_cast<double>(effectTailRemaining_) / sampleRate_);
 }
 
@@ -177,10 +159,6 @@ void KickEngine::triggerNote(
         voiceChannels_[voiceSlot] = midiChannel;
         voiceAges_[voiceSlot] = ++voiceCounter_;
     }
-    if (stutterCcEnabled_ || settings.effects.stutterEnabled || settings.effects.stutterMix > 0) {
-        stutterArmed_ = true;
-        stutterEndPpq_ = reverseTargetPpq(ReverseSyncMode::BeatEnd, samplePpq, beatsPerBar);
-    }
     if (effectiveTailMs > 0.0f) {
         const float attack = std::clamp(voiceSettings.attackMs, 0.05f, 10.0f);
         const float target = std::clamp(effectiveTailMs, 15.0f, hitLengthMs(settings.synth));
@@ -212,9 +190,6 @@ void KickEngine::triggerNote(
             reverseVoices_[voiceIndex].reset();
             return;
         }
-        const int midiVelocity = std::clamp(static_cast<int>(std::lround(velocity * 127.0f)), 1, 127);
-        if (midiNote < layer.keyLow || midiNote > layer.keyHigh
-            || midiVelocity < layer.velocityLow || midiVelocity > layer.velocityHigh) return;
         if (reverseLevel > 0.001f) {
             reverseVoices_[voiceIndex].startReverse(voiceSettings, midiNote, velocity, length, layer, reverseLevel);
         }
@@ -245,7 +220,6 @@ void KickEngine::process(
     EngineSettings liveSettings = inputSettings;
     const EngineSettings& settings = liveSettings;
     if (channels == nullptr || numChannels <= 0 || numSamples <= 0) return;
-    if (!settings.clickSample.enabled) clickPlayer_.stop();
 
     synchronizeAmpMode(settings.synth.ampEnabled);
     const double hostBpm = safeTempo(transport.bpm);
@@ -282,17 +256,14 @@ void KickEngine::process(
             std::ranges::for_each(reverseVoices_, [](KickVoice& voice) { voice.reset(); });
             reverseArmed_ = false;
         }
-        if (stutterArmed_ && ((!transport.isPlaying && settings.manualBpm <= 0) || seekedBack || seekedForward || ppq >= stutterEndPpq_)) stutterArmed_ = false;
         hasLastPpq_ = true;
         lastSamplePpq_ = ppq;
         lastPpqStep_ = ppqPerSample;
 
         const auto applyControlChange = [&](const MidiCcEvent& cc) {
             if (cc.sampleOffset != sample) return;
-            if (routing.apply != nullptr) {
+            if (routing.apply != nullptr)
                 routing.apply(routing.context, cc.controller, cc.value, liveSettings);
-                if (cc.controller != 120 && cc.controller != 121) return;
-            }
             const float value = std::clamp(cc.value, 0, 127) / 127.0f;
             switch (cc.controller) {
                 case 7: midiVolume_ = value; break;
@@ -301,20 +272,16 @@ void KickEngine::process(
                 case 20: reverseCcEnabled_ = value >= 0.5f; break;
                 case 21: highPassCcEnabled_ = value >= 0.5f; break;
                 case 22: lowPassCcEnabled_ = value >= 0.5f; break;
-                case 23: crushCcEnabled_ = value >= 0.5f; break;
-                case 24: stutterCcEnabled_ = value >= 0.5f; break;
-                case 25: gateCcEnabled_ = value >= 0.5f; break;
                 case 120:
                     std::ranges::for_each(forwardVoices_, [](KickVoice& voice) { voice.reset(); });
                     std::ranges::for_each(reverseVoices_, [](KickVoice& voice) { voice.reset(); });
-                    reverseArmed_ = stutterArmed_ = false;
-                    clickPlayer_.stop();
+                    reverseArmed_ = false;
                     limiter_.reset();
+                    reverb_.reset();
                     break;
                 case 121:
                     midiVolume_ = midiExpression_ = midiBrightness_ = 1.0f;
                     reverseCcEnabled_ = highPassCcEnabled_ = lowPassCcEnabled_ = false;
-                    crushCcEnabled_ = stutterCcEnabled_ = gateCcEnabled_ = false;
                     break;
                 default: break;
             }
@@ -327,15 +294,11 @@ void KickEngine::process(
             const double noteBpm = settings.manualBpm > 0 ? safeTempo(settings.manualBpm) : hostBpm;
             const double noteMeter = settings.manualBeatsPerBar > 0 ? settings.manualBeatsPerBar : hostBeatsPerBar;
             triggerNote(settings, ppq, noteBpm, noteMeter, note, trigger.velocity, -1.0f, false, -1, trigger.audition ? 0 : trigger.midiChannel);
-            startClickSample(settings, trigger.velocity);
         };
 
         const float savedMidiVolume = midiVolume_;
         const float savedMidiExpression = midiExpression_;
         const float savedMidiBrightness = midiBrightness_;
-        const bool savedCrushCc = crushCcEnabled_;
-        const bool savedStutterCc = stutterCcEnabled_;
-        const bool savedGateCc = gateCcEnabled_;
         const bool savedReverseCcEnabled = reverseCcEnabled_;
         const bool savedHighPassCcEnabled = highPassCcEnabled_;
         const bool savedLowPassCcEnabled = lowPassCcEnabled_;
@@ -369,28 +332,6 @@ void KickEngine::process(
         ppqPerSample = bpm / (60.0 * sampleRate_);
         currentBpm_ = bpm;
         if (routing.beforeAuto != nullptr && !sampleMidiEvents.empty()) routing.beforeAuto(routing.context, settings);
-        const bool autoActive = settings.autoEnabled && !settings.autoBypass;
-        const int slot = std::clamp(settings.activeAutoSlot, 0, kNumAutoSlots - 1);
-        const auto& autoSettings = settings.autoSlots[static_cast<size_t>(slot)];
-        if (autoActive && (transport.isPlaying || settings.manualBpm > 0)) {
-            const auto event = sequencer_.stepSample(slot, autoSettings, hitLengthMs(settings.synth),
-                bpm, beatsPerBar, sampleRate_, true, ppq);
-            if (event.triggered) {
-                ++triggerSerial_;
-                float clickVelocity = 0.0f;
-                for (int layer = 0; layer < kNumSoundLayers; ++layer) {
-                    if ((event.layerMask & (1u << layer)) == 0) continue;
-                    clickVelocity = std::max(clickVelocity, event.layerVelocities[static_cast<size_t>(layer)]);
-                }
-                startClickSample(settings, clickVelocity);
-                for (int layer = 0; layer < kNumSoundLayers; ++layer) {
-                    if ((event.layerMask & (1u << layer)) == 0) continue;
-                    const auto index = static_cast<size_t>(layer);
-                    triggerNote(settings, ppq, bpm, beatsPerBar, kDefaultMidiNote, event.layerVelocities[index],
-                                event.layerTailMs[index], event.layerReverseCue[index], layer);
-                }
-            }
-        }
 
         if (midiEvents.empty()) {
             while (noteCursor < midiTriggers.size() && nextNoteSample <= sample) {
@@ -404,9 +345,6 @@ void KickEngine::process(
             midiVolume_ = savedMidiVolume;
             midiExpression_ = savedMidiExpression;
             midiBrightness_ = savedMidiBrightness;
-            crushCcEnabled_ = savedCrushCc;
-            stutterCcEnabled_ = savedStutterCc;
-            gateCcEnabled_ = savedGateCc;
             reverseCcEnabled_ = savedReverseCcEnabled;
             highPassCcEnabled_ = savedHighPassCcEnabled;
             lowPassCcEnabled_ = savedLowPassCcEnabled;
@@ -444,20 +382,12 @@ void KickEngine::process(
         }
         previousReverseBpm_ = finalBpm;
         std::array<float, 2> raw{};
-        const bool anySolo = std::ranges::any_of(settings.layers, [](const auto& layer) { return layer.enabled && layer.solo; });
         for (size_t i = 0; i < forwardVoices_.size(); ++i) {
             const float voice = forwardVoices_[i].nextSample() + reverseVoices_[i].nextSample();
             const auto& layer = settings.layers[i % kNumSoundLayers];
-            if (!layer.enabled || (anySolo && !layer.solo)) continue;
-            const float signedVoice = layer.invertPolarity ? -voice : voice;
-            const float pan = std::clamp(std::isfinite(layer.pan) ? layer.pan : 0.0f, -1.0f, 1.0f);
-            raw[0] += signedVoice * (1.0f - std::max(0.0f, pan));
-            raw[1] += signedVoice * (1.0f + std::min(0.0f, pan));
-        }
-        if (clickPlayer_.isActive()) {
-            const float click = clickPlayer_.nextSample();
-            raw[0] += click;
-            raw[1] += click;
+            if (!layer.enabled) continue;
+            raw[0] += voice;
+            raw[1] += voice;
         }
         const bool highPassSync = settings.effects.highPassSyncEnabled || highPassCcEnabled_ || settings.effects.highPassMidi;
         const bool lowPassSync = settings.effects.lowPassSyncEnabled || lowPassCcEnabled_ || settings.effects.lowPassMidi;
@@ -489,33 +419,25 @@ void KickEngine::process(
             smoothedLowPassHz_ += toneSmooth_ * (lowPassTarget - smoothedLowPassHz_);
         }
         const float brightnessMax = 40.0f + midiBrightness_ * settings.effects.midiBrightness * (ToneFilter::kLowPassBypassHz - 40.0f);
+        const bool effectMemory = settings.effects.reverbMix > 0.001f || settings.effects.distMix > 0.001f
+            || settings.effects.compressor.mix > 0.001f;
         const bool filterMemory = smoothedHighPassHz_ > ToneFilter::kHighPassBypassHz + 0.5f
             || std::min(smoothedLowPassHz_, brightnessMax) < ToneFilter::kLowPassBypassHz - 1
-            || settings.effects.pumpMix > 0;
-        const bool crushMemory = settings.effects.crushMix > 0 || settings.effects.crushEnabled || crushCcEnabled_
-            || (autoActive && autoSettings.crushSweep > 0);
-        const double crusherRate = std::clamp(std::isfinite(settings.effects.crushRateHz) ? settings.effects.crushRateHz : 8000.0f, 100.0f, static_cast<float>(sampleRate_));
-        effectTailAllowance_ = filterMemory ? 0.5 : (crushMemory ? 2.0 / crusherRate : 0);
+            || effectMemory;
+        effectTailAllowance_ = filterMemory ? (settings.effects.reverbMix > 0.001f ? 1.2 : 0.5) : 0;
         for (size_t side = 0; side < static_cast<size_t>(std::min(2, numChannels)); ++side) {
             const float input = numChannels == 1 ? (raw[0] + raw[1]) * 0.5f : raw[side];
-            const float ramp = autoActive ? unit(autoSettings.crushSweep) * sequencer_.currentWindowPhase() : 0.0f;
-            const float crushMix = std::clamp(activationAmount(settings.effects.crushMix, crushCcEnabled_ || settings.effects.crushEnabled) + ramp, 0.0f, 1.0f);
-            float postCrush = input;
-            if (crushMix > 0.001f) {
-                const float crushed = crusher_[side].process(input, settings.effects.crushRateHz, settings.effects.crushBits, sampleRate_);
-                postCrush = input + crushMix * (crushed - input);
+            float driven = input;
+            if (settings.effects.distMix > 0.001f) {
+                const float shaped = drive_[side].processSample(input, settings.effects.distType, settings.effects.distDrive,
+                    settings.effects.distTone, sampleRate_);
+                driven = input + settings.effects.distMix * (shaped - input);
             }
-            const float repeated = stutter_[side].process(postCrush, ppq, division(settings.effects.stutterDivision), bpm, sampleRate_);
-            const float postRepeat = postCrush + (stutterArmed_ ? activationAmount(settings.effects.stutterMix, stutterCcEnabled_ || settings.effects.stutterEnabled) : 0.0f) * (repeated - postCrush);
-            const float pumped = settings.effects.pumpMix > 0.001f
-                ? filterPump_[side].process(postRepeat, ppq, division(settings.effects.pumpDivision), settings.effects.pumpMix, sampleRate_)
-                : postRepeat;
-            const float gated = pumped * TempoGate::gainAt(ppq, division(settings.effects.gateDivision), activationAmount(settings.effects.gateMix, gateCcEnabled_ || settings.effects.gateEnabled));
-            float out = toneFilter_[side].process(gated, smoothedHighPassHz_, std::min(smoothedLowPassHz_, brightnessMax), sampleRate_);
-            if (!std::isfinite(out) || settings.masterBypass) out = 0.0f;
+            float out = toneFilter_[side].process(driven, smoothedHighPassHz_, std::min(smoothedLowPassHz_, brightnessMax), sampleRate_);
+            if (!std::isfinite(out)) out = 0.0f;
             channels[side][sample] = out;
         }
-        if (numChannels > 1 && !settings.masterBypass) {
+        if (numChannels > 1) {
             const float widthAmount = unit(settings.effects.stereoWidth);
             if (widthAmount > 0.001f) {
                 const float midIn = 0.5f * (channels[0][sample] + channels[1][sample]);
@@ -534,23 +456,26 @@ void KickEngine::process(
                 channels[1][sample] = midOut - sideOut;
             }
         }
-        if (!settings.masterBypass) {
+        {
             float dummyRight = channels[0][sample];
             float& rightRef = numChannels > 1 ? channels[1][sample] : dummyRight;
+            compressor_.process(channels[0][sample], rightRef, settings.effects.compressor);
+            reverb_.process(channels[0][sample], rightRef, settings.effects.reverbSize, settings.effects.reverbDecayMs,
+                settings.effects.reverbDamp, settings.effects.reverbGateMs, settings.effects.reverbMix);
             eq_.process(channels[0][sample], rightRef, settings.effects.eq);
         }
         const float masterGain = settings.effects.outputGain * midiVolume_ * midiExpression_
             * settings.effects.midiVolume * settings.effects.midiExpression;
         std::ranges::for_each(std::views::iota(0, std::min(2, numChannels)), [&](int ch) {
             float scaled = channels[ch][sample] * masterGain;
-            if (!std::isfinite(scaled) || settings.masterBypass) scaled = 0.0f;
+            if (!std::isfinite(scaled)) scaled = 0.0f;
             if (std::abs(scaled) > 1.0e-8f && effectTailAllowance_ > 0) {
                 effectTailRemaining_ = static_cast<int64_t>(std::ceil(effectTailAllowance_ * sampleRate_));
             }
             channels[ch][sample] = scaled;
         });
         if (effectTailRemaining_ > 0) --effectTailRemaining_;
-        if (settings.effects.limiterEnabled && !settings.masterBypass) {
+        if (settings.effects.limiterEnabled) {
             float* secondChannel = nullptr;
             if (numChannels > 1) secondChannel = channels[1] + sample;
             const std::array<float*, 2> frame{ channels[0] + sample, secondChannel };

@@ -6,7 +6,7 @@
 
 #include <functional>
 
-namespace openedmkick::suite {
+namespace suite {
 
 class DragExportButton : public juce::TextButton {
 public:
@@ -98,4 +98,4 @@ private:
     int selected_ = -1;
 };
 
-} // namespace openedmkick::suite
+} // namespace suite

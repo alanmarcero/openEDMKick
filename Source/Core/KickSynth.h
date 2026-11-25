@@ -11,11 +11,11 @@
 namespace openedmkick::core {
 
 enum class ClickType : int { beater = 0, noise, tick, analog };
-enum class DrumSoundType : int { kick = 0, snare, clap, hat };
+enum class DrumSoundType : int { kick = 0 };
 
 inline constexpr std::array<std::string_view, 4> kClickTypeNames{ "Beater", "Noise", "Tick", "Analog" };
-inline constexpr std::array<std::string_view, 4> kDrumSoundNames{ "Kick", "Snare", "Clap", "Hat" };
-inline constexpr int kNumSoundLayers = 4;
+inline constexpr std::array<std::string_view, 1> kDrumSoundNames{ "Kick" };
+inline constexpr int kNumSoundLayers = 1;
 
 struct DrumLayerSettings {
     bool enabled = true;
@@ -129,7 +129,6 @@ private:
     [[nodiscard]] float renderOversampled() noexcept;
     [[nodiscard]] float declick(float sample) noexcept;
     [[nodiscard]] float renderClick(float timeMs) noexcept;
-    [[nodiscard]] float renderDrumLayer(float timeMs) noexcept;
 
     double hostRate_ = 48000.0;
     double osRate_ = 192000.0;

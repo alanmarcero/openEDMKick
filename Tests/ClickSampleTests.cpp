@@ -87,40 +87,4 @@ TEST_CASE("Sample click pitch, start, level, and high-pass change playback", "[c
     REQUIRE(filteredEnergy < openEnergy * 0.55);
 }
 
-TEST_CASE("A disabled sample click does not change the engine", "[click-sample][engine]") {
-    const auto render = [](bool enabled) {
-        core::KickEngine engine;
-        engine.prepare(48000.0);
-        const auto& click = core::builtInClick(core::BuiltInClick::snap);
-        engine.setClickSampleSource(click.samples.data(), static_cast<int>(click.samples.size()), click.sampleRate);
-        core::EngineSettings settings;
-        settings.effects.limiterEnabled = false;
-        settings.clickSample.enabled = enabled;
-        settings.clickSample.level = 1.0f;
-        settings.clickSample.highPassHz = 20.0f;
-        const core::Transport transport{ 128.0, 0.0, 4.0, true };
-        const std::array<core::MidiTrigger, 1> trigger{{ { 0, 36, 1.0f } }};
-        std::vector<float> samples(2048);
-        float* pointer = samples.data();
-        engine.process(settings, transport, trigger, &pointer, 1, static_cast<int>(samples.size()));
-        return samples;
-    };
-    const auto dry = render(false);
-    const auto plain = [] {
-        core::KickEngine engine;
-        engine.prepare(48000.0);
-        core::EngineSettings settings;
-        settings.effects.limiterEnabled = false;
-        const core::Transport transport{ 128.0, 0.0, 4.0, true };
-        const std::array<core::MidiTrigger, 1> trigger{{ { 0, 36, 1.0f } }};
-        std::vector<float> samples(2048);
-        float* pointer = samples.data();
-        engine.process(settings, transport, trigger, &pointer, 1, static_cast<int>(samples.size()));
-        return samples;
-    }();
-    REQUIRE(dry == plain);
-    const auto clicked = render(true);
-    const double difference = std::inner_product(dry.begin(), dry.end(), clicked.begin(), 0.0, std::plus<>(),
-        [](float left, float right) { return std::abs(static_cast<double>(left - right)); });
-    REQUIRE(difference > 0.05);
-}
+

@@ -150,17 +150,6 @@ void addBool(Layout& layout, const juce::String& id, const juce::String& name, b
 
 } // namespace
 
-juce::String autoSlotId(int slot, const juce::String& baseId) {
-    if (slot <= 0) return baseId;
-    const auto slotChar = static_cast<juce::juce_wchar>('a' + std::clamp(slot, 0, 3));
-    return "auto_" + juce::String::charToString(slotChar) + "_" + baseId.substring(5);
-}
-
-juce::String layerId(int layer, const juce::String& baseId) {
-    const auto slotChar = static_cast<juce::juce_wchar>('a' + std::clamp(layer, 0, 3));
-    return "layer_" + juce::String::charToString(slotChar) + "_" + baseId;
-}
-
 double beatsPerBarForSignature(int index) noexcept {
     const auto safeIndex = static_cast<size_t>(std::clamp(index, 0, static_cast<int>(kTimeSignatures.size()) - 1));
     const auto [numerator, denominator] = kTimeSignatures[safeIndex];
@@ -195,14 +184,8 @@ float parseEqNoteOrHz(const juce::String& text, int minMidi, int maxMidi) {
 
 juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout() {
     Layout layout;
-    const juce::StringArray barChoices{ "1 Bar", "2 Bars", "4 Bars", "8 Bars", "16 Bars", "32 Bars", "64 Bars" };
-    const juce::StringArray gridChoices{ "1/4", "1/8", "1/16", "1/32", "1/64" };
     const juce::StringArray syncDivisions{ "1/4", "1/8", "1/16", "1/32", "1/64" };
     const juce::StringArray reverseModes{ "Off", "Beat End (Sync)", "Beat 4 Auto", "1/2 Beat", "1/4 Beat" };
-    juce::StringArray fillChoices;
-    std::ranges::for_each(core::kFillPresetNames, [&](std::string_view name) {
-        fillChoices.add(juce::String(name.data(), name.size()));
-    });
 
     addFloat(layout, kSweepOctaves, "Dive Range", { 0.0f, 6.0f }, 2.4f, kFormatOctaves);
     addFloat(layout, kSweepMs, "Dive Time", skewedRange(5.0f, 400.0f, 70.0f), 70.0f, kFormatMs);
@@ -226,57 +209,28 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout() {
     addFloat(layout, kDecayShape, "Decay Curve", { -1.0f, 1.0f }, 0.5f, kFormatBipolar);
     addFloat(layout, kLowCutHz, "Low Cut", skewedRange(10.0f, 90.0f, 25.0f), 25.0f, kFormatHz);
 
-    const std::array<float, 4> layerEnabled{ 1.0f, 0.0f, 0.0f, 0.0f };
-    const std::array<float, 4> layerSound{ 0.0f, 1.0f, 2.0f, 3.0f };
-    const std::array<float, 4> layerGain{ 1.0f, 0.65f, 0.5f, 0.35f };
-    const std::array<float, 4> layerTranspose{ 0.0f, 12.0f, 0.0f, 0.0f };
-    const std::array<float, 4> layerDecay{ 300.0f, 220.0f, 140.0f, 90.0f };
-    std::ranges::for_each(std::views::iota(0, core::kNumSoundLayers), [&](int layerIndex) {
-        const auto id = [layerIndex](const char* key) { return layerId(layerIndex, key); };
-        const auto suffix = juce::String::charToString(static_cast<juce::juce_wchar>('A' + layerIndex));
-        addBool(layout, id(kLayerEnabled), "Layer " + suffix + " On", layerEnabled[static_cast<size_t>(layerIndex)] > 0.5f);
-        addChoice(layout, id(kLayerSound), "Layer " + suffix + " Sound", { "Kick", "Snare", "Clap", "Hat" },
-                  static_cast<int>(layerSound[static_cast<size_t>(layerIndex)]));
-        addFloat(layout, id(kLayerGain), "Layer " + suffix + " Level", { 0.0f, 1.0f }, layerGain[static_cast<size_t>(layerIndex)], kFormatPercent);
-        addFloat(layout, id(kLayerTranspose), "Layer " + suffix + " Pitch", { -24.0f, 24.0f, 1.0f },
-                 layerTranspose[static_cast<size_t>(layerIndex)], kFormatSemitones);
-        addFloat(layout, id(kLayerDecay), "Layer " + suffix + " Decay", skewedRange(5.0f, 1500.0f, 220.0f),
-                 layerDecay[static_cast<size_t>(layerIndex)], kFormatMs);
-        addFloat(layout, id(kLayerHighPass), "Layer " + suffix + " High Pass", skewedRange(20.0f, 8000.0f, 250.0f),
-                 20.0f, kFormatHighPass);
-        addFloat(layout, id(kLayerLowPass), "Layer " + suffix + " Low Pass", skewedRange(40.0f, 20000.0f, 2500.0f),
-                 20000.0f, kFormatLowPass);
-    });
-
     addBool(layout, kClockSync, "Host Sync", true);
     addFloat(layout, kTempoBpm, "Tempo", { 40.0f, 240.0f }, 128.0f, kFormatBpm);
     addChoice(layout, kTimeSignature, "Time Signature",
               { "4/4", "3/4", "2/4", "5/4", "6/4", "6/8", "7/8", "9/8", "12/8" }, 0);
-    addBool(layout, kAutoEnabled, "Run Pattern", false);
-    addBool(layout, kAutoBypass, "Bypass Pattern", false);
-    addChoice(layout, kAutoSlot, "Pattern Scene", { "A", "B", "C", "D" }, 0);
-    std::ranges::for_each(std::views::iota(0, core::kNumAutoSlots), [&](int slot) {
-        const auto id = [slot](const char* key) { return autoSlotId(slot, key); };
-        const auto prefix = "Scene " + juce::String::charToString(static_cast<juce::juce_wchar>('A' + slot)) + " ";
-        const int version = slot == 0 ? 1 : 2;
-        addChoice(layout, id(kAutoBars), prefix + "Length", barChoices, 2, version);
-        addChoice(layout, id(kAutoFillPreset), prefix + "Fill", fillChoices, slot % core::kNumFillPresets, version);
-        addChoice(layout, id(kAutoGrid), prefix + "Grid", gridChoices, 4, version);
-        addFloat(layout, id(kAutoTailShorten), prefix + "Tail Trim", { 0.0f, 1.0f }, 0.65f, kFormatPercent, version);
-        addFloat(layout, id(kAutoCrushSweep), prefix + "Crush Rise", { 0.0f, 1.0f }, 0.0f, kFormatPercent, version);
-    });
 
     addChoice(layout, kReverseMode, "Reverse Sync Mode", reverseModes, 0);
     addFloat(layout, kReverseMix, "Reverse Mix", { 0.0f, 1.0f }, 1.0f, kFormatPercent);
-    addFloat(layout, kCrushRate, "Crush Sample Rate", skewedRange(200.0f, 48000.0f, 4000.0f), 8000.0f, kFormatHz);
-    layout.add(std::make_unique<juce::AudioParameterInt>(juce::ParameterID{ kCrushBits, kVersion }, "Crush Bit Depth", 1, 16, 8));
-    addFloat(layout, kCrushMix, "Crush Mix", { 0.0f, 1.0f }, 0.0f, kFormatPercent);
-    addChoice(layout, kStutterRate, "Stutter Rate", syncDivisions, 2);
-    addFloat(layout, kStutterMix, "Stutter Mix", { 0.0f, 1.0f }, 0.0f, kFormatPercent);
-    addChoice(layout, kGateRate, "Gate Rate", syncDivisions, 2);
-    addFloat(layout, kGateMix, "Gate Depth", { 0.0f, 1.0f }, 0.0f, kFormatPercent);
-    addChoice(layout, kPumpRate, "Pump Rate", syncDivisions, 0);
-    addFloat(layout, kPumpMix, "Pump Depth", { 0.0f, 1.0f }, 0.0f, kFormatPercent);
+    addChoice(layout, kDistType, "Distortion Type", { "Tape", "Tube", "Hard Clip", "Wavefold" }, 0);
+    addFloat(layout, kDistDrive, "Distortion Drive", { 0.0f, 1.0f, 0.01f }, 0.0f, kFormatPercent);
+    addFloat(layout, kDistTone, "Distortion Tone", { -1.0f, 1.0f, 0.01f }, 0.0f, kFormatBipolar);
+    addFloat(layout, kDistMix, "Distortion Mix", { 0.0f, 1.0f, 0.01f }, 0.0f, kFormatPercent);
+    addFloat(layout, kCompThresh, "Comp Threshold", { -40.0f, 0.0f, 0.5f }, -14.0f, kFormatDb);
+    addFloat(layout, kCompRatio, "Comp Ratio", { 1.0f, 20.0f, 0.1f }, 4.0f, kFormatNumber);
+    addFloat(layout, kCompAttack, "Comp Attack", skewedRange(0.1f, 50.0f, 5.0f), 5.0f, kFormatMs);
+    addFloat(layout, kCompRelease, "Comp Release", skewedRange(10.0f, 500.0f, 80.0f), 80.0f, kFormatMs);
+    addFloat(layout, kCompMakeup, "Comp Makeup", { 0.0f, 24.0f, 0.5f }, 0.0f, kFormatDb);
+    addFloat(layout, kCompMix, "Comp Mix", { 0.0f, 1.0f, 0.01f }, 0.0f, kFormatPercent);
+    addFloat(layout, kReverbSize, "Reverb Size", { 0.1f, 1.0f, 0.01f }, 0.65f, kFormatPercent);
+    addFloat(layout, kReverbDecay, "Reverb Decay", skewedRange(50.0f, 2500.0f, 680.0f), 680.0f, kFormatMs);
+    addFloat(layout, kReverbDamp, "Reverb Damp", { 0.0f, 1.0f, 0.01f }, 0.4f, kFormatPercent);
+    addFloat(layout, kReverbGate, "Reverb Gate", { 0.0f, 1400.0f, 5.0f }, 0.0f, kFormatMs);
+    addFloat(layout, kReverbMix, "Reverb Mix", { 0.0f, 1.0f, 0.01f }, 0.0f, kFormatPercent);
     addFloat(layout, kHighPass, "High Pass", skewedRange(20.0f, 8000.0f, 250.0f), 20.0f, kFormatHighPass);
     addFloat(layout, kLowPass, "Low Pass", skewedRange(40.0f, 20000.0f, 2500.0f), 20000.0f, kFormatLowPass);
     addBool(layout, kHighPassSyncEnabled, "High Pass Sync", false);
@@ -286,31 +240,12 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout() {
     addFloat(layout, kOutput, "Output", { -24.0f, 12.0f }, 0.0f, kFormatDb);
     addBool(layout, kLimiterEnabled, "Limiter", true);
     addFloat(layout, kCeiling, "Ceiling", { -18.0f, 0.0f }, -0.3f, kFormatDb);
-    addBool(layout, kMasterBypass, "Master Bypass", false);
-    // Append controls to preserve the host's existing parameter order.
-    for (int layer = 0; layer < core::kNumSoundLayers; ++layer) {
-        const auto prefix = "Layer " + juce::String::charToString(static_cast<juce::juce_wchar>('A' + layer)) + " ";
-        addFloat(layout, layerId(layer, kLayerVelocityCurve), prefix + "Velocity curve", { 0.1f, 4.0f }, 1.45f, kFormatNumber, 3);
-        addFloat(layout, layerId(layer, kLayerVelocityTimbre), prefix + "Velocity timbre", { 0.0f, 1.0f }, 1.0f, kFormatPercent, 3);
-        addFloat(layout, layerId(layer, kLayerKeyLow), prefix + "Key low", { 0.0f, 127.0f, 1.0f }, 0.0f, kFormatKey, 3);
-        addFloat(layout, layerId(layer, kLayerKeyHigh), prefix + "Key high", { 0.0f, 127.0f, 1.0f }, 127.0f, kFormatKey, 3);
-        addFloat(layout, layerId(layer, kLayerVelocityLow), prefix + "Velocity low", { 1.0f, 127.0f, 1.0f }, 1.0f, kFormatMidi, 3);
-        addFloat(layout, layerId(layer, kLayerVelocityHigh), prefix + "Velocity high", { 1.0f, 127.0f, 1.0f }, 127.0f, kFormatMidi, 3);
-        addFloat(layout, layerId(layer, kLayerToneScale), prefix + "Tone scale", { 0.1f, 2.0f }, 1.0f, kFormatPercent, 3);
-        addFloat(layout, layerId(layer, kLayerSweepScale), prefix + "Dive scale", { 0.0f, 2.0f }, 1.0f, kFormatPercent, 3);
-        addBool(layout, layerId(layer, kLayerSolo), prefix + "Solo", false, 3);
-        addFloat(layout, layerId(layer, kLayerPan), prefix + "Pan", { -1.0f, 1.0f }, 0.0f, kFormatPan, 3);
-        addBool(layout, layerId(layer, kLayerPolarity), prefix + "Invert Polarity", false, 3);
-    }
     addBool(layout, kAmpEnabled, "Hold MIDI Notes", false, 4);
     addFloat(layout, kAmpAttack, "Envelope Attack", { 0.0f, 10000.0f }, 0.0f, kFormatMs, 4);
     addFloat(layout, kAmpDecay, "Envelope Decay", { 0.0f, 10000.0f }, 100.0f, kFormatMs, 4);
     addFloat(layout, kAmpSustain, "Envelope Sustain", { 0.0f, 1.0f }, 0.8f, kFormatPercent, 4);
     addFloat(layout, kAmpRelease, "Envelope Release", { 0.0f, 20000.0f }, 300.0f, kFormatMs, 4);
     addBool(layout, kReverseEnabled, "Reverse MIDI", false, 4);
-    addBool(layout, kCrushEnabled, "Crush MIDI", false, 4);
-    addBool(layout, kStutterEnabled, "Stutter MIDI", false, 4);
-    addBool(layout, kGateEnabled, "Gate MIDI", false, 4);
     addFloat(layout, kMidiVolume, "MIDI Volume", { 0.0f, 1.0f }, 1.0f, kFormatPercent, 4);
     addFloat(layout, kMidiExpression, "MIDI Expression", { 0.0f, 1.0f }, 1.0f, kFormatPercent, 4);
     addFloat(layout, kMidiBrightness, "MIDI Brightness", { 0.0f, 1.0f }, 1.0f, kFormatPercent, 4);
@@ -325,13 +260,6 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout() {
     addFloat(layout, kEqMidDb, "Mid EQ Gain", { -12.0f, 12.0f, 0.1f }, 0.0f, kFormatDb, 6);
     addFloat(layout, kEqHighFreq, "High EQ Freq", noteSnappedRange(kEqHighMinMidi, kEqHighMaxMidi), eqNoteToHz(118), noteFormat(kEqHighMinMidi, kEqHighMaxMidi), 6);
     addFloat(layout, kEqHighDb, "High EQ Gain", { -12.0f, 12.0f, 0.1f }, 0.0f, kFormatDb, 6);
-    // Appended so older hosts keep the existing parameter order.
-    addBool(layout, kClickSampleOn, "Sample Click", false, 7);
-    addChoice(layout, kClickSampleSource, "Sample Click Source", { "Tick", "Beater", "Wood", "Snap", "User" }, 0, 7);
-    addFloat(layout, kClickSampleLevel, "Sample Click Level", { 0.0f, 1.0f }, 0.75f, kFormatPercent, 7);
-    addFloat(layout, kClickSampleStart, "Sample Click Start", { 0.0f, 1.0f }, 0.0f, kFormatPercent, 7);
-    addFloat(layout, kClickSamplePitch, "Sample Click Pitch", { -24.0f, 24.0f, 0.01f }, 0.0f, kFormatSemitones, 7);
-    addFloat(layout, kClickSampleHp, "Sample Click High Pass", skewedRange(20.0f, 8000.0f, 800.0f), 20.0f, kFormatHighPass, 7);
     return layout;
 }
 

@@ -1,7 +1,6 @@
 #pragma once
 
 #include "AutoSequencer.h"
-#include "ClickSample.h"
 #include "Effects.h"
 #include "KickSynth.h"
 #include <cstdint>
@@ -41,15 +40,16 @@ using MidiInputEvent = std::variant<MidiTrigger, MidiCcEvent, MidiNoteOff>;
 struct EffectSettings {
     ReverseSyncMode reverseMode = ReverseSyncMode::Off;
     float reverseMix = 1.0f;
-    float crushRateHz = 8000.0f;
-    int crushBits = 8;
-    float crushMix = 0.0f;
-    int stutterDivision = 2; // index into kSyncDivisionBeats (2 = 1/16)
-    float stutterMix = 0.0f;
-    int gateDivision = 2;    // index into kSyncDivisionBeats (2 = 1/16)
-    float gateMix = 0.0f;
-    int pumpDivision = 0;    // index into kSyncDivisionBeats (0 = 1/4)
-    float pumpMix = 0.0f;
+    DistortionType distType = DistortionType::tape;
+    float distDrive = 0.0f;
+    float distTone = 0.0f;
+    float distMix = 0.0f;
+    CompressorSettings compressor{};
+    float reverbSize = 0.65f;
+    float reverbDecayMs = 680.0f;
+    float reverbDamp = 0.4f;
+    float reverbGateMs = 0.0f;
+    float reverbMix = 0.0f;
     float outputGain = 1.0f;
     bool limiterEnabled = true;
     float ceilingGain = 0.966f;
@@ -60,9 +60,6 @@ struct EffectSettings {
     bool lowPassSyncEnabled = false;
     int lowPassSyncDivision = 2;
     bool reverseEnabled = false;
-    bool crushEnabled = false;
-    bool stutterEnabled = false;
-    bool gateEnabled = false;
     float midiVolume = 1;
     float midiExpression = 1;
     float midiBrightness = 1;
@@ -75,27 +72,15 @@ struct EffectSettings {
 struct EngineSettings {
     KickSettings synth{};
     std::array<DrumLayerSettings, kNumSoundLayers> layers{{
-        { true, DrumSoundType::kick, 1.0f, 0.0f, 300.0f },
-        { false, DrumSoundType::snare, 0.65f, 12.0f, 220.0f },
-        { false, DrumSoundType::clap, 0.5f, 0.0f, 140.0f },
-        { false, DrumSoundType::hat, 0.35f, 0.0f, 90.0f }
+        { true, DrumSoundType::kick, 1.0f, 0.0f, 300.0f }
     }};
     bool autoEnabled = false;
     bool autoBypass = false;
     int activeAutoSlot = 0; // 0=A, 1=B, 2=C, 3=D
     std::array<AutoSlotSettings, kNumAutoSlots> autoSlots{};
     EffectSettings effects{};
-    bool masterBypass = false;
     double manualBpm = 0;
     double manualBeatsPerBar = 0;
-    struct ClickSampleSettings {
-        bool enabled = false;
-        float level = 0.75f;
-        float start = 0.0f;
-        float pitchSemitones = 0.0f;
-        float highPassHz = 20.0f;
-    };
-    ClickSampleSettings clickSample{};
 };
 
 struct MidiRouting {
@@ -112,9 +97,6 @@ public:
 
     void prepare(double sampleRate);
     void reset() noexcept;
-    void setClickSampleSource(const float* samples, int length, double sampleRate) noexcept;
-    void startClickSample(const EngineSettings& settings, float velocity) noexcept;
-
     // Each input span must be sorted by sampleOffset, retaining input order for ties.
     void process(
         const EngineSettings& settings,
@@ -134,7 +116,7 @@ public:
     [[nodiscard]] float currentAutoPhase() const noexcept { return sequencer_.currentWindowPhase(); }
     [[nodiscard]] float currentBeatPhase() const noexcept { return currentBeatPhase_; }
     [[nodiscard]] bool isVoiceReversing() const noexcept;
-    [[nodiscard]] bool isStuttering() const noexcept { return stutterArmed_; }
+    [[nodiscard]] bool isStuttering() const noexcept { return false; }
     [[nodiscard]] int activeNoteCount() const noexcept;
     [[nodiscard]] double remainingTailSeconds() const noexcept;
     [[nodiscard]] uint32_t triggerSerial() const noexcept { return triggerSerial_; }
@@ -169,9 +151,9 @@ private:
     std::vector<KickVoice> forwardVoices_{ static_cast<size_t>(kNumSoundLayers * kPolyphony) };
     std::vector<KickVoice> reverseVoices_{ static_cast<size_t>(kNumSoundLayers * kPolyphony) };
     AutoSequencer sequencer_;
-    std::array<BitCrusher, 2> crusher_;
-    std::array<BeatStutter, 2> stutter_;
-    std::array<SyncFilterPump, 2> filterPump_;
+    std::array<DistortionShaper, 2> drive_;
+    StereoCompressor compressor_;
+    GatedReverb reverb_;
     std::array<ToneFilter, 2> toneFilter_;
     struct ThiranSchroederStage {
         std::vector<float> buffer;
@@ -206,7 +188,6 @@ private:
 
     ThreeBandEq eq_;
     PeakLimiter limiter_;
-    ClickSamplePlayer clickPlayer_;
     std::array<dsp::Svf, 2> widthMidLp_{};
     std::array<dsp::Svf, 2> widthMidHp_{};
     std::array<dsp::Svf, 2> widthSideLp_{};
@@ -223,11 +204,6 @@ private:
     bool highPassCcEnabled_ = false;
     bool lowPassCcEnabled_ = false;
     uint32_t triggerSerial_ = 0;
-    bool crushCcEnabled_ = false;
-    bool stutterCcEnabled_ = false;
-    bool gateCcEnabled_ = false;
-    bool stutterArmed_ = false;
-    double stutterEndPpq_ = 0;
     bool reverseArmed_ = false;
     double reverseStartPpq_ = 0.0;
     double reverseEndPpq_ = 0.0;

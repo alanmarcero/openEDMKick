@@ -4,7 +4,7 @@
 
 #include <vector>
 
-namespace openedmkick::suite {
+namespace suite {
 
 struct PresetEntry {
     juce::String name;
@@ -42,4 +42,4 @@ private:
     juce::File directory_;
 };
 
-} // namespace openedmkick::suite
+} // namespace suite

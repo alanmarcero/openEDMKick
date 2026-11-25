@@ -37,16 +37,7 @@ void ParameterRouting::manualValue(const juce::String& id, float value) {
         entry->active.store(false);
     }
 }
-int ParameterRouting::defaultAssignment(const juce::String& id) const {
-    if (id == "reverse_on") return 20;
-    if (id == "hp_midi_on") return 21;
-    if (id == "lp_midi_on") return 22;
-    if (id == "crush_on") return 23;
-    if (id == "stutter_on") return 24;
-    if (id == "gate_on") return 25;
-    if (id == "midi_volume") return 7;
-    if (id == "midi_expression") return 11;
-    if (id == "midi_brightness") return 74;
+int ParameterRouting::defaultAssignment(const juce::String&) const {
     return -1;
 }
 void ParameterRouting::setLocked(const juce::String& id, bool locked) { if (auto* entry = find(id)) entry->locked.store(locked); }
@@ -78,16 +69,8 @@ juce::PopupMenu ParameterRouting::midiMenu(const juce::String& id) const {
     menu.addItem(130, "Restore factory assignment");
     return menu;
 }
-bool ParameterRouting::applyCc(int controller, int value) noexcept {
-    bool changed = false;
-    const float normalized = static_cast<float>(std::clamp(value, 0, 127)) / 127.0f;
-    for (const auto& entry : entries_) {
-        if (entry->cc.load(std::memory_order_relaxed) != controller) continue;
-        entry->effective.store(entry->parameter->convertFrom0to1(normalized), std::memory_order_relaxed);
-        entry->active.store(true, std::memory_order_relaxed);
-        changed = true;
-    }
-    return changed;
+bool ParameterRouting::applyCc(int, int) noexcept {
+    return false;
 }
 void ParameterRouting::clearPerformance() noexcept {
     for (const auto& entry : entries_) {
@@ -129,7 +112,6 @@ void ParameterRouting::writeState(juce::ValueTree& state) const {
         juce::ValueTree parameter("Parameter");
         parameter.setProperty("id", entry->parameter->paramID, nullptr);
         parameter.setProperty("locked", entry->locked.load(), nullptr);
-        parameter.setProperty("cc", entry->cc.load(), nullptr);
         metadata.appendChild(parameter, nullptr);
     }
     state.appendChild(metadata, nullptr);
@@ -141,6 +123,6 @@ void ParameterRouting::restoreState(const juce::ValueTree& state) {
         if (!parameter.isValid() && entry->parameter->paramID == "limiter_enabled")
             parameter = metadata.getChildWithProperty("id", "limiter");
         entry->locked.store(parameter.getProperty("locked", false));
-        assignCc(entry->parameter->paramID, parameter.getProperty("cc", defaultAssignment(entry->parameter->paramID)));
+        assignCc(entry->parameter->paramID, -1);
     }
 }

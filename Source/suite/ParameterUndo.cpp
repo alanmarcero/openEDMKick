@@ -2,7 +2,7 @@
 
 #include <algorithm>
 
-namespace openedmkick::suite {
+namespace suite {
 
 class ParameterUndo::ChangeAction : public juce::UndoableAction {
 public:
@@ -124,4 +124,4 @@ bool ParameterUndo::same(const Snapshot& left, const Snapshot& right) {
     return true;
 }
 
-} // namespace openedmkick::suite
+} // namespace suite

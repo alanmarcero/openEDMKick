@@ -7,7 +7,7 @@
 #include <utility>
 #include <vector>
 
-namespace openedmkick::suite {
+namespace suite {
 
 struct EditContext {
     int program = 0;
@@ -71,4 +71,4 @@ private:
     Snapshot gestureBefore_;
 };
 
-} // namespace openedmkick::suite
+} // namespace suite

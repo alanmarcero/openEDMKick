@@ -21,7 +21,7 @@ ParameterControl::ParameterControl(Apvts& state, juce::String id, juce::Componen
     setComponentID("routing_" + id_);
     setWantsKeyboardFocus(true);
     updateTitle();
-    setTooltip("Click the lock to keep this value when loading a preset. Right-click to assign a MIDI CC.");
+    setTooltip("Click the lock to keep this value when loading a preset.");
     owner_.addMouseListener(this, false);
     if (attachChildren_) {
         std::ranges::for_each(owner_.getChildren(), [this](juce::Component* child) {
@@ -51,9 +51,8 @@ void ParameterControl::paint(juce::Graphics& g) {
     }
     auto& routing = static_cast<OpenEdmKickProcessor&>(state_.processor).routing();
     const bool locked = routing.isLocked(id_);
-    const int cc = routing.assignment(id_);
     juce::Graphics::ScopedSaveState state(g);
-    g.setOrigin((getWidth() - 40) / 2, cc < 0 ? 2 : -5);
+    g.setOrigin((getWidth() - 40) / 2, 2);
     const auto ink = locked ? theme::kMint : theme::kTextDim;
     const float alpha = locked ? 1.0f : (isMouseOver() ? 0.85f : 0.28f);
     const float stroke = locked ? 1.8f : 1.35f;
@@ -65,11 +64,6 @@ void ParameterControl::paint(juce::Graphics& g) {
     if (locked) shackle.lineTo(24, 20);
     g.strokePath(shackle, juce::PathStrokeType(stroke));
     g.drawRoundedRectangle(13, 19, 13, 10, 2, stroke);
-    if (cc >= 0) {
-        g.setColour(theme::kViolet);
-        g.setFont(juce::FontOptions(11.5f));
-        g.drawText("CC " + juce::String(cc), 0, 28, 40, 13, juce::Justification::centred);
-    }
 }
 void ParameterControl::mouseDown(const juce::MouseEvent& event) {
     auto& routing = static_cast<OpenEdmKickProcessor&>(state_.processor).routing();
@@ -79,7 +73,6 @@ void ParameterControl::mouseDown(const juce::MouseEvent& event) {
         return;
     }
     juce::PopupMenu menu;
-    menu.addSubMenu("MIDI CC", routing.midiMenu(id_));
     menu.addItem(200, routing.isLocked(id_) ? "Unlock for presets" : "Lock for presets");
     menu.addItem(201, "Reset to default");
     menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(this),
@@ -87,8 +80,6 @@ void ParameterControl::mouseDown(const juce::MouseEvent& event) {
             if (safe == nullptr || selected == 0) return;
             auto& model = static_cast<OpenEdmKickProcessor&>(safe->state_.processor).routing();
             if (selected == 200) model.setLocked(safe->id_, !model.isLocked(safe->id_));
-            if (selected >= 1 && selected <= 129) model.assignCc(safe->id_, selected - 2);
-            if (selected == 130) model.assignCc(safe->id_, model.defaultAssignment(safe->id_));
             if (selected == 201) {
                 auto* parameter = safe->state_.getParameter(safe->id_);
                 parameter->beginChangeGesture();

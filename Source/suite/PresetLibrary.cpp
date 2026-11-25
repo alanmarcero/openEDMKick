@@ -2,7 +2,7 @@
 
 #include <algorithm>
 
-namespace openedmkick::suite {
+namespace suite {
 
 PresetLibrary::PresetLibrary(juce::String pluginName, std::vector<juce::String> factoryNames)
     : pluginName_(std::move(pluginName)),
@@ -140,4 +140,4 @@ bool PresetLibrary::setFavorite(const juce::String& name, bool favorite) {
     return writeFavorites(favorites);
 }
 
-} // namespace openedmkick::suite
+} // namespace suite

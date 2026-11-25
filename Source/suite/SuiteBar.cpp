@@ -1,6 +1,6 @@
 #include "SuiteBar.h"
 
-namespace openedmkick::suite {
+namespace suite {
 namespace {
 const juce::Colour kInk{ 0xff0d1317 };
 const juce::Colour kSteel{ 0xff152026 };
@@ -106,7 +106,7 @@ void SuiteBar::resized() {
 }
 
 PresetBrowser::PresetBrowser(std::vector<juce::String> factoryNames)
-    : library_("openKicker", std::move(factoryNames)) {
+    : library_("openEDMKick", std::move(factoryNames)) {
     setComponentID("presetBrowser");
     title_.setFont(juce::FontOptions(16.0f, juce::Font::bold));
     title_.setColour(juce::Label::textColourId, kText);
@@ -362,4 +362,4 @@ void PresetBrowser::setStatus(const juce::String& text) {
     status_.setText(text, juce::dontSendNotification);
 }
 
-} // namespace openedmkick::suite
+} // namespace suite

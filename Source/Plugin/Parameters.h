@@ -1,6 +1,6 @@
 #pragma once
 
-#include "AutoSequencer.h"
+#include "../suite/EqNotes.h"
 #include <array>
 #include <utility>
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -28,35 +28,27 @@ inline constexpr const char* kDecayMs = "decay_ms";
 inline constexpr const char* kDecayShape = "decay_shape";
 inline constexpr const char* kLowCutHz = "low_cut_hz";
 
-inline constexpr const char* kLayerEnabled = "enabled";
-inline constexpr const char* kLayerSound = "sound";
-inline constexpr const char* kLayerGain = "gain";
-inline constexpr const char* kLayerTranspose = "transpose";
-inline constexpr const char* kLayerDecay = "decay";
-inline constexpr const char* kLayerHighPass = "hp";
-inline constexpr const char* kLayerLowPass = "lp";
-
-inline constexpr const char* kLayerVelocityCurve = "velocity_curve";
-inline constexpr const char* kLayerVelocityTimbre = "velocity_timbre";
-inline constexpr const char* kLayerKeyLow = "key_low";
-inline constexpr const char* kLayerKeyHigh = "key_high";
-inline constexpr const char* kLayerVelocityLow = "velocity_low";
-inline constexpr const char* kLayerVelocityHigh = "velocity_high";
-inline constexpr const char* kLayerToneScale = "tone_scale";
-inline constexpr const char* kLayerSweepScale = "sweep_scale";
-inline constexpr const char* kLayerSolo = "solo";
-inline constexpr const char* kLayerPan = "pan";
-inline constexpr const char* kLayerPolarity = "polarity";
-
 inline constexpr const char* kAmpEnabled = "amp_enabled";
 inline constexpr const char* kAmpAttack = "amp_attack_ms";
 inline constexpr const char* kAmpDecay = "amp_decay_ms";
 inline constexpr const char* kAmpSustain = "amp_sustain";
 inline constexpr const char* kAmpRelease = "amp_release_ms";
 inline constexpr const char* kReverseEnabled = "reverse_on";
-inline constexpr const char* kCrushEnabled = "crush_on";
-inline constexpr const char* kStutterEnabled = "stutter_on";
-inline constexpr const char* kGateEnabled = "gate_on";
+inline constexpr const char* kDistType = "dist_type";
+inline constexpr const char* kDistDrive = "dist_drive";
+inline constexpr const char* kDistTone = "dist_tone";
+inline constexpr const char* kDistMix = "dist_mix";
+inline constexpr const char* kCompThresh = "comp_thresh";
+inline constexpr const char* kCompRatio = "comp_ratio";
+inline constexpr const char* kCompAttack = "comp_attack";
+inline constexpr const char* kCompRelease = "comp_release";
+inline constexpr const char* kCompMakeup = "comp_makeup";
+inline constexpr const char* kCompMix = "comp_mix";
+inline constexpr const char* kReverbSize = "reverb_size";
+inline constexpr const char* kReverbDecay = "reverb_decay";
+inline constexpr const char* kReverbDamp = "reverb_damp";
+inline constexpr const char* kReverbGate = "reverb_gate";
+inline constexpr const char* kReverbMix = "reverb_mix";
 inline constexpr const char* kHighPassMidi = "hp_midi_on";
 inline constexpr const char* kLowPassMidi = "lp_midi_on";
 inline constexpr const char* kMidiVolume = "midi_volume";
@@ -64,52 +56,24 @@ inline constexpr const char* kMidiExpression = "midi_expression";
 inline constexpr const char* kMidiBrightness = "midi_brightness";
 inline constexpr const char* kSubOctave = "sub_octave";
 inline constexpr const char* kClickPunch = "click_punch";
-inline constexpr const char* kClickSampleOn = "click_sample_on";
-inline constexpr const char* kClickSampleSource = "click_sample_source";
-inline constexpr const char* kClickSampleLevel = "click_sample_level";
-inline constexpr const char* kClickSampleStart = "click_sample_start";
-inline constexpr const char* kClickSamplePitch = "click_sample_pitch";
-inline constexpr const char* kClickSampleHp = "click_sample_hp";
 inline constexpr const char* kStereoWidth = "stereo_width";
 
 inline constexpr const char* kClockSync = "clock_sync";
 inline constexpr const char* kTempoBpm = "tempo_bpm";
 inline constexpr const char* kTimeSignature = "time_sig";
-inline constexpr const char* kAutoEnabled = "auto_on";
-inline constexpr const char* kAutoBypass = "auto_bypass";
-inline constexpr const char* kAutoSlot = "auto_slot";
-inline constexpr const char* kAutoBars = "auto_bars";
-inline constexpr const char* kAutoFillPreset = "auto_fill";
-inline constexpr const char* kAutoGrid = "auto_grid";
-inline constexpr const char* kAutoTailShorten = "auto_tail_shorten";
-inline constexpr const char* kAutoCrushSweep = "auto_crush_sweep";
-
-inline constexpr std::array<const char*, 5> kAutoSlotIds{
-    kAutoBars, kAutoFillPreset, kAutoGrid, kAutoTailShorten, kAutoCrushSweep
-};
 
 inline constexpr const char* kReverseMode = "reverse_mode";
 inline constexpr const char* kReverseMix = "reverse_mix";
-inline constexpr const char* kCrushRate = "crush_rate";
-inline constexpr const char* kCrushBits = "crush_bits";
-inline constexpr const char* kCrushMix = "crush_mix";
-inline constexpr const char* kStutterRate = "stutter_rate";
-inline constexpr const char* kStutterMix = "stutter_mix";
-inline constexpr const char* kGateRate = "gate_rate";
-inline constexpr const char* kGateMix = "gate_mix";
-inline constexpr const char* kPumpRate = "pump_rate";
-inline constexpr const char* kPumpMix = "pump_mix";
 inline constexpr const char* kHighPass = "hp_cutoff";
 inline constexpr const char* kLowPass = "lp_cutoff";
 inline constexpr const char* kHighPassSyncEnabled = "hp_sync_on";
 inline constexpr const char* kHighPassSyncRate = "hp_sync_rate";
 inline constexpr const char* kLowPassSyncEnabled = "lp_sync_on";
 inline constexpr const char* kLowPassSyncRate = "lp_sync_rate";
-inline constexpr const char* kOutput = "output";
+inline constexpr const char* kOutput = "output_gain";
 inline constexpr const char* kLimiterEnabled = "limiter_enabled";
 inline constexpr const char* kKeyTracking = "key_tracking";
-inline constexpr const char* kCeiling = "ceiling";
-inline constexpr const char* kMasterBypass = "master_bypass";
+inline constexpr const char* kCeiling = "limiter_ceiling";
 inline constexpr const char* kEqLowFreq = "eq_low_freq";
 inline constexpr const char* kEqLowDb = "eq_low_db";
 inline constexpr const char* kEqMidFreq = "eq_mid_freq";
@@ -121,17 +85,14 @@ inline constexpr std::array<std::pair<int, int>, 9> kTimeSignatures = { {
     { 4, 4 }, { 3, 4 }, { 2, 4 }, { 5, 4 }, { 6, 4 }, { 6, 8 }, { 7, 8 }, { 9, 8 }, { 12, 8 }
 } };
 
-inline constexpr int kEqLowMinMidi = 21;   // A0
-inline constexpr int kEqLowMaxMidi = 45;   // A2
-inline constexpr int kEqMidMinMidi = 57;   // A3
-inline constexpr int kEqMidMaxMidi = 81;   // A5
-inline constexpr int kEqHighMinMidi = 93;  // A6
-inline constexpr int kEqHighMaxMidi = 117; // A8
+inline constexpr int kEqLowMinMidi = suite::eq::kLowMinMidi;
+inline constexpr int kEqLowMaxMidi = suite::eq::kLowMaxMidi;
+inline constexpr int kEqMidMinMidi = suite::eq::kMidMinMidi;
+inline constexpr int kEqMidMaxMidi = suite::eq::kMidMaxMidi;
+inline constexpr int kEqHighMinMidi = suite::eq::kHighMinMidi;
+inline constexpr int kEqHighMaxMidi = suite::eq::kHighMaxMidi;
 
 [[nodiscard]] std::pair<int, int> eqBandMidiLimits(const juce::String& freqParamId) noexcept;
-
-[[nodiscard]] juce::String autoSlotId(int slot, const juce::String& baseId);
-[[nodiscard]] juce::String layerId(int layer, const juce::String& baseId);
 [[nodiscard]] double beatsPerBarForSignature(int index) noexcept;
 [[nodiscard]] juce::String formatHz(float hz);
 [[nodiscard]] float eqNoteToHz(int midiNote) noexcept;

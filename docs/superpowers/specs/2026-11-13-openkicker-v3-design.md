@@ -1,11 +1,11 @@
-# openKicker v3 Design
+# openEDMKick v3 Design
 
 **Date:** 2026-11-13
 **Status:** Implementation direction derived from the user's request.
 
 ## Intent
 
-Make openKicker produce finished, forceful trance kicks with a bright, physical
+Make openEDMKick produce finished, forceful trance kicks with a bright, physical
 attack and a tuned low body. Every external MIDI note sets the kick fundamental
 directly: MIDI 69 is A4 at 440 Hz and MIDI 57 is A3 at 220 Hz. Remove the UI
 controls and freeze/lock paths that can override that pitch.

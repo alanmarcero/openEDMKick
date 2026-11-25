@@ -42,9 +42,6 @@ public:
     [[nodiscard]] openedmkick::core::KickSettings currentSynthSettings() const noexcept;
     [[nodiscard]] std::array<openedmkick::core::DrumLayerSettings, openedmkick::core::kNumSoundLayers>
         currentLayerSettings() const noexcept;
-    [[nodiscard]] openedmkick::core::AutoSlotSettings currentAutoSlotSettings() const noexcept;
-    [[nodiscard]] openedmkick::core::AutoSlotSettings autoSlotSettings(int slot) const noexcept;
-    [[nodiscard]] int currentAutoSlot() const noexcept;
     [[nodiscard]] bool hasRestoredCustomState() const noexcept { return restoredCustomState_.load(); }
     [[nodiscard]] juce::String presetName();
     [[nodiscard]] juce::String presetDisplayName();
@@ -52,10 +49,9 @@ public:
     void setUserPreset(const juce::String& name);
     [[nodiscard]] int currentMidiNote() const noexcept { return displayMidiNote.load(); }
     static constexpr double hitSampleRate = 44100.0;
-    [[nodiscard]] int userClickSlot() const noexcept { return userPublished_.load(std::memory_order_acquire); }
-    [[nodiscard]] std::vector<openedmkick::core::PianoRollNote> currentPianoRollNotes() const;
-    void togglePianoRollNote(int step64, int length64, int layer = -1, int ratchets = 1);
-    void cyclePianoRollRatchets(int step64, int layer);
+    [[nodiscard]] std::vector<openedmkick::core::PianoRollNote> currentPianoRollNotes() const { return {}; }
+    void togglePianoRollNote(int, int, int = -1, int = 1) {}
+    void cyclePianoRollRatchets(int, int) {}
     void triggerAudition() noexcept { auditionPending_.store(true); }
     [[nodiscard]] float lastVelocity() const noexcept { return displayVelocity.load(); }
 
@@ -69,8 +65,8 @@ public:
 
     [[nodiscard]] juce::MemoryBlock captureSoundState();
     bool applySoundState(const juce::MemoryBlock& state, const juce::String& userPresetName = {});
-    bool loadUserClickSample(const juce::AudioBuffer<float>& buffer, double sampleRate, const juce::String& name);
-    bool loadUserClickSample(const juce::File& file);
+    bool loadUserClickSample(const juce::AudioBuffer<float>&, double, const juce::String&) { return false; }
+    bool loadUserClickSample(const juce::File&) { return false; }
     bool renderCurrentHit(juce::AudioBuffer<float>& destination) const;
     [[nodiscard]] juce::File renderHitToTemporaryWav() const;
 
@@ -163,22 +159,23 @@ private:
         std::atomic<float>* clockSync;
         std::atomic<float>* tempoBpm;
         std::atomic<float>* timeSignature;
-        std::atomic<float>* autoEnabled;
-        std::atomic<float>* autoBypass;
-        std::atomic<float>* autoSlot;
-        std::array<AutoSlotParams, openedmkick::core::kNumAutoSlots> autoSlots;
-        std::array<LayerParams, openedmkick::core::kNumSoundLayers> layers;
         std::atomic<float>* reverseMode;
         std::atomic<float>* reverseMix;
-        std::atomic<float>* crushRate;
-        std::atomic<float>* crushBits;
-        std::atomic<float>* crushMix;
-        std::atomic<float>* stutterRate;
-        std::atomic<float>* stutterMix;
-        std::atomic<float>* gateRate;
-        std::atomic<float>* gateMix;
-        std::atomic<float>* pumpRate;
-        std::atomic<float>* pumpMix;
+        std::atomic<float>* distType;
+        std::atomic<float>* distDrive;
+        std::atomic<float>* distTone;
+        std::atomic<float>* distMix;
+        std::atomic<float>* compThresh;
+        std::atomic<float>* compRatio;
+        std::atomic<float>* compAttack;
+        std::atomic<float>* compRelease;
+        std::atomic<float>* compMakeup;
+        std::atomic<float>* compMix;
+        std::atomic<float>* reverbSize;
+        std::atomic<float>* reverbDecay;
+        std::atomic<float>* reverbDamp;
+        std::atomic<float>* reverbGate;
+        std::atomic<float>* reverbMix;
         std::atomic<float>* highPass;
         std::atomic<float>* lowPass;
         std::atomic<float>* highPassSyncEnabled;
@@ -188,16 +185,12 @@ private:
         std::atomic<float>* output;
         std::atomic<float>* limiter;
         std::atomic<float>* ceiling;
-        std::atomic<float>* masterBypass;
         std::atomic<float>* ampEnabled;
         std::atomic<float>* ampAttackMs;
         std::atomic<float>* ampDecayMs;
         std::atomic<float>* ampSustain;
         std::atomic<float>* ampReleaseMs;
         std::atomic<float>* reverseEnabled;
-        std::atomic<float>* crushEnabled;
-        std::atomic<float>* stutterEnabled;
-        std::atomic<float>* gateEnabled;
         std::atomic<float>* midiVolume;
         std::atomic<float>* midiExpression;
         std::atomic<float>* midiBrightness;
@@ -212,12 +205,6 @@ private:
         std::atomic<float>* eqMidDb;
         std::atomic<float>* eqHighFreq;
         std::atomic<float>* eqHighDb;
-        std::atomic<float>* clickSampleOn;
-        std::atomic<float>* clickSampleSource;
-        std::atomic<float>* clickSampleLevel;
-        std::atomic<float>* clickSampleStart;
-        std::atomic<float>* clickSamplePitch;
-        std::atomic<float>* clickSampleHp;
         std::atomic<float>* keyTracking;
     };
 
@@ -256,8 +243,8 @@ private:
     std::array<UserSampleSlot, 3> userSlots_{};
     std::atomic<int> userPublished_{ 0 };
     mutable std::atomic<int> userAudioSeen_{ 0 };
-    openedmkick::suite::AbCompare ab_;
-    std::unique_ptr<openedmkick::suite::ParameterUndo> history_;
+    suite::AbCompare ab_;
+    std::unique_ptr<suite::ParameterUndo> history_;
     double preparedRate_ = 48000.0;
     std::vector<openedmkick::core::MidiInputEvent> midiEventScratch_;
     int currentProgram_ = 0;

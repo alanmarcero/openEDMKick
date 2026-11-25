@@ -487,4 +487,138 @@ void PeakLimiter::process(float* const* channels, int numChannels, int numSample
     });
 }
 
+void DistortionShaper::reset() noexcept { toneState_ = 0.0f; }
+
+float DistortionShaper::processSample(float input, DistortionType type, float drive, float tone, double sampleRate) noexcept {
+    input = std::isfinite(input) ? input : 0.0f;
+    drive = std::clamp(std::isfinite(drive) ? drive : 0.0f, 0.0f, 1.0f);
+    tone = std::clamp(std::isfinite(tone) ? tone : 0.0f, -1.0f, 1.0f);
+    if (drive < 0.001f && std::abs(tone) < 0.001f) return input;
+    const float preGain = std::exp2(drive * 3.2f);
+    const float driven = std::clamp(input * preGain, -8.0f, 8.0f);
+    float shaped = driven;
+    switch (type) {
+        case DistortionType::tape: {
+            const float bias = 0.08f * drive;
+            shaped = std::tanh(1.2f * (driven + bias)) - std::tanh(1.2f * bias);
+            break;
+        }
+        case DistortionType::tube:
+            shaped = std::tanh(1.05f * driven) + 0.08f * driven * driven / (1.0f + driven * driven);
+            break;
+        case DistortionType::hardClip:
+            shaped = std::clamp(driven, -0.92f, 0.92f);
+            break;
+        case DistortionType::wavefold:
+            shaped = std::sin(0.85f * std::numbers::pi_v<float> * std::tanh(driven * (0.2f + 0.3f * drive)));
+            break;
+    }
+    const float trim = 1.0f / std::sqrt(1.0f + 0.12f * (preGain - 1.0f) * (preGain - 1.0f));
+    float output = shaped * trim;
+    const float cutoff = std::min(1400.0f * std::exp2(tone * 2.4f), static_cast<float>(std::max(1000.0, sampleRate) * 0.45));
+    const float alpha = static_cast<float>(1.0 - std::exp(-2.0 * std::numbers::pi_v<float> * cutoff / std::max(1000.0, sampleRate)));
+    toneState_ += alpha * (output - toneState_);
+    if (std::abs(tone) > 0.001f) {
+        const float high = output - toneState_;
+        output = toneState_ + high * (tone < 0.0f ? 1.0f + tone : 1.0f + 1.8f * tone);
+    }
+    return std::isfinite(output) ? output : 0.0f;
+}
+
+void StereoCompressor::prepare(double sampleRate) noexcept {
+    sampleRate_ = std::max(1000.0, sampleRate);
+    reset();
+}
+
+void StereoCompressor::reset() noexcept { envelopeDb_ = -100.0f; }
+
+void StereoCompressor::process(float& left, float& right, const CompressorSettings& settings) noexcept {
+    left = std::isfinite(left) ? left : 0.0f;
+    right = std::isfinite(right) ? right : 0.0f;
+    const float dryL = left;
+    const float dryR = right;
+    const float peak = std::max(std::abs(left), std::abs(right));
+    const float detectorDb = 20.0f * std::log10(std::max(peak, 1.0e-6f));
+    const float tau = (detectorDb > envelopeDb_ ? std::max(0.1f, settings.attackMs) : std::max(1.0f, settings.releaseMs)) * 0.001f;
+    const float coefficient = std::exp(-1.0f / (tau * static_cast<float>(sampleRate_)));
+    envelopeDb_ = detectorDb + coefficient * (envelopeDb_ - detectorDb);
+    const float threshold = std::clamp(settings.thresholdDb, -60.0f, 0.0f);
+    const float ratio = std::clamp(settings.ratio, 1.0f, 20.0f);
+    const float over = envelopeDb_ - threshold;
+    float reductionDb = 0.0f;
+    if (over > 0.0f && ratio > 1.0f) reductionDb = -(1.0f - 1.0f / ratio) * over;
+    const float gain = std::pow(10.0f, (reductionDb + std::clamp(settings.makeupDb, 0.0f, 24.0f)) / 20.0f);
+    const float mix = std::clamp(settings.mix, 0.0f, 1.0f);
+    left = dryL + (dryL * gain - dryL) * mix;
+    right = dryR + (dryR * gain - dryR) * mix;
+}
+
+void GatedReverb::prepare(double sampleRate) noexcept {
+    sampleRate_ = std::max(8000.0, sampleRate);
+    constexpr std::array<float, 4> delays{ 0.0297f, 0.0371f, 0.0411f, 0.0437f };
+    for (size_t index = 0; index < combs_.size(); ++index) {
+        const auto length = static_cast<size_t>(std::max(8.0, delays[index] * sampleRate_));
+        combs_[index].buffer.assign(length, 0.0f);
+        combs_[index].index = 0;
+        combs_[index].dampState = 0.0f;
+    }
+    for (size_t index = 0; index < allpass_.size(); ++index) {
+        const auto length = static_cast<size_t>(std::max(8.0, (0.005f + 0.0017f * static_cast<float>(index)) * sampleRate_));
+        allpass_[index].assign(length, 0.0f);
+        allpassIndex_[index] = 0;
+    }
+    reset();
+}
+
+void GatedReverb::reset() noexcept {
+    for (auto& comb : combs_) {
+        std::fill(comb.buffer.begin(), comb.buffer.end(), 0.0f);
+        comb.index = 0;
+        comb.dampState = 0.0f;
+    }
+    for (auto& buffer : allpass_) std::fill(buffer.begin(), buffer.end(), 0.0f);
+    allpassIndex_.fill(0);
+    sampleCounter_ = 0;
+}
+
+void GatedReverb::process(float& left, float& right, float size, float decayMs, float damp, float gateMs, float mix) noexcept {
+    if (combs_[0].buffer.empty() || mix <= 0.001f) return;
+    float gate = 1.0f;
+    ++sampleCounter_;
+    if (gateMs > 0.0f) {
+        const float openSamples = gateMs * 0.001f * static_cast<float>(sampleRate_);
+        if (static_cast<float>(sampleCounter_) > openSamples) gate = 0.0f;
+    }
+    if (gate <= 0.0f) return;
+    const float room = std::clamp(size, 0.1f, 1.0f);
+    const float feedback = std::clamp(0.2f + 0.75f * (std::clamp(decayMs, 50.0f, 2500.0f) / 2500.0f) * room, 0.2f, 0.92f);
+    const float dampCoeff = std::clamp(damp, 0.0f, 1.0f);
+    float wetL = 0.0f;
+    float wetR = 0.0f;
+    for (size_t index = 0; index < combs_.size(); ++index) {
+        auto& comb = combs_[index];
+        const float delayed = comb.buffer[comb.index];
+        comb.dampState = delayed * (1.0f - dampCoeff) + comb.dampState * dampCoeff;
+        const float input = (index % 2 == 0 ? left : right);
+        comb.buffer[comb.index] = input + comb.dampState * feedback;
+        comb.index = (comb.index + 1) % comb.buffer.size();
+        if (index % 2 == 0) wetL += delayed;
+        else wetR += delayed;
+    }
+    wetL *= 0.25f;
+    wetR *= 0.25f;
+    for (size_t index = 0; index < allpass_.size(); ++index) {
+        auto& buffer = allpass_[index];
+        auto& cursor = allpassIndex_[index];
+        float& wet = index == 0 ? wetL : wetR;
+        const float delayed = buffer[cursor];
+        const float out = -0.5f * wet + delayed;
+        buffer[cursor] = wet + 0.5f * delayed;
+        cursor = (cursor + 1) % buffer.size();
+        wet = out;
+    }
+    left += (wetL - left) * mix * gate;
+    right += (wetR - right) * mix * gate;
+}
+
 } // namespace openedmkick::core

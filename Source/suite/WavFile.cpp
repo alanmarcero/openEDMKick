@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace openedmkick::suite {
+namespace suite {
 namespace {
 
 void write16(juce::OutputStream& out, uint16_t value) {
@@ -62,4 +62,4 @@ bool writeStereoWav(const juce::File& file, const juce::AudioBuffer<float>& buff
     return stream->getStatus().wasOk();
 }
 
-} // namespace openedmkick::suite
+} // namespace suite

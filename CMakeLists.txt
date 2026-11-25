@@ -38,7 +38,7 @@ if(OEK_BUILD_PLUGIN)
         VERSION "${PROJECT_VERSION}"
         COMPANY_NAME "Alan Marcero"
         BUNDLE_ID "com.alanmarcero.openedmkick"
-        PRODUCT_NAME "openKicker"
+        PRODUCT_NAME "openEDMKick"
         PLUGIN_MANUFACTURER_CODE Amrc
         PLUGIN_CODE Oedk
         FORMATS VST3 AU LV2 Standalone

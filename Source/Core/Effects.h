@@ -168,6 +168,56 @@ private:
     std::array<Band, 3> bands_{};
 };
 
+enum class DistortionType { tape = 0, tube, hardClip, wavefold };
+
+class DistortionShaper {
+public:
+    void reset() noexcept;
+    [[nodiscard]] float processSample(float input, DistortionType type, float drive, float tone, double sampleRate) noexcept;
+
+private:
+    float toneState_ = 0.0f;
+};
+
+struct CompressorSettings {
+    float thresholdDb = -14.0f;
+    float ratio = 4.0f;
+    float attackMs = 5.0f;
+    float releaseMs = 80.0f;
+    float makeupDb = 0.0f;
+    float mix = 0.0f;
+};
+
+class StereoCompressor {
+public:
+    void prepare(double sampleRate) noexcept;
+    void reset() noexcept;
+    void process(float& left, float& right, const CompressorSettings& settings) noexcept;
+
+private:
+    double sampleRate_ = 48000.0;
+    float envelopeDb_ = -100.0f;
+};
+
+class GatedReverb {
+public:
+    void prepare(double sampleRate) noexcept;
+    void reset() noexcept;
+    void process(float& left, float& right, float size, float decayMs, float damp, float gateMs, float mix) noexcept;
+
+private:
+    struct Comb {
+        std::vector<float> buffer;
+        size_t index = 0;
+        float dampState = 0.0f;
+    };
+    std::array<Comb, 4> combs_{};
+    std::array<std::vector<float>, 2> allpass_{};
+    std::array<size_t, 2> allpassIndex_{};
+    double sampleRate_ = 48000.0;
+    int sampleCounter_ = 0;
+};
+
 class PeakLimiter {
 public:
     static constexpr int kMaxChannels = 2;

@@ -1,6 +1,6 @@
 #include "AbCompare.h"
 
-namespace openedmkick::suite {
+namespace suite {
 
 void AbCompare::seed(const juce::MemoryBlock& state) {
     slots_[0] = state;
@@ -16,4 +16,4 @@ const juce::MemoryBlock& AbCompare::slot(int index) const noexcept {
     return slots_[static_cast<size_t>(index == 0 ? 0 : 1)];
 }
 
-} // namespace openedmkick::suite
+} // namespace suite

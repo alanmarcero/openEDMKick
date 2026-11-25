@@ -84,103 +84,10 @@ private:
     Knob output_;
     Knob ceiling_;
     Toggle limiter_;
-    Toggle masterBypass_;
     PeakMeter meter_;
     std::vector<std::unique_ptr<SectionLock>> sectionLocks_;
     KickWaveformView waveform_;
     OpenEdmKickProcessor& processor_;
-    Toggle clickSampleOn_;
-    Choice clickSampleSource_;
-    Knob clickSampleLevel_;
-    Knob clickSampleStart_;
-    Knob clickSamplePitch_;
-    Knob clickSampleHp_;
-    juce::TextButton loadClick_{ "Load" };
-};
-
-class LayerPage final : public juce::Component {
-public:
-    LayerPage(OpenEdmKickProcessor& processor, int layer);
-    void paint(juce::Graphics& g) override;
-    void resized() override;
-    void showEnabled(bool enabled, bool isKick = true, bool mutedBySolo = false);
-
-private:
-    std::unique_ptr<SectionLock> sectionLock_;
-    int layer_ = 0;
-    Toggle enabled_;
-    Choice sound_;
-    Knob level_;
-    Knob pitch_;
-    Knob decay_;
-    Knob highPass_;
-    Knob lowPass_;
-    std::array<std::unique_ptr<Knob>, 9> layerKnobs_;
-    std::array<std::unique_ptr<Toggle>, 2> layerToggles_;
-};
-
-class LayerPanel final : public juce::Component, private juce::Timer {
-public:
-    explicit LayerPanel(OpenEdmKickProcessor& processor);
-    void resized() override;
-    void selectLayer(int layer);
-    void refreshActivity();
-
-private:
-    void timerCallback() override { refreshActivity(); }
-    OpenEdmKickProcessor& processor_;
-    std::array<std::unique_ptr<LayerPage>, openedmkick::core::kNumSoundLayers> pages_;
-    std::array<juce::TextButton, openedmkick::core::kNumSoundLayers> tabs_;
-    int selectedLayer_ = 0;
-};
-
-class PianoRollView final : public juce::Component, public juce::SettableTooltipClient, private juce::Timer {
-public:
-    explicit PianoRollView(OpenEdmKickProcessor& processor);
-    void paint(juce::Graphics& g) override;
-    void mouseDown(const juce::MouseEvent& event) override;
-
-private:
-    void timerCallback() override;
-    [[nodiscard]] juce::Rectangle<float> gridArea() const;
-    OpenEdmKickProcessor& processor_;
-    float lastPhase_ = -1.0f;
-    openedmkick::core::AutoSlotSettings lastSettings_{};
-    std::vector<openedmkick::core::PianoRollNote> lastNotes_;
-    std::array<std::pair<bool, int>, openedmkick::core::kNumSoundLayers> lastLayers_{};
-};
-
-class AutoPianoRollPanel final : public juce::Component, private juce::Timer {
-public:
-    explicit AutoPianoRollPanel(OpenEdmKickProcessor& processor);
-    void paint(juce::Graphics& g) override;
-    void resized() override;
-    void selectSlot(int slot);
-    void setAdvancedMode(bool advanced);
-    [[nodiscard]] bool isAdvancedMode() const noexcept { return advancedMode_; }
-    void refreshActivity();
-
-private:
-    void timerCallback() override;
-    void bindSlotControls();
-    void syncSelectedSlot(int slot);
-    OpenEdmKickProcessor& processor_;
-    bool advancedMode_ = false;
-    Choice scene_;
-    std::unique_ptr<SectionLock> clockLock_, sceneLock_;
-    Toggle bypass_;
-    Toggle enabled_;
-    Toggle clockSync_;
-    Choice timeSig_;
-    Choice bars_;
-    Choice grid_;
-    Choice fillPreset_;
-    Knob tempo_;
-    Knob tailShorten_;
-    Knob crushSweep_;
-    PianoRollView pianoRoll_;
-    int selectedSlot_ = -1;
-    juce::ParameterAttachment slotWatcher_;
 };
 
 class EffectsPanel final : public juce::Component, private juce::Timer {
@@ -197,20 +104,18 @@ private:
     [[nodiscard]] std::array<juce::Rectangle<int>, 4> sections() const;
     OpenEdmKickProcessor& processor_;
     bool advancedMode_ = false;
-    Toggle reverseEnabled_, crushEnabled_, stutterEnabled_, gateEnabled_, highPassMidi_, lowPassMidi_;
+    Toggle reverseEnabled_, highPassMidi_, lowPassMidi_;
     Knob midiVolume_, midiExpression_, midiBrightness_;
     std::vector<std::unique_ptr<SectionLock>> sectionLocks_;
     Choice reverseMode_;
     Knob reverseMix_;
-    Knob crushRate_;
-    Knob crushBits_;
-    Knob crushMix_;
-    Choice stutterRate_;
-    Knob stutterMix_;
-    Choice gateRate_;
-    Knob gateMix_;
-    Choice pumpRate_;
-    Knob pumpMix_;
+    Toggle clockSync_;
+    Knob tempo_;
+    Choice timeSig_;
+    Choice distType_;
+    Knob distDrive_, distTone_, distMix_;
+    Knob compThresh_, compRatio_, compAttack_, compRelease_, compMakeup_, compMix_;
+    Knob reverbSize_, reverbDecay_, reverbDamp_, reverbGate_, reverbMix_;
     Knob highPass_;
     Knob lowPass_;
     Toggle highPassSync_;

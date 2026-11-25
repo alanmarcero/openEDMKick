@@ -152,8 +152,6 @@ void KickVoice::startState(const KickSettings& settings, int midiNote, float vel
     const float layerGain = finiteClamp(layer_.gain, 1.0f, 0.0f, 1.0f);
     gain_ = std::pow(hitVelocity, finiteClamp(layer.velocityCurve, 1.45f, 0.1f, 4)) * layerGain * finiteClamp(gainScale, 1.0f, 0.0f, 1.0f);
     noteHz_ = noteFrequencyHz(kDefaultMidiNote) * pitchRatio;
-    if (layer_.sound == DrumSoundType::snare) noteHz_ = 195.0f * std::exp2(transpose / 12.0f);
-    if (layer_.sound == DrumSoundType::hat) noteHz_ = 6500.0f * pitchRatio;
     noteHz_ = std::clamp(noteHz_, 1.0f, static_cast<float>(std::max(1000.0, osRate_ * 0.12)));
     phase_ = static_cast<double>(finiteClamp(settings_.startPhase, 0.5f, 0.0f, 1.0f) * 0.25f);
     subPhase_ = phase_;
@@ -197,10 +195,7 @@ void KickVoice::startState(const KickSettings& settings, int midiNote, float vel
     const float safeTone = track(finiteClamp(settings_.toneHz, 9000.0f, 300.0f, 20000.0f));
     const float safeLowCut = track(finiteClamp(settings_.lowCutHz, 25.0f, 10.0f, 90.0f));
     clickFrequencyHz_ = track(finiteClamp(settings_.clickHz, 3500.0f, 500.0f, 14000.0f));
-    float safeClickHz = clickFrequencyHz_;
-    if (layer_.sound == DrumSoundType::snare) safeClickHz = std::clamp(2600.0f * toneScale * std::exp2(transpose / 12.0f), 200.0f, static_cast<float>(hostRate_ * 0.45));
-    if (layer_.sound == DrumSoundType::clap) safeClickHz = std::clamp(1650.0f * toneScale * std::exp2(transpose / 12.0f), 200.0f, static_cast<float>(hostRate_ * 0.45));
-    if (layer_.sound == DrumSoundType::hat) safeClickHz = std::clamp(noteHz_ * toneScale, 5.0f, static_cast<float>(hostRate_ * 0.45));
+    const float safeClickHz = clickFrequencyHz_;
     knock_.c = dsp::peakCoeffs(knockHz_, 1.05, knockDb_, osRate_);
     tone_.c = dsp::lowpassCoeffs(safeTone, 0.707, osRate_);
     lowCut_.c = dsp::highpassCoeffs(safeLowCut, 0.707, osRate_);
@@ -385,105 +380,6 @@ float KickVoice::renderClick(float timeMs) noexcept {
     return (modalSum * modalMix + skinBurst * burstEnv * (1.0f - modalMix)) * level * std::sqrt(velocity_);
 }
 
-float KickVoice::renderDrumLayer(float timeMs) noexcept {
-    const float decayMs = finiteClamp(layer_.decayMs, 180.0f, 5.0f, 1500.0f);
-    const float progress = std::clamp(timeMs / decayMs, 0.0f, 1.0f);
-    const bool gatedSustain = settings_.ampEnabled && !reversing_;
-    float decay = 1.0f;
-    if (!gatedSustain) decay = shapedFall(progress, 0.15f);
-    const float bright = 0.45f + 0.55f * velocity_;
-    const float osNoiseGain = std::sqrt(static_cast<float>(std::max(1, decimator_.factor()))) * 2.2f;
-    const float nyquist = static_cast<float>(osRate_ * 0.45);
-
-    switch (layer_.sound) {
-        case DrumSoundType::snare: {
-            float wireEnv = 1.0f;
-            if (!gatedSustain) wireEnv = std::exp(-timeMs * (4.2f + bright * 1.6f) / decayMs);
-            const float headBend = 1.0f + 0.045f * std::exp(-timeMs / 1.6f);
-            constexpr std::array<float, 4> ratios{ 1.0f, 1.518f, 1.835f, 2.292f };
-            constexpr std::array<float, 4> gains{ 0.58f, 0.44f, 0.18f, 0.12f };
-            constexpr std::array<float, 4> tausMs{ 16.0f, 13.5f, 6.5f, 4.8f };
-            const float coupling = 0.06f * std::sin(static_cast<float>(modalPhases_[1]) * kTwoPi);
-            float membrane = 0.0f;
-            std::ranges::for_each(std::views::iota(size_t{ 0 }, size_t{ 4 }), [&](size_t mode) {
-                const float modeHz = noteHz_ * ratios[mode] * headBend;
-                if (modeHz >= nyquist) return;
-                float modeEnv = 1.0f;
-                if (!gatedSustain) modeEnv = std::exp(-timeMs / tausMs[mode]);
-                const float phaseMod = mode == 0 ? coupling : 0.0f;
-                membrane += gains[mode] * modeEnv * std::sin(static_cast<float>(modalPhases_[mode]) * kTwoPi + phaseMod);
-                modalPhases_[mode] += static_cast<double>(modeHz) / osRate_;
-                modalPhases_[mode] -= std::floor(modalPhases_[mode]);
-            });
-
-            const size_t combLen = std::clamp(static_cast<size_t>(osRate_ * 0.00135), size_t{ 8 }, snareComb_.size() - 1u);
-            const size_t readPos = snareCombIndex_ % combLen;
-            const float delayed = snareComb_[readPos];
-            snareCombLp_ = 0.55f * delayed + 0.45f * snareCombLp_;
-            const float rawNoise = noise_.nextPink() * 0.85f + noise_.nextVelvet(4200.0, osRate_) * 0.45f;
-            const float rattleDrive = rawNoise * (1.0f + 0.28f * std::abs(membrane));
-            snareComb_[readPos] = rattleDrive + 0.46f * snareCombLp_;
-            snareCombIndex_ = readPos + 1u;
-            const float wireRattle = clickFilter_.process(rattleDrive + 0.62f * snareCombLp_) * osNoiseGain;
-            return decay * 0.72f * (membrane * 0.42f + wireRattle * wireEnv * (0.68f + bright * 0.18f));
-        }
-        case DrumSoundType::clap: {
-            float burst = 0.0f;
-            std::ranges::for_each(std::views::iota(0, 4), [&](int tap) {
-                const float startMs = static_cast<float>(tap) * 6.0f;
-                if (timeMs >= startMs) burst += std::exp(-(timeMs - startMs) * 1.1f);
-            });
-            const float clapNoise = clickFilter_.process(noise_.next()) * osNoiseGain;
-            float diffuseTail = 1.0f;
-            if (!gatedSustain) diffuseTail = std::exp(-timeMs * 5.0f / decayMs);
-            const float texture = std::min(1.0f, burst * 0.48f) * 0.78f + diffuseTail * 0.26f;
-            return clapNoise * texture * decay * (0.85f + bright * 0.25f);
-        }
-        case DrumSoundType::hat: {
-            const float metalEnv = std::exp(-timeMs / 5.2f);
-            constexpr std::array<float, 6> ratios{ 1.0f, 1.3420f, 1.6180f, 1.9275f, 2.5029f, 3.1847f };
-            std::array<float, 6> squares{};
-            const auto polyBlep = [](double t, double dt) noexcept {
-                if (t < dt) {
-                    const double x = t / dt;
-                    return x + x - x * x - 1.0;
-                }
-                if (t > 1.0 - dt) {
-                    const double x = (t - 1.0) / dt;
-                    return x * x + x + x + 1.0;
-                }
-                return 0.0;
-            };
-            std::ranges::for_each(std::views::iota(size_t{ 0 }, ratios.size()), [&](size_t osc) {
-                const double oscHz = static_cast<double>(noteHz_ * ratios[osc]);
-                const double dt = oscHz / osRate_;
-                if (dt >= 0.45) return;
-                const double p = modalPhases_[osc];
-                const double half = p >= 0.5 ? p - 0.5 : p + 0.5;
-                const double raw = p < 0.5 ? 1.0 : -1.0;
-                const double bandFade = std::clamp((0.45 - dt) / 0.08, 0.0, 1.0);
-                squares[osc] = static_cast<float>((raw + polyBlep(p, dt) - polyBlep(half, dt)) * bandFade);
-                modalPhases_[osc] += dt;
-                modalPhases_[osc] -= std::floor(modalPhases_[osc]);
-            });
-            const float carriers = squares[0] * 0.50f + squares[1] * 0.28f + squares[2] * 0.18f;
-            const float ringPairs = squares[0] * squares[1] * 0.54f
-                + squares[2] * squares[3] * 0.34f
-                + squares[4] * squares[5] * 0.22f;
-            const float rawMetal = (carriers * 0.42f + ringPairs * 0.68f) * metalEnv;
-            const float hpCutoff = std::clamp(noteHz_ * 0.68f, 300.0f, nyquist * 0.8f);
-            const float hpAlpha = static_cast<float>(1.0 - std::exp(-2.0 * std::numbers::pi * static_cast<double>(hpCutoff) / osRate_));
-            snareCombLp_ += hpAlpha * (rawMetal - snareCombLp_);
-            const float metal = rawMetal - snareCombLp_;
-            const float hatNoise = clickFilter_.process(noise_.next()) * osNoiseGain * (0.85f + bright * 0.3f);
-            return (hatNoise * 0.80f + metal * 0.28f) * decay;
-        }
-        case DrumSoundType::kick:
-            break;
-    }
-    return 0.0f;
-}
-
 float KickVoice::renderOversampled() noexcept {
     const double timeMsDouble = 1000.0 * static_cast<double>(osIndex_) / osRate_;
     const double nextTimeMsDouble = 1000.0 * static_cast<double>(osIndex_ + 1) / osRate_;
@@ -554,16 +450,6 @@ float KickVoice::renderOversampled() noexcept {
         phase_ += phaseStep;
         subPhase_ += phaseStep;
         subOctavePhase_ += 0.5 * phaseStep;
-    }
-    if (layer_.sound != DrumSoundType::kick) {
-        sample = renderDrumLayer(timeMs);
-        sample = tone_.process(sample);
-        sample = lowCut_.process(sample);
-        if (settings_.ampEnabled && !reversing_) sample *= ampLevel();
-        const double step = static_cast<double>(noteHz_) / osRate_;
-        phase_ += step;
-        subPhase_ += step;
-        subOctavePhase_ += 0.5 * step;
     }
     sample *= gain_;
 
@@ -673,12 +559,10 @@ std::vector<float> renderLayeredKick(const KickSettings& settings,
                                     double sampleRate, int midiNote) {
     std::array<KickVoice, kNumSoundLayers> voices;
     float lengthMs = hitLengthMs(settings);
-    const bool anySolo = std::ranges::any_of(layers, [](const auto& layer) { return layer.enabled && layer.solo; });
     std::ranges::for_each(std::views::iota(size_t{ 0 }, voices.size()), [&](size_t index) {
         voices[index].prepare(sampleRate);
         const auto& layer = layers[index];
-        if (!layer.enabled || layer.gain <= 0.0001f || (anySolo && !layer.solo)) return;
-        if (midiNote < layer.keyLow || midiNote > layer.keyHigh || layer.velocityHigh < 127) return;
+        if (!layer.enabled || layer.gain <= 0.0001f) return;
         auto preview = settings;
         preview.ampEnabled = false;
         voices[index].start(preview, midiNote, 1.0f, layer);
@@ -693,10 +577,7 @@ std::vector<float> renderLayeredKick(const KickSettings& settings,
     while (std::ranges::any_of(voices, [](const KickVoice& voice) { return voice.isActive(); })) {
         float sample = 0.0f;
         for (size_t index = 0; index < voices.size(); ++index) {
-            const auto& layer = layers[index];
-            const float polarity = layer.invertPolarity ? -1.0f : 1.0f;
-            const float pan = finiteClamp(layer.pan, 0, -1, 1);
-            sample += voices[index].nextSample() * polarity * (1.0f - std::abs(pan) * 0.5f);
+            sample += voices[index].nextSample();
         }
         samples.push_back(std::isfinite(sample) ? sample : 0.0f);
     }

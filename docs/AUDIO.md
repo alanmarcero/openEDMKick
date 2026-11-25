@@ -1,6 +1,6 @@
-# openKicker audio engine
+# openEDMKick audio engine
 
-openKicker v3.1 combines four independently shaped drum voices into one MIDI instrument. The engine remains a self-contained C++20 library without a JUCE dependency.
+openEDMKick v3.1 combines four independently shaped drum voices into one MIDI instrument. The engine remains a self-contained C++20 library without a JUCE dependency.
 
 ## Drum layers
 
@@ -48,7 +48,7 @@ Solo, linear pan, and polarity operate per layer before the stereo mix. Center p
 
 ## Session state
 
-The processor keeps the openKicker plug-in identity and saves a factory catalog version alongside the complete parameter state. A session from an older bank restores its parameter values as a custom sound. Layer settings and host-sync parameters are saved with the session and are available for automation. New layer parameters append to the existing parameter list with AU version hint 3. All four scenes' custom lane notes and ratchets are stored in a separate LayerPatterns state child. Editor edits publish precompiled schedules through an atomic triple buffer; the callback swaps pattern storage without taking the editor mutex. Supported MIDI input is bounded to 65,535 events plus an audition per callback; excess input is ignored. Older sessions retain matching parameter values and use defaults for the added layer and sync controls.
+The processor keeps the openEDMKick plug-in identity and saves a factory catalog version alongside the complete parameter state. A session from an older bank restores its parameter values as a custom sound. Layer settings and host-sync parameters are saved with the session and are available for automation. New layer parameters append to the existing parameter list with AU version hint 3. All four scenes' custom lane notes and ratchets are stored in a separate LayerPatterns state child. Editor edits publish precompiled schedules through an atomic triple buffer; the callback swaps pattern storage without taking the editor mutex. Supported MIDI input is bounded to 65,535 events plus an audition per callback; excess input is ignored. Older sessions retain matching parameter values and use defaults for the added layer and sync controls.
 
 
 ## Full ADSR and note tracking

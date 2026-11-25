@@ -1,12 +1,12 @@
-# openKicker v3.7.0 native editor screenshots
+# openEDMKick v3.7.0 native editor screenshots
 
 The images come from the compiled JUCE editor. Kick, held-note mode, Layers, and Pattern use the 1080 × 764 default window. Effects uses a taller window to show all advanced controls.
 
-- [Kick](../assets/openKicker-kick.png) shows the first Uplifting preset, C2 waveform, locked Dive time, and Harmonics assigned to CC35.
-- [Hold MIDI notes](../assets/openKicker-held.png) shows the MIDI envelope in the compact editor.
-- [Layers](../assets/openKicker-layers.png) shows the mixer, pitch and filters, response, and MIDI zones.
-- [Pattern](../assets/openKicker-pattern.png) shows the clock, scene, shared hits, and per-layer ratchets.
-- [Effects](../assets/openKicker-fx.png) shows MIDI activations, filter sync, and output controls.
+- [Kick](../assets/openEDMKick-kick.png) shows the first Uplifting preset, C2 waveform, locked Dive time, and Harmonics assigned to CC35.
+- [Hold MIDI notes](../assets/openEDMKick-held.png) shows the MIDI envelope in the compact editor.
+- [Layers](../assets/openEDMKick-layers.png) shows the mixer, pitch and filters, response, and MIDI zones.
+- [Pattern](../assets/openEDMKick-pattern.png) shows the clock, scene, shared hits, and per-layer ratchets.
+- [Effects](../assets/openEDMKick-fx.png) shows MIDI activations, filter sync, and output controls.
 
 ```sh
 cmake --build build --target openedmkick_screenshots --config Release
@@ -23,5 +23,5 @@ OpenVST Manager shows `docs/screenshots/preview.png` from `main` (see `screensho
 
 ```sh
 mkdir -p build/shots && OEK_CAPTURE_DIR="$PWD/build/shots" build/openedmkick_plugin_tests '[capture]'
-cp build/shots/openKicker-kick.png docs/screenshots/preview.png
+cp build/shots/openEDMKick-kick.png docs/screenshots/preview.png
 ```

@@ -96,37 +96,12 @@ TEST_CASE("Kick, snare, clap, and hat layers render and filter independently", "
 
     std::array<core::DrumLayerSettings, core::kNumSoundLayers> layers{};
     std::ranges::for_each(layers, [](core::DrumLayerSettings& layer) { layer.enabled = false; });
-    std::array<std::vector<float>, 4> sounds;
-    std::ranges::for_each(std::views::iota(0, 4), [&](int type) {
-        layers[0] = { true, static_cast<core::DrumSoundType>(type), 1.0f,
-                      type == 1 ? 12.0f : 0.0f, 180.0f };
-        sounds[static_cast<size_t>(type)] = core::renderLayeredKick(settings, layers, 48000.0, 36);
-        REQUIRE(!sounds[static_cast<size_t>(type)].empty());
-        const double energy = std::accumulate(sounds[static_cast<size_t>(type)].begin(),
-                                              sounds[static_cast<size_t>(type)].end(), 0.0,
-            [](double sum, float sample) { return sum + std::abs(static_cast<double>(sample)); });
-        REQUIRE(energy > 1.0);
-    });
-
-    const auto difference = [](const std::vector<float>& a, const std::vector<float>& b) {
-        const size_t count = std::min(a.size(), b.size());
-        return std::inner_product(a.begin(), a.begin() + static_cast<ptrdiff_t>(count), b.begin(), 0.0,
-            std::plus<>(), [](float left, float right) { return std::abs(static_cast<double>(left - right)); });
-    };
-    REQUIRE(difference(sounds[0], sounds[1]) > 10.0);
-    REQUIRE(difference(sounds[1], sounds[2]) > 10.0);
-    REQUIRE(difference(sounds[2], sounds[3]) > 10.0);
-
-    // Drum layers (snare, clap, hat) must add substantial audible energy on top of a kick
-    for (int extra = 1; extra <= 3; ++extra) {
-        std::array<core::DrumLayerSettings, core::kNumSoundLayers> baseLayers{};
-        baseLayers[0] = { true, core::DrumSoundType::kick, 1.0f, 0.0f, 180.0f };
-        auto layered = baseLayers;
-        layered[1] = { true, static_cast<core::DrumSoundType>(extra), 0.7f, 0.0f, 120.0f };
-        const auto kickOnly = core::renderLayeredKick(settings, baseLayers, 48000.0, 36);
-        const auto withLayer = core::renderLayeredKick(settings, layered, 48000.0, 36);
-        REQUIRE(difference(kickOnly, withLayer) > 40.0);
-    }
+    layers[0] = { true, core::DrumSoundType::kick, 1.0f, 0.0f, 180.0f };
+    const auto kick = core::renderLayeredKick(settings, layers, 48000.0, 36);
+    REQUIRE(!kick.empty());
+    const double energy = std::accumulate(kick.begin(), kick.end(), 0.0,
+        [](double sum, float sample) { return sum + std::abs(static_cast<double>(sample)); });
+    REQUIRE(energy > 1.0);
 
     settings.sweepOctaves = settings.snapOctaves = 0.0f;
     settings.clickLevel = settings.subLevel = 0.0f;
@@ -246,7 +221,6 @@ TEST_CASE("Retriggering a sustaining kick does not jump", "[synth][quality]") {
     settings.synth.decayMs = 400.0f;
     settings.synth.subLevel = 0.8f;
     settings.effects.limiterEnabled = false;
-    settings.layers[1].enabled = settings.layers[2].enabled = settings.layers[3].enabled = false;
     const int at = static_cast<int>(48000 * 0.08);
     std::vector<float> left(static_cast<size_t>(48000 * 0.16));
     float* channel = left.data();
@@ -258,23 +232,7 @@ TEST_CASE("Retriggering a sustaining kick does not jump", "[synth][quality]") {
     CHECK(step < 0.05f);
 }
 
-TEST_CASE("Hat partials do not ring through the noise decay", "[synth][layers][quality]") {
-    core::KickSettings settings{};
-    settings.clickLevel = settings.subLevel = settings.bodyTone = 0.0f;
-    core::DrumLayerSettings hat{};
-    hat.enabled = true;
-    hat.sound = core::DrumSoundType::hat;
-    hat.gain = 1.0f;
-    hat.decayMs = 80.0f;
-    hat.highPassHz = 4000.0f;
-    hat.lowPassHz = 16000.0f;
-    std::array<core::DrumLayerSettings, core::kNumSoundLayers> layers{};
-    layers[0] = hat;
-    const auto hit = core::renderLayeredKick(settings, layers, 48000.0, 36);
-    const double early = goertzel(hit, 0, 400, 6500.0, 48000.0);
-    const double late = goertzel(hit, static_cast<size_t>(48000 * 0.03), 600, 6500.0, 48000.0);
-    CHECK(late < early * 0.45);
-}
+
 
 namespace {
 
@@ -484,40 +442,6 @@ TEST_CASE("Reverse playback renders causal forward filters into cache and plays 
     REQUIRE(std::abs(reversed.front()) < 1.0e-4f);
 }
 
-TEST_CASE("Snare layer synthesizes coupled dual-membrane modes and comb wire rattle", "[synth][layers][dsp]") {
-    core::KickSettings settings{};
-    settings.clickLevel = 0.0f;
-    settings.subLevel = 0.0f;
-    settings.bodyTone = 0.0f;
-    settings.knockDb = 0.0f;
 
-    std::array<core::DrumLayerSettings, core::kNumSoundLayers> layers{};
-    std::ranges::for_each(layers, [](auto& l) { l.enabled = false; });
-    layers[0] = { true, core::DrumSoundType::snare, 1.0f, 0.0f, 220.0f };
 
-    const auto snare = core::renderLayeredKick(settings, layers, 48000.0, 36);
-    const double modeLow = goertzel(snare, 48, 1024, 195.0, 48000.0);
-    const double betweenModes = goertzel(snare, 48, 1024, 244.0, 48000.0);
-    const double modeHigh = goertzel(snare, 48, 1024, 296.0, 48000.0);
-    REQUIRE(modeLow > 1.0);
-    REQUIRE(modeHigh > betweenModes * 1.45);
-}
 
-TEST_CASE("Hat layer synthesizes irrational square-ring sidebands without phase-wrap clicks", "[synth][layers][dsp]") {
-    core::KickSettings settings{};
-    settings.clickLevel = 0.0f;
-    settings.subLevel = 0.0f;
-    settings.bodyTone = 0.0f;
-    settings.knockDb = 0.0f;
-    settings.toneHz = 20000.0f;
-
-    std::array<core::DrumLayerSettings, core::kNumSoundLayers> layers{};
-    std::ranges::for_each(layers, [](auto& l) { l.enabled = false; });
-    layers[0] = { true, core::DrumSoundType::hat, 1.0f, 0.0f, 160.0f };
-
-    const auto hat = core::renderLayeredKick(settings, layers, 48000.0, 24);
-    // At note 24, base hat carrier is 3250 Hz; ring-mod sum sideband of (1.0, 1.342) sits at 3250 * 2.342 = 7611.5 Hz.
-    const double sumSideband = goertzel(hat, 0, 1024, 3250.0 * 2.342, 48000.0);
-    const double floor = goertzel(hat, 0, 1024, 420.0, 48000.0);
-    REQUIRE(sumSideband > floor * 2.2);
-}

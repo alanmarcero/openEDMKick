@@ -18,7 +18,7 @@ public:
     [[nodiscard]] bool isAdvancedView() const noexcept { return synthPanel_.isAdvancedMode(); }
 
 private:
-    enum class Page { kick, layers, pattern, effects };
+    enum class Page { kick, effects };
     void timerCallback() override;
     void syncPresetBox();
     void setPage(Page page);
@@ -34,14 +34,10 @@ private:
     juce::TextButton nextPresetBtn_{">"};
     juce::TextButton viewToggleBtn_{"Advanced controls"};
     juce::TextButton kickTab_{"Kick"};
-    juce::TextButton layersTab_{"Layers"};
-    juce::TextButton patternTab_{"Pattern"};
     juce::TextButton effectsTab_{"Effects"};
-    openedmkick::suite::SuiteBar suiteBar_;
-    openedmkick::suite::PresetBrowser presetBrowser_;
+    suite::SuiteBar suiteBar_;
+    suite::PresetBrowser presetBrowser_;
     openedmkick::ui::KickSynthPanel synthPanel_;
-    openedmkick::ui::LayerPanel layerPanel_;
-    openedmkick::ui::AutoPianoRollPanel autoPanel_;
     openedmkick::ui::EffectsPanel effectsPanel_;
     juce::TooltipWindow tooltipWindow_;
     Page page_ = Page::kick;

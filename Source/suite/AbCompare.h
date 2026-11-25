@@ -4,7 +4,7 @@
 
 #include <array>
 
-namespace openedmkick::suite {
+namespace suite {
 
 // Two full plugin-state slots. The active slot tracks the live sound.
 class AbCompare {
@@ -20,4 +20,4 @@ private:
     int active_ = 0;
 };
 
-} // namespace openedmkick::suite
+} // namespace suite

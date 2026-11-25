@@ -1,4 +1,4 @@
-# openKicker v3.9.0
+# openEDMKick v3.9.0
 
 [Install with OpenVST Manager](https://github.com/alanmarcero/alan-m-OpenVSTManager/releases/latest)
 
@@ -6,7 +6,7 @@
 
 All of these plugins are in beta. The macOS and Linux builds are not up to date, so the Windows build is the one to use for now. A plugin can change dramatically from one release to the next, but the goal is for each one to keep getting better.
 
-openKicker makes pitched trance kicks and layered drum hits. Play it from a MIDI keyboard or sequence. MIDI notes set the kick pitch and octave. Add up to four kick, snare, clap, or hat layers to create a complete hit.
+openEDMKick makes pitched trance kicks and layered drum hits. Play it from a MIDI keyboard or sequence. MIDI notes set the kick pitch and octave. Add up to four kick, snare, clap, or hat layers to create a complete hit.
 
 ![Kick waveform, preset browser, audition, and sound controls](docs/screenshots/preview.png)
 
@@ -20,13 +20,13 @@ Drag **Drag hit** onto a track or the desktop to bounce the last note and veloci
 
 **Sample**, on the Kick page, adds an optional click from a short WAV or from the built-in Tick, Beater, Wood, and Snap sounds. It stays off until you enable it, so older sessions and factory presets sound the same. Level, start, pitch, and high-pass are under **Advanced controls**. The sample is saved inside the project.
 
-**Undo** and **Redo** step through control changes. Use Cmd+Z or Ctrl+Z, and Shift+Cmd+Z or Shift+Ctrl+Z to redo. **A** and **B** keep two full sounds. **A to B** and **B to A** copy between them. **Presets** searches the factory bank and the sounds you save. You can star a preset, and save, rename, or delete your own. Factory presets stay read-only. Your files go in Documents/Alan Marcero/openKicker/Presets.
+**Undo** and **Redo** step through control changes. Use Cmd+Z or Ctrl+Z, and Shift+Cmd+Z or Shift+Ctrl+Z to redo. **A** and **B** keep two full sounds. **A to B** and **B to A** copy between them. **Presets** searches the factory bank and the sounds you save. You can star a preset, and save, rename, or delete your own. Factory presets stay read-only. Your files go in Documents/Alan Marcero/openEDMKick/Presets.
 
 On the **Kick** page, **Pitch dive** sets how quickly the pitch drops to the played note. Adjust **Body & sub** for low-end weight, **Transient** for the attack, **One-shot tail** for the space before the bass enters, and **Output** for the dual-layer 3-band EQ (±12 dB inner cap, note-snapped outer collar across two octaves per band), **Top width**, **Output**, **Ceiling**, **Limiter**, **Bypass**, and **Output peak** meter. The waveform shows the length of the hit in milliseconds. Factory kicks use 10–23 ms of hold and 105–168 ms of decay.
 
-Switch on **Hold MIDI notes** beside the waveform to play openKicker as a pitched synthesizer. The Kick page shows attack, decay, sustain, and release. Hold a chord on your keyboard and release each note independently. **Audition C2** and the sequencer play one-shots. **Advanced controls** exposes both envelopes, filters, and snap.
+Switch on **Hold MIDI notes** beside the waveform to play openEDMKick as a pitched synthesizer. The Kick page shows attack, decay, sustain, and release. Hold a chord on your keyboard and release each note independently. **Audition C2** and the sequencer play one-shots. **Advanced controls** exposes both envelopes, filters, and snap.
 
-![Held-note mode with the attack, decay, sustain and release controls](assets/openKicker-held.png)
+![Held-note mode with the attack, decay, sustain and release controls](assets/openEDMKick-held.png)
 
 The clean sub starts at the played pitch and blends into the body's phase as the dive settles. This keeps the low end consistent as you change notes. **Knock** now boosts its selected frequency band cleanly without adding distortion.
 
@@ -50,14 +50,14 @@ Use the Effects page for reverse, high-pass and low-pass sweeps, bitcrushing, st
 
 ## More screenshots
 
-![Layer response, zones, and routing controls](assets/openKicker-layers.png)
+![Layer response, zones, and routing controls](assets/openEDMKick-layers.png)
 
-![Shared and per-layer pattern lanes](assets/openKicker-pattern.png)
+![Shared and per-layer pattern lanes](assets/openEDMKick-pattern.png)
 
-![Glitch MIDI controls and CC bindings](assets/openKicker-fx.png)
+![Glitch MIDI controls and CC bindings](assets/openEDMKick-fx.png)
 
 ## Formats and license
 
-VST3, AU, LV2, and Standalone formats are available on macOS. Windows and Linux versions include VST3, LV2, and Standalone. Older openKicker sessions recall their saved sound and appear as **Custom sound**. Any missing controls take their default values.
+VST3, AU, LV2, and Standalone formats are available on macOS. Windows and Linux versions include VST3, LV2, and Standalone. Older openEDMKick sessions recall their saved sound and appear as **Custom sound**. Any missing controls take their default values.
 
 MIT License. See [LICENSE](LICENSE).

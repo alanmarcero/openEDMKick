@@ -118,7 +118,7 @@ TEST_CASE("User presets save, search, star, rename, and delete", "[suite][preset
     auto directory = juce::File::getSpecialLocation(juce::File::tempDirectory)
                          .getChildFile("openkicker-preset-test-" + juce::String(juce::Time::currentTimeMillis()));
     directory.deleteRecursively();
-    openedmkick::suite::PresetLibrary library("openKicker", { "Uplifting / First Light", "Rolling / Pocket" });
+    suite::PresetLibrary library("openEDMKick", { "Uplifting / First Light", "Rolling / Pocket" });
     library.setDirectory(directory);
     juce::MemoryBlock state("kick", 4);
     REQUIRE_FALSE(library.save("Uplifting / First Light", state));
@@ -139,7 +139,7 @@ TEST_CASE("User presets save, search, star, rename, and delete", "[suite][preset
     REQUIRE(library.list("pocket").front().factory);
     REQUIRE(library.setFavorite("My Room", true));
     REQUIRE(library.setFavorite("Rolling / Pocket", true));
-    openedmkick::suite::PresetLibrary reopened("openKicker", { "Uplifting / First Light", "Rolling / Pocket" });
+    suite::PresetLibrary reopened("openEDMKick", { "Uplifting / First Light", "Rolling / Pocket" });
     reopened.setDirectory(directory);
     const auto starred = reopened.list({});
     REQUIRE(starred.size() >= 2);
@@ -156,59 +156,15 @@ TEST_CASE("User presets save, search, star, rename, and delete", "[suite][preset
     directory.deleteRecursively();
 }
 
-TEST_CASE("Sample click stays off for old sessions and round-trips in new ones", "[suite][click]") {
+TEST_CASE("A WAV click is not stored in the session", "[suite][click]") {
     OpenEdmKickProcessor dry;
-    dry.prepareToPlay(48000.0, 512);
-    juce::AudioBuffer<float> left(2, 512);
-    juce::MidiBuffer midi;
-    midi.addEvent(juce::MidiMessage::noteOn(1, 36, 1.0f), 0);
-    dry.processBlock(left, midi);
-    REQUIRE_THAT(raw(dry, "click_sample_on"), WithinAbs(0.0f, 0.001f));
-
-    OpenEdmKickProcessor enabled;
-    enabled.prepareToPlay(48000.0, 512);
-    setParam(enabled, "click_sample_on", 1.0f);
-    setParam(enabled, "click_sample_level", 1.0f);
-    juce::AudioBuffer<float> right(2, 512);
-    juce::MidiBuffer again;
-    again.addEvent(juce::MidiMessage::noteOn(1, 36, 1.0f), 0);
-    enabled.processBlock(right, again);
-    REQUIRE(std::abs(energy(left) - energy(right)) > 0.05f);
-
-    juce::AudioBuffer<float> user(1, 180);
-    for (int index = 0; index < user.getNumSamples(); ++index)
-        user.setSample(0, index, std::sin(0.7f * static_cast<float>(index)));
-    REQUIRE(enabled.loadUserClickSample(user, 44100.0, "ramp"));
-    REQUIRE_THAT(raw(enabled, "click_sample_source"), WithinAbs(4.0f, 0.001f));
+    REQUIRE(dry.parameters.getParameter("click_sample_on") == nullptr);
+    REQUIRE_FALSE(dry.loadUserClickSample(juce::AudioBuffer<float>(1, 32), 44100.0, "ramp"));
     juce::MemoryBlock saved;
-    enabled.getStateInformation(saved);
-    const auto play = [](const juce::MemoryBlock& state) {
-        OpenEdmKickProcessor restored;
-        restored.setStateInformation(state.getData(), static_cast<int>(state.getSize()));
-        restored.prepareToPlay(48000.0, 512);
-        juce::AudioBuffer<float> played(2, 512);
-        juce::MidiBuffer notes;
-        notes.addEvent(juce::MidiMessage::noteOn(1, 48, 1.0f), 0);
-        restored.processBlock(played, notes);
-        return played;
-    };
-    const auto withSample = play(saved);
-    OpenEdmKickProcessor silentClick;
-    setParam(silentClick, "click_sample_on", 0.0f);
-    juce::MemoryBlock without;
-    silentClick.getStateInformation(without);
-    const auto noSample = play(without);
-    REQUIRE(std::abs(energy(withSample) - energy(noSample)) > 0.2f);
-
-    auto legacy = dry.parameters.copyState();
-    for (int index = legacy.getNumChildren() - 1; index >= 0; --index)
-        if (legacy.getChild(index).getProperty("id").toString().startsWith("click_sample"))
-            legacy.removeChild(index, nullptr);
-    juce::MemoryBlock oldSession;
-    juce::AudioProcessor::copyXmlToBinary(*legacy.createXml(), oldSession);
-    OpenEdmKickProcessor recalled;
-    recalled.setStateInformation(oldSession.getData(), static_cast<int>(oldSession.getSize()));
-    REQUIRE_THAT(raw(recalled, "click_sample_on"), WithinAbs(0.0f, 0.001f));
+    dry.getStateInformation(saved);
+    const auto xml = juce::AudioProcessor::getXmlFromBinary(saved.getData(), static_cast<int>(saved.getSize()));
+    REQUIRE(xml != nullptr);
+    REQUIRE(xml->getChildByName("ClickSample") == nullptr);
 }
 
 TEST_CASE("Offline hit export follows the last note, layers, and tail", "[suite][drag]") {
@@ -243,13 +199,6 @@ TEST_CASE("Offline hit export follows the last note, layers, and tail", "[suite]
         difference += std::abs(high.getSample(0, index) - low.getSample(0, index));
     REQUIRE(difference > 1.0);
 
-    const auto plain = energy(low);
-    setParam(processor, "layer_b_enabled", 1.0f);
-    setParam(processor, "layer_b_sound", 1.0f);
-    juce::AudioBuffer<float> layered;
-    REQUIRE(processor.renderCurrentHit(layered));
-    REQUIRE(std::abs(energy(layered) - plain) > 0.5f);
-
     const auto file = processor.renderHitToTemporaryWav();
     REQUIRE(file.existsAsFile());
     juce::AudioFormatManager formats;
@@ -263,15 +212,13 @@ TEST_CASE("Offline hit export follows the last note, layers, and tail", "[suite]
     file.deleteFile();
     if (const auto demo = juce::SystemStats::getEnvironmentVariable("OEK_DEMO_WAV", {}); demo.isNotEmpty()) {
         processor.setCurrentProgram(0);
-        setParam(processor, "click_sample_on", 1.0f);
-        setParam(processor, "click_sample_level", 0.85f);
         juce::AudioBuffer<float> scratch(2, 64);
         juce::MidiBuffer demoMidi;
         demoMidi.addEvent(juce::MidiMessage::noteOn(1, 36, 1.0f), 0);
         processor.processBlock(scratch, demoMidi);
         juce::AudioBuffer<float> demoHit;
         REQUIRE(processor.renderCurrentHit(demoHit));
-        REQUIRE(openedmkick::suite::writeStereoWav(juce::File(demo), demoHit, 44100.0, 16));
+        REQUIRE(suite::writeStereoWav(juce::File(demo), demoHit, 44100.0, 16));
     }
 }
 
@@ -292,7 +239,7 @@ TEST_CASE("Editor exposes undo, compare, drag, and preset search", "[suite][ui]"
     auto* search = dynamic_cast<juce::TextEditor*>(findId(*editor, "presetSearch"));
     REQUIRE(search != nullptr);
     REQUIRE(search->isVisible());
-    auto* browser = dynamic_cast<openedmkick::suite::PresetBrowser*>(findId(*editor, "presetBrowser"));
+    auto* browser = dynamic_cast<suite::PresetBrowser*>(findId(*editor, "presetBrowser"));
     REQUIRE(browser != nullptr);
     const int all = browser->rowCount();
     REQUIRE(all >= 56);
