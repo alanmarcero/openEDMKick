@@ -1,7 +1,9 @@
 #pragma once
 
 #include <juce_core/juce_core.h>
+#include <juce_gui_basics/juce_gui_basics.h>
 #include <algorithm>
+#include <ranges>
 #include <array>
 #include <cmath>
 #include <optional>
@@ -17,11 +19,11 @@ inline constexpr int kHighMinMidi = 93;   // A6
 inline constexpr int kHighMaxMidi = 117;  // A8
 
 inline constexpr const char* kLowTip =
-    "Low shelf. The inner dial sets gain; the outer ring steps chromatic notes from A0 to A2 (double-click the Note pill to type, e.g. G#1).";
+    "Low shelf. The inner dial sets gain; the outer ring steps chromatic notes from A0 to A2 (double-click the Note pill to type, e.g. G#1, or right-click it to pick a note).";
 inline constexpr const char* kMidTip =
-    "Mid bell. The inner dial sets gain; the outer ring steps chromatic notes from A3 to A5.";
+    "Mid bell. The inner dial sets gain; the outer ring steps chromatic notes from A3 to A5. Right-click the Note pill to pick a note.";
 inline constexpr const char* kHighTip =
-    "High shelf. The inner dial sets gain; the outer ring steps chromatic notes from A6 to A8.";
+    "High shelf. The inner dial sets gain; the outer ring steps chromatic notes from A6 to A8. Right-click the Note pill to pick a note.";
 inline constexpr const char* kKeyTrackingTip =
     "Scales pitch with the played MIDI note. 0 keeps the root pitch. 1 follows the note.";
 
@@ -86,6 +88,24 @@ inline std::pair<int, int> bandLimits(const juce::String& freqParamId) noexcept 
     if (freqParamId == "eq_mid_freq") return { kMidMinMidi, kMidMaxMidi };
     if (freqParamId == "eq_high_freq") return { kHighMinMidi, kHighMaxMidi };
     return { kLowMinMidi, kLowMaxMidi };
+}
+
+// Right-click note picker. Item ids run from firstItemId, one per semitone from minMidi to maxMidi.
+inline juce::PopupMenu noteMenu(int minMidi, int maxMidi, int currentMidi, int firstItemId) {
+    juce::PopupMenu menu;
+    const int count = std::max(0, maxMidi - minMidi + 1);
+    std::ranges::for_each(std::views::iota(0, count), [&](int step) {
+        const int midi = minMidi + step;
+        menu.addItem(firstItemId + step, formatNote(noteToHz(midi), minMidi, maxMidi), true, midi == currentMidi);
+    });
+    return menu;
+}
+
+// The MIDI note a noteMenu item picks, or nothing when the id belongs to another menu.
+inline std::optional<int> midiFromNoteItem(int itemId, int firstItemId, int minMidi, int maxMidi) noexcept {
+    const int midi = minMidi + (itemId - firstItemId);
+    if (itemId < firstItemId || midi > maxMidi) return std::nullopt;
+    return midi;
 }
 
 template <typename ParseHz>

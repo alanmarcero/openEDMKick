@@ -538,6 +538,25 @@ bool DualEqKnob::FreqReadout::keyPressed(const juce::KeyPress& key) {
 void DualEqKnob::FreqReadout::mouseMove(const juce::MouseEvent& event) { owner_.mouseMove(event.getEventRelativeTo(&owner_)); }
 void DualEqKnob::FreqReadout::mouseExit(const juce::MouseEvent& event) { owner_.mouseExit(event.getEventRelativeTo(&owner_)); }
 void DualEqKnob::FreqReadout::mouseDown(const juce::MouseEvent& event) {
+    if (event.mods.isPopupMenu()) {
+        auto* param = owner_.state_.getParameter(owner_.freqId_);
+        if (param == nullptr || owner_.freqAttachment_ == nullptr) return;
+        const auto [minMidi, maxMidi] = openedmkick::params::eqBandMidiLimits(owner_.freqId_);
+        const int current = suite::eq::nearestMidi(owner_.freqHz_, minMidi, maxMidi);
+        auto menu = suite::eq::noteMenu(minMidi, maxMidi, current, 1);
+        menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(this),
+            [this, minMidi, maxMidi](int itemId) {
+                const auto midi = suite::eq::midiFromNoteItem(itemId, 1, minMidi, maxMidi);
+                if (!midi || owner_.freqAttachment_ == nullptr) return;
+                const float hz = suite::eq::noteToHz(*midi);
+                owner_.freqHz_ = hz;
+                static_cast<OpenEdmKickProcessor&>(owner_.state_.processor).routing().manualValue(owner_.freqId_, hz);
+                owner_.freqAttachment_->setValueAsCompleteGesture(hz);
+                owner_.updateFreqReadoutText();
+                owner_.repaint();
+            });
+        return;
+    }
     grabKeyboardFocus();
     owner_.mouseDown(event.getEventRelativeTo(&owner_));
 }

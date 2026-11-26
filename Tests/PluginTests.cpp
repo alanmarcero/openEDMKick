@@ -1266,4 +1266,8 @@ TEST_CASE("EQ bands snap to chromatic notes across two octaves", "[plugin][eq][n
     checkBand(params::kEqLowFreq, params::kEqLowMinMidi, params::kEqLowMaxMidi, "A0", "A1", "A2", "G#1");
     checkBand(params::kEqMidFreq, params::kEqMidMinMidi, params::kEqMidMaxMidi, "A3", "A4", "A5", "G#4");
     checkBand(params::kEqHighFreq, params::kEqHighMinMidi, params::kEqHighMaxMidi, "A6", "A7", "A8", "G#7");
+    const auto noteMenu = suite::eq::noteMenu(params::kEqLowMinMidi, params::kEqLowMaxMidi, 28, 1);
+    CHECK(noteMenu.getNumItems() == params::kEqLowMaxMidi - params::kEqLowMinMidi + 1);
+    CHECK(suite::eq::midiFromNoteItem(8, 1, params::kEqLowMinMidi, params::kEqLowMaxMidi) == 28);
+    CHECK_FALSE(suite::eq::midiFromNoteItem(0, 1, params::kEqLowMinMidi, params::kEqLowMaxMidi).has_value());
 }
