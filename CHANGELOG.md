@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.10.5
+
+- Right-click an EQ note to pick a note in that band.
+
 ## v3.10.4
 
 - Completes the openKicker rename and aligns the suite controls and tests.
